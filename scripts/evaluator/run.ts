@@ -227,7 +227,7 @@ async function resolveContestedClaims(): Promise<number> {
         await trpcMutation("evaluator.resolveClaim", {
           claimId: claim.id,
           resolution,
-          note,
+          resolutionNote: note,
         });
         resolved++;
         console.log(

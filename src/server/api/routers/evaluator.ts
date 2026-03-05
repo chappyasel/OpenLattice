@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -18,6 +18,45 @@ import {
 } from "@/server/db/schema";
 
 export const evaluatorRouter = createTRPCRouter({
+  listPendingSubmissions: evaluatorProcedure
+    .input(z.object({ type: z.string().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(submissions.status, "pending")];
+      if (input?.type) {
+        conditions.push(eq(submissions.type, input.type as any));
+      }
+      return ctx.db.query.submissions.findMany({
+        where: and(...conditions),
+        with: { contributor: true },
+        orderBy: (s, { asc }) => [asc(s.createdAt)],
+        limit: 20,
+      });
+    }),
+
+  listUnscoredResources: evaluatorProcedure.query(async ({ ctx }) => {
+    return ctx.db.query.resources.findMany({
+      where: and(
+        eq(resources.visibility, "public"),
+        eq(resources.score, 0),
+      ),
+      limit: 20,
+    });
+  }),
+
+  listContestedClaims: evaluatorProcedure
+    .input(z.object({ minPositions: z.number().int().default(2) }).optional())
+    .query(async ({ ctx }) => {
+      return ctx.db.query.claims.findMany({
+        where: eq(claims.status, "contested"),
+        with: {
+          positions: {
+            with: { contributor: true },
+          },
+        },
+        limit: 10,
+      });
+    }),
+
   reviewSubmission: evaluatorProcedure
     .input(
       z.object({
