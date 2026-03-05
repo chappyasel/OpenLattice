@@ -1,9 +1,10 @@
-import { and, eq, sql, ne } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
   createTRPCRouter,
   evaluatorProcedure,
+  publicProcedure,
 } from "@/server/api/trpc";
 import {
   submissions,
@@ -13,11 +14,12 @@ import {
   contributors,
   bounties,
   activity,
-  contributorReputation,
   topics,
 } from "@/server/db/schema";
 
 export const evaluatorRouter = createTRPCRouter({
+  // ─── Queries (for evaluator script) ───────────────────────────────────
+
   listPendingSubmissions: evaluatorProcedure
     .input(z.object({ type: z.string().optional() }).optional())
     .query(async ({ ctx, input }) => {
@@ -44,7 +46,9 @@ export const evaluatorRouter = createTRPCRouter({
   }),
 
   listContestedClaims: evaluatorProcedure
-    .input(z.object({ minPositions: z.number().int().default(2) }).optional())
+    .input(
+      z.object({ minPositions: z.number().int().default(2) }).optional(),
+    )
     .query(async ({ ctx }) => {
       return ctx.db.query.claims.findMany({
         where: eq(claims.status, "contested"),
@@ -57,6 +61,8 @@ export const evaluatorRouter = createTRPCRouter({
       });
     }),
 
+  // ─── Mutations (called by evaluator script) ───────────────────────────
+
   reviewSubmission: evaluatorProcedure
     .input(
       z.object({
@@ -64,6 +70,7 @@ export const evaluatorRouter = createTRPCRouter({
         approved: z.boolean(),
         reasoning: z.string(),
         reputationDelta: z.number().int().optional(),
+        evaluationTrace: z.record(z.unknown()).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -80,7 +87,6 @@ export const evaluatorRouter = createTRPCRouter({
         .returning();
 
       if (updated?.contributorId) {
-        // Update contributor stats
         const field = input.approved
           ? contributors.acceptedContributions
           : contributors.rejectedContributions;
@@ -88,8 +94,9 @@ export const evaluatorRouter = createTRPCRouter({
           .update(contributors)
           .set({
             totalContributions: sql`${contributors.totalContributions} + 1`,
-            [input.approved ? "acceptedContributions" : "rejectedContributions"]:
-              sql`${field} + 1`,
+            [input.approved
+              ? "acceptedContributions"
+              : "rejectedContributions"]: sql`${field} + 1`,
           })
           .where(eq(contributors.id, updated.contributorId));
 
@@ -103,12 +110,15 @@ export const evaluatorRouter = createTRPCRouter({
         }
       }
 
-      // Log activity
+      // Log activity with full evaluation trace
       await ctx.db.insert(activity).values({
         type: "submission_reviewed",
         contributorId: ctx.contributor.id,
         submissionId: input.submissionId,
         description: `Submission ${input.approved ? "approved" : "rejected"}: ${input.reasoning.slice(0, 100)}`,
+        data: input.evaluationTrace
+          ? (input.evaluationTrace as Record<string, unknown>)
+          : undefined,
       });
 
       return updated!;
@@ -119,6 +129,7 @@ export const evaluatorRouter = createTRPCRouter({
       z.object({
         resourceId: z.string(),
         score: z.number().int().min(0).max(100),
+        evaluationTrace: z.record(z.unknown()).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -127,6 +138,18 @@ export const evaluatorRouter = createTRPCRouter({
         .set({ score: input.score })
         .where(eq(resources.id, input.resourceId))
         .returning();
+
+      // Log activity with trace
+      if (input.evaluationTrace) {
+        await ctx.db.insert(activity).values({
+          type: "submission_reviewed",
+          contributorId: ctx.contributor.id,
+          resourceId: input.resourceId,
+          description: `Resource scored ${input.score}/100: ${(input.evaluationTrace as any).resourceName ?? updated?.name ?? "unknown"}`,
+          data: input.evaluationTrace as Record<string, unknown>,
+        });
+      }
+
       return updated!;
     }),
 
@@ -136,6 +159,7 @@ export const evaluatorRouter = createTRPCRouter({
         claimId: z.string(),
         resolution: z.enum(["resolved_true", "resolved_false"]),
         resolutionNote: z.string(),
+        evaluationTrace: z.record(z.unknown()).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -180,11 +204,15 @@ export const evaluatorRouter = createTRPCRouter({
           .where(eq(contributors.id, pos.contributorId));
       }
 
+      // Log activity with evaluation trace
       await ctx.db.insert(activity).values({
         type: "claim_resolved",
         contributorId: ctx.contributor.id,
         claimId: input.claimId,
         description: `Claim resolved as ${input.resolution === "resolved_true" ? "TRUE" : "FALSE"}: "${claim.title}"`,
+        data: input.evaluationTrace
+          ? (input.evaluationTrace as Record<string, unknown>)
+          : undefined,
       });
 
       return updated!;
@@ -225,11 +253,8 @@ export const evaluatorRouter = createTRPCRouter({
     }),
 
   recalculateReputation: evaluatorProcedure.mutation(async ({ ctx }) => {
-    // Get all contributors with submissions
     const allContributors = await ctx.db.query.contributors.findMany({
-      with: {
-        submissions: true,
-      },
+      with: { submissions: true },
     });
 
     for (const contrib of allContributors) {
@@ -239,12 +264,11 @@ export const evaluatorRouter = createTRPCRouter({
       const rejected = contrib.submissions.filter(
         (s) => s.status === "rejected",
       ).length;
-      const total = accepted + rejected;
 
       await ctx.db
         .update(contributors)
         .set({
-          totalContributions: total,
+          totalContributions: accepted + rejected,
           acceptedContributions: accepted,
           rejectedContributions: rejected,
         })
@@ -252,5 +276,87 @@ export const evaluatorRouter = createTRPCRouter({
     }
 
     return { recalculated: allContributors.length };
+  }),
+
+  // ─── Dashboard Queries (public, for /evaluator page) ──────────────────
+
+  getEvaluationFeed: publicProcedure
+    .input(
+      z
+        .object({
+          limit: z.number().int().min(1).max(100).default(30),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      // Get all activity entries that have evaluation trace data
+      return ctx.db.query.activity.findMany({
+        where: sql`${activity.data} IS NOT NULL AND ${activity.data}->>'type' IS NOT NULL`,
+        with: {
+          contributor: true,
+          topic: true,
+          claim: true,
+          resource: true,
+          submission: true,
+        },
+        orderBy: [desc(activity.createdAt)],
+        limit: input?.limit ?? 30,
+      });
+    }),
+
+  getEvaluationStats: publicProcedure.query(async ({ ctx }) => {
+    // Count evaluations by type from activity data
+    const allEvals = await ctx.db.query.activity.findMany({
+      where: sql`${activity.data} IS NOT NULL AND ${activity.data}->>'type' IS NOT NULL`,
+      orderBy: [desc(activity.createdAt)],
+    });
+
+    const stats = {
+      total: allEvals.length,
+      expansionReviews: 0,
+      resourceScores: 0,
+      claimResolutions: 0,
+      approvals: 0,
+      rejections: 0,
+      avgResourceScore: 0,
+      avgDurationMs: 0,
+      totalDurationMs: 0,
+    };
+
+    let resourceScoreSum = 0;
+    let resourceScoreCount = 0;
+
+    for (const e of allEvals) {
+      const data = e.data as Record<string, unknown> | null;
+      if (!data) continue;
+
+      const durationMs = (data.durationMs as number) ?? 0;
+      stats.totalDurationMs += durationMs;
+
+      switch (data.type) {
+        case "expansion_review":
+          stats.expansionReviews++;
+          if (data.verdict === "approve") stats.approvals++;
+          else stats.rejections++;
+          break;
+        case "resource_score":
+          stats.resourceScores++;
+          resourceScoreSum += (data.score as number) ?? 0;
+          resourceScoreCount++;
+          break;
+        case "claim_resolution":
+          stats.claimResolutions++;
+          break;
+      }
+    }
+
+    stats.avgResourceScore =
+      resourceScoreCount > 0
+        ? Math.round(resourceScoreSum / resourceScoreCount)
+        : 0;
+    stats.avgDurationMs =
+      stats.total > 0 ? Math.round(stats.totalDurationMs / stats.total) : 0;
+
+    return stats;
   }),
 });

@@ -10,6 +10,7 @@ import {
   ActivityIcon,
   HexagonIcon,
   ShieldCheckIcon,
+  BrainIcon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { api } from "@/trpc/react";
@@ -20,6 +21,7 @@ const navLinks = [
   { href: "/bounties", label: "Bounties", icon: TreasureChestIcon },
   { href: "/claims", label: "Claims", icon: ScalesIcon },
   { href: "/activity", label: "Activity", icon: ActivityIcon },
+  { href: "/evaluator", label: "Evaluator", icon: BrainIcon },
 ];
 
 export function Nav() {
