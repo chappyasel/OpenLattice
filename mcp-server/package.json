@@ -1,0 +1,38 @@
+{
+  "name": "@openlattice/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for OpenLattice — search topics, browse resources, submit expansions, make claims, and take positions via the Model Context Protocol",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "bin": {
+    "openlattice-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "openlattice",
+    "knowledge-graph",
+    "ai-collective"
+  ],
+  "author": "The AI Collective",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.3",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "tsup": "^8.4.0",
+    "typescript": "^5.4.5"
+  }
+}

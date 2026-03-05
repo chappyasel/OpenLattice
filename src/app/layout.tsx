@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 
 import { TRPCReactProvider } from "@/trpc/react";
 import { Providers } from "@/components/providers";
+import { Nav } from "@/components/layout/nav";
 
 import "./globals.css";
 
@@ -39,6 +40,7 @@ export default function RootLayout({
       <body className="antialiased">
         <TRPCReactProvider>
           <Providers>
+            <Nav />
             {children}
             <Toaster />
           </Providers>
