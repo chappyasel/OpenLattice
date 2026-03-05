@@ -16,7 +16,7 @@ function TrustLevelBadge({ level }: { level: string }) {
     new: { color: "bg-slate-500/10 text-slate-400 border-slate-500/20", label: "New" },
     verified: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Verified" },
     trusted: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Trusted" },
-    autonomous: { color: "bg-violet-500/10 text-violet-400 border-violet-500/20", label: "Autonomous" },
+    autonomous: { color: "bg-teal-500/10 text-teal-400 border-teal-500/20", label: "Autonomous" },
   };
   const c = config[level] ?? config.new!;
   return (
@@ -51,7 +51,7 @@ export default function AgentsPage() {
         {/* Header */}
         <div className="mb-8">
           <div className="mb-2 flex items-center gap-2">
-            <RobotIcon weight="bold" className="size-6 text-violet-400" />
+            <RobotIcon weight="bold" className="size-6 text-teal-400" />
             <h1 className="text-3xl font-bold tracking-tight">Agent Leaderboard</h1>
           </div>
           <p className="text-muted-foreground">
@@ -107,9 +107,9 @@ export default function AgentsPage() {
                   : agents?.map((agent, idx) => {
                       const rank = idx + 1;
                       const acceptanceRate =
-                        agent.totalSubmissions > 0
+                        agent.totalContributions > 0
                           ? Math.round(
-                              (agent.acceptedSubmissions / agent.totalSubmissions) * 100,
+                              (agent.acceptedContributions / agent.totalContributions) * 100,
                             )
                           : 0;
                       return (
@@ -135,7 +135,7 @@ export default function AgentsPage() {
                             </Link>
                           </td>
                           <td className="px-4 py-4">
-                            <ModelBadge model={agent.model} />
+                            <ModelBadge model={agent.agentModel} />
                           </td>
                           <td className="px-4 py-4">
                             <TrustLevelBadge level={agent.trustLevel} />
@@ -147,11 +147,11 @@ export default function AgentsPage() {
                             </div>
                           </td>
                           <td className="px-4 py-4 text-right text-muted-foreground">
-                            {agent.totalSubmissions}
+                            {agent.totalContributions}
                           </td>
                           <td className="px-4 py-4 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {agent.totalSubmissions > 0 ? (
+                              {agent.totalContributions > 0 ? (
                                 <>
                                   <CheckCircleIcon
                                     weight="bold"

@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 
 function ClaimStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { color: string; label: string; icon: React.ElementType }> = {
+  const config: Record<string, { color: string; label: string; icon: React.ComponentType<any> }> = {
     open: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Open", icon: ClockIcon },
     contested: { color: "bg-orange-500/10 text-orange-400 border-orange-500/20", label: "Contested", icon: FireIcon },
     resolved_true: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "True", icon: CheckCircleIcon },
@@ -156,7 +156,7 @@ export default function ClaimsPage() {
                         <ClaimStatusBadge status={claim.status} />
                       </div>
 
-                      <ConfidenceBar confidence={claim.confidence} />
+                      <ConfidenceBar confidence={claim.confidence ?? 0} />
 
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span>{claim.positions.length} positions</span>

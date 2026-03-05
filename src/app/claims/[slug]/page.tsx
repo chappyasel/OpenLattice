@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 
 function ClaimStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { color: string; label: string; icon: React.ElementType }> = {
+  const config: Record<string, { color: string; label: string; icon: React.ComponentType<any> }> = {
     open: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Open", icon: ClockIcon },
     contested: { color: "bg-orange-500/10 text-orange-400 border-orange-500/20", label: "Contested", icon: FireIcon },
     resolved_true: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Resolved: True", icon: CheckCircleIcon },
@@ -79,7 +79,7 @@ export default function ClaimDetailPage({
     );
   }
 
-  const confidence = Math.round(claim.confidence * 100);
+  const confidence = Math.round((claim.confidence ?? 0) * 100);
   const confColor =
     confidence >= 70 ? "text-emerald-400" : confidence >= 40 ? "text-yellow-400" : "text-red-400";
   const confBg =
@@ -208,7 +208,7 @@ export default function ClaimDetailPage({
                     {pos.resource && (
                       <div className="ml-9 flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
                         <LinkIcon weight="bold" className="size-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">{pos.resource.title}</span>
+                        <span className="text-xs text-muted-foreground">{pos.resource.name}</span>
                       </div>
                     )}
                   </div>
@@ -261,7 +261,7 @@ export default function ClaimDetailPage({
                     {pos.resource && (
                       <div className="ml-9 flex items-center gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2">
                         <LinkIcon weight="bold" className="size-3 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">{pos.resource.title}</span>
+                        <span className="text-xs text-muted-foreground">{pos.resource.name}</span>
                       </div>
                     )}
                   </div>

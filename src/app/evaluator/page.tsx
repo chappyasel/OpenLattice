@@ -50,13 +50,13 @@ function ScoreBar({ label, value, max = 10 }: { label: string; value: number; ma
 // ─── Verdict Badge ─────────────────────────────────────────────────────────────
 
 function VerdictBadge({ verdict }: { verdict: string }) {
-  const configs: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+  const configs: Record<string, { label: string; color: string; icon: React.ComponentType<any> }> = {
     approve: { label: "Approved", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", icon: CheckCircleIcon },
     approved: { label: "Approved", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", icon: CheckCircleIcon },
     reject: { label: "Rejected", color: "bg-red-500/10 text-red-400 border-red-500/20", icon: XCircleIcon },
     rejected: { label: "Rejected", color: "bg-red-500/10 text-red-400 border-red-500/20", icon: XCircleIcon },
     scored: { label: "Scored", color: "bg-blue-500/10 text-blue-400 border-blue-500/20", icon: StarIcon },
-    resolved: { label: "Resolved", color: "bg-violet-500/10 text-violet-400 border-violet-500/20", icon: SealCheckIcon },
+    resolved: { label: "Resolved", color: "bg-teal-500/10 text-teal-400 border-teal-500/20", icon: SealCheckIcon },
   };
 
   const c = configs[verdict] ?? configs.scored!;
@@ -98,13 +98,13 @@ function ExpansionReviewTrace({ data }: { data: Record<string, unknown> }) {
     <div className="space-y-5">
       {/* Topic + Contributor */}
       <div className="grid grid-cols-2 gap-3">
-        {data.topicTitle && (
+        {!!data.topicTitle && (
           <div className="rounded-lg bg-muted/30 px-3 py-2.5">
             <div className="mb-0.5 text-xs text-muted-foreground">Topic</div>
             <div className="text-sm font-medium">{String(data.topicTitle)}</div>
           </div>
         )}
-        {data.contributorName && (
+        {!!data.contributorName && (
           <div className="rounded-lg bg-muted/30 px-3 py-2.5">
             <div className="mb-0.5 text-xs text-muted-foreground">Contributor</div>
             <div className="text-sm font-medium font-mono">{String(data.contributorName)}</div>
@@ -113,7 +113,7 @@ function ExpansionReviewTrace({ data }: { data: Record<string, unknown> }) {
       </div>
 
       {/* Score breakdown */}
-      {scores && (
+      {!!scores && (
         <div className="grid gap-4 md:grid-cols-3">
           {Object.entries(scores).map(([section, sectionScores]) => (
             <div key={section} className="rounded-lg border border-border/40 bg-muted/10 p-3">
@@ -161,14 +161,14 @@ function ExpansionReviewTrace({ data }: { data: Record<string, unknown> }) {
       </div>
 
       {/* Reasoning */}
-      {data.reasoning && (
+      {!!data.reasoning && (
         <blockquote className="border-l-2 border-primary/50 pl-4 text-sm text-muted-foreground italic leading-relaxed">
           {String(data.reasoning)}
         </blockquote>
       )}
 
       {/* Improvement suggestions */}
-      {suggestions && suggestions.length > 0 && (
+      {!!suggestions && suggestions.length > 0 && (
         <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-4">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-orange-400">
             <LightningIcon weight="bold" className="size-3.5" />
@@ -194,14 +194,14 @@ function ResourceScoreTrace({ data }: { data: Record<string, unknown> }) {
 
   return (
     <div className="space-y-4">
-      {data.resourceName && (
+      {!!data.resourceName && (
         <div className="rounded-lg bg-muted/30 px-3 py-2.5">
           <div className="mb-0.5 text-xs text-muted-foreground">Resource</div>
           <div className="text-sm font-medium">{String(data.resourceName)}</div>
         </div>
       )}
 
-      {dimensions && (
+      {!!dimensions && (
         <div className="rounded-lg border border-border/40 bg-muted/10 p-4 space-y-2.5">
           <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Score Dimensions</div>
           {Object.entries(dimensions).map(([key, val]) => (
@@ -219,7 +219,7 @@ function ResourceScoreTrace({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
 
-      {data.reasoning && (
+      {!!data.reasoning && (
         <blockquote className="border-l-2 border-primary/50 pl-4 text-sm text-muted-foreground italic leading-relaxed">
           {String(data.reasoning)}
         </blockquote>
@@ -234,7 +234,7 @@ function ClaimResolutionTrace({ data }: { data: Record<string, unknown> }) {
 
   return (
     <div className="space-y-4">
-      {data.claimTitle && (
+      {!!data.claimTitle && (
         <div className="rounded-lg bg-muted/30 px-3 py-2.5">
           <div className="mb-0.5 text-xs text-muted-foreground">Claim</div>
           <div className="text-sm font-medium">{String(data.claimTitle)}</div>
@@ -250,7 +250,7 @@ function ClaimResolutionTrace({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
 
-      {evidence && (
+      {!!evidence && (
         <div className="rounded-lg border border-border/40 bg-muted/10 p-4 space-y-2.5">
           <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Evidence Analysis</div>
           {evidence.supportStrength !== undefined && (
@@ -262,7 +262,7 @@ function ClaimResolutionTrace({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
 
-      {data.reasoning && (
+      {!!data.reasoning && (
         <blockquote className="border-l-2 border-primary/50 pl-4 text-sm text-muted-foreground italic leading-relaxed">
           {String(data.reasoning)}
         </blockquote>
@@ -403,7 +403,7 @@ function StatCard({
   label: string;
   value: string | number;
   sub?: string;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   color: string;
 }) {
   return (
@@ -459,8 +459,8 @@ export default function EvaluatorPage() {
         <div className="mb-8 flex items-start justify-between gap-4">
           <div>
             <div className="mb-2 flex items-center gap-3">
-              <div className="flex items-center justify-center rounded-xl bg-violet-500/10 p-2.5">
-                <RobotIcon weight="bold" className="size-6 text-violet-400" />
+              <div className="flex items-center justify-center rounded-xl bg-teal-500/10 p-2.5">
+                <RobotIcon weight="bold" className="size-6 text-teal-400" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -487,7 +487,7 @@ export default function EvaluatorPage() {
             label="Total Evaluations"
             value={stats?.total ?? 0}
             icon={ChartBarIcon}
-            color="bg-violet-500/10 text-violet-400"
+            color="bg-teal-500/10 text-teal-400"
           />
           <StatCard
             label="Expansion Reviews"

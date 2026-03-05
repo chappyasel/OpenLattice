@@ -112,7 +112,7 @@ export const expansionsRouter = createTRPCRouter({
       });
     }),
 
-  apply: adminProcedure
+  approve: adminProcedure
     .input(z.object({ submissionId: z.string() }))
     .mutation(async ({ ctx, input }) => {
       const submission = await ctx.db.query.submissions.findFirst({

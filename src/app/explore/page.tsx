@@ -279,7 +279,7 @@ export default function ExplorePage() {
             {[
               { color: "bg-slate-400", label: "Subtopic" },
               { color: "bg-indigo-400", label: "Related" },
-              { color: "bg-violet-400", label: "Prerequisite" },
+              { color: "bg-teal-400", label: "Prerequisite" },
               { color: "bg-emerald-400", label: "See also" },
             ].map(({ color, label }) => (
               <div key={label} className="flex items-center gap-2 text-muted-foreground">

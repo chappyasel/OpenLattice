@@ -12,6 +12,7 @@ import {
   StarIcon,
   FunnelIcon,
   CheckCircleIcon,
+  ArrowBendDownRightIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
@@ -30,7 +31,7 @@ type ActivityType =
 
 const activityConfig: Record<
   ActivityType,
-  { label: string; icon: React.ElementType; color: string; bg: string }
+  { label: string; icon: React.ComponentType<any>; color: string; bg: string }
 > = {
   topic_created: { label: "Topic Created", icon: GraphIcon, color: "text-blue-400", bg: "bg-blue-500/10" },
   resource_submitted: { label: "Resource Submitted", icon: BookOpenIcon, color: "text-emerald-400", bg: "bg-emerald-500/10" },
@@ -39,7 +40,7 @@ const activityConfig: Record<
   claim_challenged: { label: "Claim Challenged", icon: ScalesIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
   claim_resolved: { label: "Claim Resolved", icon: CheckCircleIcon, color: "text-emerald-400", bg: "bg-emerald-500/10" },
   bounty_completed: { label: "Bounty Completed", icon: TreasureChestIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
-  submission_reviewed: { label: "Submission Reviewed", icon: CheckCircleIcon, color: "text-violet-400", bg: "bg-violet-500/10" },
+  submission_reviewed: { label: "Submission Reviewed", icon: CheckCircleIcon, color: "text-teal-400", bg: "bg-teal-500/10" },
   reputation_changed: { label: "Reputation Changed", icon: StarIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
 };
 
@@ -120,11 +121,20 @@ export default function ActivityPage() {
 
                   // Show date separator
                   const prevItem = items[idx - 1];
+                  const nextItem = items[idx + 1];
                   const showDate =
                     idx === 0 ||
                     (prevItem &&
                       new Date(item.createdAt).toDateString() !==
                         new Date(prevItem.createdAt).toDateString());
+
+                  // Topic thread grouping: check if this item continues a thread
+                  const prevTopicId = prevItem?.topic?.id;
+                  const currTopicId = item.topic?.id;
+                  const nextTopicId = nextItem?.topic?.id;
+
+                  const isContinuingThread = !showDate && !!currTopicId && currTopicId === prevTopicId;
+                  const threadContinuesAfter = !!currTopicId && currTopicId === nextTopicId;
 
                   return (
                     <div key={item.id}>
@@ -133,6 +143,21 @@ export default function ActivityPage() {
                           {format(new Date(item.createdAt), "MMMM d, yyyy")}
                         </div>
                       )}
+
+                      {/* Thread connector label between consecutive same-topic items */}
+                      {isContinuingThread && (
+                        <div className="ml-14 mb-1 flex items-center gap-1.5 text-[10px] text-muted-foreground/60 select-none">
+                          <ArrowBendDownRightIcon weight="bold" className="size-3" />
+                          <span>continuing on</span>
+                          <Link
+                            href={`/topic/${item.topic!.slug}`}
+                            className="font-medium text-primary/60 hover:text-primary transition-colors"
+                          >
+                            {item.topic!.title}
+                          </Link>
+                        </div>
+                      )}
+
                       <div className="flex items-start gap-4 py-3">
                         <div
                           className={cn(
@@ -143,7 +168,14 @@ export default function ActivityPage() {
                           <Icon weight="bold" className={cn("size-4", color)} />
                         </div>
 
-                        <div className="flex-1 rounded-xl border border-border/30 bg-card p-4 hover:border-border transition-colors">
+                        <div
+                          className={cn(
+                            "flex-1 rounded-xl border bg-card p-4 hover:border-border transition-colors",
+                            isContinuingThread || threadContinuesAfter
+                              ? "border-l-2 border-l-primary/30 border-border/30"
+                              : "border-border/30",
+                          )}
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1">
                               <div className="flex flex-wrap items-center gap-2">

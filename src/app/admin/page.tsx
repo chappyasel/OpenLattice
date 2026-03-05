@@ -27,7 +27,7 @@ function StatCard({
 }: {
   label: string;
   value: number;
-  icon: React.ElementType;
+  icon: React.ComponentType<any>;
   color: string;
   href?: string;
 }) {
@@ -51,7 +51,7 @@ function StatCard({
 }
 
 function SubmissionStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { color: string; label: string; icon: React.ElementType }> = {
+  const config: Record<string, { color: string; label: string; icon: React.ComponentType<any> }> = {
     pending: { color: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20", label: "Pending", icon: ClockIcon },
     approved: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Approved", icon: CheckCircleIcon },
     rejected: { color: "bg-red-500/10 text-red-400 border-red-500/20", label: "Rejected", icon: XCircleIcon },
@@ -118,7 +118,7 @@ export default function AdminPage() {
               label="Agents"
               value={stats.agents}
               icon={RobotIcon}
-              color="bg-violet-500/10 text-violet-400"
+              color="bg-teal-500/10 text-teal-400"
               href="/agents"
             />
             <StatCard
@@ -162,8 +162,8 @@ export default function AdminPage() {
               icon: RobotIcon,
               title: "Agent Roster",
               desc: "Manage trust levels and agent permissions",
-              color: "text-violet-400",
-              bg: "bg-violet-500/10",
+              color: "text-teal-400",
+              bg: "bg-teal-500/10",
             },
             {
               href: "/activity",

@@ -22,7 +22,7 @@ function TrustLevelBadge({ level }: { level: string }) {
     new: { color: "bg-slate-500/10 text-slate-400 border-slate-500/20", label: "New" },
     verified: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Verified" },
     trusted: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Trusted" },
-    autonomous: { color: "bg-violet-500/10 text-violet-400 border-violet-500/20", label: "Autonomous" },
+    autonomous: { color: "bg-teal-500/10 text-teal-400 border-teal-500/20", label: "Autonomous" },
   };
   const c = config[level] ?? config.new!;
   return (
@@ -84,8 +84,8 @@ export default function AgentDetailPage({
   }
 
   const acceptanceRate =
-    agent.totalSubmissions > 0
-      ? Math.round((agent.acceptedSubmissions / agent.totalSubmissions) * 100)
+    agent.totalContributions > 0
+      ? Math.round((agent.acceptedContributions / agent.totalContributions) * 100)
       : 0;
 
   return (
@@ -109,9 +109,9 @@ export default function AgentDetailPage({
               <div className="mb-2 flex flex-wrap items-center gap-3">
                 <h1 className="text-2xl font-bold">{agent.name}</h1>
                 <TrustLevelBadge level={agent.trustLevel} />
-                {agent.model && (
+                {agent.agentModel && (
                   <span className="rounded-full border border-border/50 bg-muted px-2.5 py-1 font-mono text-xs text-muted-foreground">
-                    {agent.model}
+                    {agent.agentModel}
                   </span>
                 )}
               </div>
@@ -131,11 +131,11 @@ export default function AgentDetailPage({
           {/* Stats row */}
           <div className="mt-6 grid grid-cols-3 gap-4 border-t border-border/50 pt-6">
             <div className="text-center">
-              <p className="text-2xl font-bold">{agent.totalSubmissions}</p>
+              <p className="text-2xl font-bold">{agent.totalContributions}</p>
               <p className="text-xs text-muted-foreground">Total Submissions</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-bold">{agent.acceptedSubmissions}</p>
+              <p className="text-2xl font-bold">{agent.acceptedContributions}</p>
               <p className="text-xs text-muted-foreground">Accepted</p>
             </div>
             <div className="text-center">
@@ -166,14 +166,14 @@ export default function AgentDetailPage({
               </div>
               <div className="divide-y divide-border/30 p-2">
                 {reputation && reputation.length > 0 ? (
-                  reputation.map((rep) => (
+                  reputation.filter((rep) => rep.topic).map((rep) => (
                     <div key={rep.id} className="flex items-center justify-between px-3 py-3">
                       <div className="flex-1">
                         <Link
-                          href={`/topic/${rep.topic.slug}`}
+                          href={`/topic/${rep.topic!.slug}`}
                           className="text-sm font-medium hover:text-primary"
                         >
-                          {rep.topic.title}
+                          {rep.topic!.title}
                         </Link>
                         <div className="mt-1.5 flex items-center gap-2">
                           <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">

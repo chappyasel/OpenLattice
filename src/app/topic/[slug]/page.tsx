@@ -59,7 +59,7 @@ function ResourceTypeBadge({ type }: { type: string }) {
 }
 
 function ClaimStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { color: string; label: string; icon: React.ElementType }> = {
+  const config: Record<string, { color: string; label: string; icon: React.ComponentType<any> }> = {
     open: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Open", icon: ClockIcon },
     contested: { color: "bg-orange-500/10 text-orange-400 border-orange-500/20", label: "Contested", icon: FireIcon },
     resolved_true: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Resolved True", icon: CheckCircleIcon },
@@ -129,7 +129,7 @@ export default function TopicPage({
     );
   }
 
-  const tabs: { id: Tab; label: string; icon: React.ElementType; count?: number }[] = [
+  const tabs: { id: Tab; label: string; icon: React.ComponentType<any>; count?: number }[] = [
     { id: "resources", label: "Resources", icon: BookOpenIcon, count: topic.topicResources?.length },
     { id: "claims", label: "Claims", icon: ScalesIcon, count: claims?.length },
     { id: "subtopics", label: "Subtopics", icon: GraphIcon, count: topic.childTopics?.length },
@@ -221,7 +221,7 @@ export default function TopicPage({
                           </span>
                         )}
                       </div>
-                      <h3 className="font-semibold leading-snug">{resource.title}</h3>
+                      <h3 className="font-semibold leading-snug">{resource.name}</h3>
                     </div>
                     {resource.url && (
                       <a
@@ -270,7 +270,7 @@ export default function TopicPage({
                     <h3 className="font-semibold leading-snug">{claim.title}</h3>
                     <ClaimStatusBadge status={claim.status} />
                   </div>
-                  <ConfidenceBar confidence={claim.confidence} />
+                  <ConfidenceBar confidence={claim.confidence ?? 0} />
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
                     {claim.status === "resolved_true" && (
                       <CheckCircleIcon weight="bold" className="size-4 text-emerald-400" />

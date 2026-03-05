@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo } from "react";
-import { GraphCanvas, useSelection } from "reagraph";
+import { useCallback, useMemo, useRef } from "react";
+import { GraphCanvas, GraphCanvasRef, useSelection } from "reagraph";
 import { useRouter } from "next/navigation";
 
 interface GraphNode {
@@ -56,6 +56,7 @@ export function GraphViewer({
   selectedNodeId,
 }: GraphViewerProps) {
   const router = useRouter();
+  const graphRef = useRef<GraphCanvasRef>(null);
 
   const graphNodes = useMemo(
     () =>
@@ -86,7 +87,7 @@ export function GraphViewer({
   );
 
   const { selections, actives, onNodeClick: onSelect, onCanvasClick } = useSelection({
-    ref: null as never,
+    ref: graphRef,
     nodes: graphNodes,
     edges: graphEdges,
     pathSelectionType: "all",
@@ -94,7 +95,7 @@ export function GraphViewer({
 
   const handleNodeClick = useCallback(
     (node: { id: string; data?: GraphNode }) => {
-      onSelect(node as never);
+      onSelect?.(node as never);
       const graphNode = node.data ?? nodes.find((n) => n.id === node.id);
       if (onNodeClick && graphNode) {
         onNodeClick(graphNode as GraphNode);
@@ -108,6 +109,7 @@ export function GraphViewer({
   return (
     <div style={{ height, width: "100%", position: "relative" }}>
       <GraphCanvas
+        ref={graphRef}
         nodes={graphNodes}
         edges={graphEdges}
         selections={selections}
@@ -115,7 +117,7 @@ export function GraphViewer({
         onNodeClick={handleNodeClick as never}
         onCanvasClick={onCanvasClick}
         theme={{
-          canvas: { background: "hsl(224, 20%, 6%)", fog: false },
+          canvas: { background: "hsl(224, 20%, 6%)", fog: undefined },
           node: {
             fill: "hsl(230, 80%, 60%)",
             activeFill: "hsl(230, 80%, 75%)",
@@ -125,7 +127,6 @@ export function GraphViewer({
             label: {
               color: "hsl(220, 14%, 96%)",
               activeColor: "hsl(220, 14%, 100%)",
-              fontSize: 10,
             },
             ring: { fill: "hsl(230, 80%, 75%)" },
             port: {
@@ -154,7 +155,7 @@ export function GraphViewer({
             inactiveOpacity: 0.1,
             label: { color: "hsl(220, 14%, 96%)", fontSize: 10 },
           },
-        }}
+        } as any}
         layoutType="forceDirected2d"
         animated
       />
