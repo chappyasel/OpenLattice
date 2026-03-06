@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GraphCanvas, GraphCanvasRef, useSelection } from "reagraph";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
+import { TopicIcon } from "@/components/topic-icon";
 
 interface GraphNode {
   id: string;
   title: string;
   type: "topic";
+  icon?: string | null;
   iconHue?: number | null;
   connectionCount?: number;
 }
@@ -52,13 +55,14 @@ const RELATION_LABELS: Record<string, string> = {
 };
 
 function getNodeColor(iconHue?: number | null, nodeId?: string): string {
-  if (iconHue != null) return `hsl(${iconHue}, 70%, 55%)`;
+  // Match TopicIcon's --icon-fg: hsl(hue 70% 45%)
+  if (iconHue != null) return `hsl(${iconHue}, 70%, 45%)`;
   if (nodeId) {
     let hash = 0;
     for (let i = 0; i < nodeId.length; i++) {
       hash = ((hash << 5) - hash + nodeId.charCodeAt(i)) | 0;
     }
-    return `hsl(${Math.abs(hash) % 360}, 50%, 55%)`;
+    return `hsl(${Math.abs(hash) % 360}, 70%, 45%)`;
   }
   return BRAND_BLUE;
 }
@@ -71,12 +75,32 @@ export function GraphViewer({
   selectedNodeId,
 }: GraphViewerProps) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const graphRef = useRef<GraphCanvasRef>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    // Poll until the canvas element has actually rendered content
+    const check = () => {
+      const canvas = containerRef.current?.querySelector("canvas");
+      if (canvas) {
+        // Give the canvas one extra frame to paint
+        requestAnimationFrame(() => setVisible(true));
+      } else {
+        requestAnimationFrame(check);
+      }
+    };
+    requestAnimationFrame(check);
+  }, []);
   const [tooltip, setTooltip] = useState<{
     type: "node" | "edge";
     label: string;
     sublabel: string;
+    icon?: string | null;
+    iconHue?: number | null;
+    color?: string;
     screenX: number;
     screenY: number;
   } | null>(null);
@@ -159,6 +183,9 @@ export function GraphViewer({
         type: "node",
         label: graphNode.title,
         sublabel: `${graphNode.connectionCount ?? 0} connection${(graphNode.connectionCount ?? 0) !== 1 ? "s" : ""}`,
+        icon: graphNode.icon,
+        iconHue: graphNode.iconHue,
+        color: getNodeColor(graphNode.iconHue, graphNode.id),
         screenX: event.clientX,
         screenY: event.clientY,
       });
@@ -186,7 +213,7 @@ export function GraphViewer({
   }, []);
 
   return (
-    <div ref={containerRef} style={{ height, width: "100%", position: "relative" }}>
+    <div ref={containerRef} style={{ height, width: "100%", position: "relative", opacity: visible ? 1 : 0, transition: "opacity 700ms ease-in" }}>
       <GraphCanvas
         ref={graphRef}
         nodes={graphNodes}
@@ -208,8 +235,8 @@ export function GraphViewer({
             selectedOpacity: 1,
             inactiveOpacity: 0.3,
             label: {
-              color: "hsl(220, 14%, 96%)",
-              activeColor: "hsl(220, 14%, 100%)",
+              color: isDark ? "hsl(220, 14%, 96%)" : "hsl(220, 14%, 15%)",
+              activeColor: isDark ? "hsl(220, 14%, 100%)" : "hsl(220, 14%, 5%)",
             },
             ring: { fill: BRAND_ORANGE },
             port: {
@@ -225,20 +252,28 @@ export function GraphViewer({
             opacity: 0.15,
             selectedOpacity: 0.8,
             inactiveOpacity: 0.05,
-            label: { color: "hsl(220, 14%, 96%)", activeColor: "hsl(220, 14%, 100%)", fontSize: 8 },
+            label: {
+              color: isDark ? "hsl(220, 14%, 96%)" : "hsl(220, 14%, 15%)",
+              activeColor: isDark ? "hsl(220, 14%, 100%)" : "hsl(220, 14%, 5%)",
+              fontSize: 8,
+            },
           },
           arrow: {
             fill: EDGE_COLOR,
             activeFill: BRAND_ORANGE,
           },
           cluster: {
-            stroke: "hsl(210, 20%, 16%)",
+            stroke: isDark ? "hsl(210, 20%, 16%)" : "hsl(210, 20%, 84%)",
             opacity: 1,
             selectedOpacity: 1,
             inactiveOpacity: 0.1,
-            label: { color: "hsl(220, 14%, 96%)", fontSize: 10 },
+            label: {
+              color: isDark ? "hsl(220, 14%, 96%)" : "hsl(220, 14%, 15%)",
+              fontSize: 10,
+            },
           },
         } as any}
+        labelFontUrl="https://fonts.gstatic.com/s/opensans/v44/memSYaGs126MiZpBA-UvWbX2vVnXBbObj2OVZyOOSr4dVJWUgsjr0C4n.ttf"
         minNodeSize={5}
         maxNodeSize={50}
         edgeInterpolation="curved"
@@ -247,19 +282,35 @@ export function GraphViewer({
       />
 
       {/* Tooltip */}
-      {tooltip && (
-        <div
-          className="pointer-events-none fixed z-[100] max-w-xs rounded-lg border border-border/50 bg-card/95 backdrop-blur-sm px-3 py-2 shadow-lg"
-          style={{
-            left: tooltip.screenX,
-            top: tooltip.screenY - 8,
-            transform: "translate(-50%, -100%)",
-          }}
-        >
-          <p className="text-sm font-medium">{tooltip.label}</p>
-          <p className="text-xs text-muted-foreground">{tooltip.sublabel}</p>
+      <div
+        className="pointer-events-none fixed z-[100] max-w-xs overflow-hidden rounded-lg border border-border/50 bg-card/95 backdrop-blur-sm shadow-lg transition-all duration-150 ease-out"
+        style={{
+          left: tooltip?.screenX ?? 0,
+          top: (tooltip?.screenY ?? 0) - 8,
+          transform: "translate(-50%, -100%)",
+          opacity: tooltip ? 1 : 0,
+          scale: tooltip ? 1 : 0.95,
+          visibility: tooltip ? "visible" : "hidden",
+        }}
+      >
+        <div className="flex items-stretch">
+          {tooltip?.type === "node" && tooltip.color && (
+            <div
+              className="w-1 shrink-0"
+              style={{ backgroundColor: tooltip.color }}
+            />
+          )}
+          <div className="flex items-center gap-2 px-3 py-2">
+            {tooltip?.type === "node" && tooltip.icon && (
+              <TopicIcon icon={tooltip.icon} hue={tooltip.iconHue} size="md" />
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{tooltip?.label}</p>
+              <p className="text-xs text-muted-foreground">{tooltip?.sublabel}</p>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

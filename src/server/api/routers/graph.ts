@@ -16,6 +16,7 @@ export const graphRouter = createTRPCRouter({
       .select({
         id: topics.id,
         title: topics.title,
+        icon: topics.icon,
         iconHue: topics.iconHue,
       })
       .from(topics)

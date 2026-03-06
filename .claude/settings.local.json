@@ -18,7 +18,8 @@
       "mcp__postgres__query",
       "mcp__context7__resolve-library-id",
       "mcp__context7__query-docs",
-      "Skill(claude-api)"
+      "Skill(claude-api)",
+      "Bash(curl:*)"
     ],
     "additionalDirectories": [
       "../platform",

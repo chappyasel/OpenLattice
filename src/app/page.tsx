@@ -50,7 +50,7 @@ export default function HomePage() {
     const debouncedQuery = useDebounce(searchQuery, 300);
     const { selectedSlug, setSelectedSlug } = useTopicContext();
 
-    const { data: suggestedTopics } = api.topics.suggested.useQuery(undefined, {
+    const { data: suggestedTopics, isLoading: topicsLoading } = api.topics.suggested.useQuery(undefined, {
         staleTime: 60 * 1000,
     });
     const { data: graphData } = api.graph.getFullGraph.useQuery();
@@ -95,6 +95,7 @@ export default function HomePage() {
             id: node.id,
             title: node.title,
             type: "topic" as const,
+            icon: node.icon,
             iconHue: node.iconHue,
             connectionCount:
                 graphData.edges.filter(
@@ -267,43 +268,55 @@ export default function HomePage() {
                     </div>
 
                     {/* Suggested Topics */}
-                    {suggestedTopics && suggestedTopics.length > 0 && (
-                        <div className="mx-auto -mt-16 w-full max-w-3xl px-6 pb-8">
-                            <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                                Suggested Topics
-                            </h2>
-                            <div className="grid gap-4 sm:grid-cols-3">
-                                {suggestedTopics.map((topic) => (
-                                    <motion.button
-                                        key={topic.id}
-                                        onClick={() => navigateToSlug(topic.id)}
-                                        whileHover={{
-                                            scale: 1.02,
-                                            boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                                        }}
-                                        className="flex flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 text-left transition-all hover:bg-card"
-                                    >
-                                        <h3 className="text-sm font-semibold">{topic.title}</h3>
-                                        <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                                            {topic.summary}
-                                        </p>
-                                        <span className="mt-auto flex items-center gap-1 text-xs text-brand-blue">
-                                            Read article
-                                            <ArrowRightIcon weight="bold" className="size-3" />
-                                        </span>
-                                    </motion.button>
-                                ))}
-                            </div>
+                    <div className="mx-auto -mt-16 w-full max-w-3xl px-6 pb-8">
+                        <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                            Suggested Topics
+                        </h2>
+                        <div className="grid gap-4 sm:grid-cols-3">
+                            {topicsLoading
+                                ? Array.from({ length: 3 }).map((_, i) => (
+                                      <div
+                                          key={i}
+                                          className="flex flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 animate-pulse"
+                                      >
+                                          <div className="h-4 w-2/3 rounded bg-muted" />
+                                          <div className="h-3 w-full rounded bg-muted" />
+                                          <div className="h-3 w-4/5 rounded bg-muted" />
+                                          <div className="mt-auto h-3 w-20 rounded bg-muted" />
+                                      </div>
+                                  ))
+                                : suggestedTopics?.map((topic) => (
+                                      <motion.button
+                                          key={topic.id}
+                                          onClick={() => navigateToSlug(topic.id)}
+                                          whileHover={{
+                                              scale: 1.02,
+                                              boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                                          }}
+                                          className="flex flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 text-left transition-all hover:bg-card"
+                                      >
+                                          <h3 className="text-sm font-semibold">{topic.title}</h3>
+                                          <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                                              {topic.summary}
+                                          </p>
+                                          <span className="mt-auto flex items-center gap-1 text-xs text-brand-blue">
+                                              Read article
+                                              <ArrowRightIcon weight="bold" className="size-3" />
+                                          </span>
+                                      </motion.button>
+                                  ))}
                         </div>
-                    )}
+                    </div>
 
                     {/* Graph Preview */}
-                    {graphNodes.length > 0 && (
-                        <div className="mx-auto w-full max-w-4xl px-6 pb-8">
-                            <div
-                                className="relative h-[350px] cursor-pointer"
-                                onClick={() => setGraphExpanded(true)}
-                            >
+                    <div className="mx-auto w-full max-w-4xl px-6 pb-8">
+                        <div
+                            className="relative h-[350px] cursor-pointer"
+                            onClick={() => {
+                                if (graphNodes.length > 0) setGraphExpanded(true);
+                            }}
+                        >
+                            {graphNodes.length > 0 && (
                                 <GraphViewer
                                     nodes={graphNodes}
                                     edges={graphEdges}
@@ -312,6 +325,8 @@ export default function HomePage() {
                                         if (node.id) navigateToSlug(node.id);
                                     }}
                                 />
+                            )}
+                            {graphNodes.length > 0 && (
                                 <button
                                     className="absolute right-3 top-3 z-10 rounded-lg border border-border bg-card/80 backdrop-blur-sm p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
                                     onClick={(e) => {
@@ -321,9 +336,9 @@ export default function HomePage() {
                                 >
                                     <ArrowsOutIcon weight="bold" className="size-4" />
                                 </button>
-                            </div>
+                            )}
                         </div>
-                    )}
+                    </div>
 
                     {/* Footer */}
                     <div className="w-full px-6 pt-4">
