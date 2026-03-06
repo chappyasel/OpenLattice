@@ -2,7 +2,17 @@
   "permissions": {
     "allow": [
       "mcp__claude_ai_Notion__notion-fetch",
-      "Bash(SKIP_ENV_VALIDATION=1 yarn build:*)"
+      "Bash(SKIP_ENV_VALIDATION=1 yarn build:*)",
+      "WebSearch",
+      "Bash(ls:*)",
+      "Bash(yarn lint:*)",
+      "Bash(grep:*)",
+      "Bash(node:*)",
+      "WebFetch(domain:moltbook.com)"
+    ],
+    "additionalDirectories": [
+      "../platform",
+      "../website"
     ]
   }
 }

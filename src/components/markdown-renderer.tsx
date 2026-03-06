@@ -8,6 +8,7 @@ import { slugify } from "@/lib/utils";
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  onInternalLinkClick?: (slug: string) => void;
 }
 
 function preprocessWikilinks(content: string): string {
@@ -20,6 +21,7 @@ function preprocessWikilinks(content: string): string {
 export function MarkdownRenderer({
   content,
   className,
+  onInternalLinkClick,
 }: MarkdownRendererProps) {
   const processed = preprocessWikilinks(content);
 
@@ -29,11 +31,23 @@ export function MarkdownRenderer({
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href, children, ...props }) => {
+            if (href?.startsWith("/topic/") && onInternalLinkClick) {
+              const slug = href.replace("/topic/", "");
+              return (
+                <button
+                  type="button"
+                  onClick={() => onInternalLinkClick(slug)}
+                  className="text-brand-blue underline underline-offset-4 hover:text-brand-blue/80"
+                >
+                  {children}
+                </button>
+              );
+            }
             if (href?.startsWith("/")) {
               return (
                 <Link
                   href={href}
-                  className="text-primary underline underline-offset-4 hover:text-primary/80"
+                  className="text-brand-blue underline underline-offset-4 hover:text-brand-blue/80"
                   {...props}
                 >
                   {children}
@@ -45,7 +59,7 @@ export function MarkdownRenderer({
                 href={href}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-primary underline underline-offset-4 hover:text-primary/80"
+                className="text-brand-blue underline underline-offset-4 hover:text-brand-blue/80"
                 {...props}
               >
                 {children}
@@ -68,7 +82,7 @@ export function MarkdownRenderer({
             </h3>
           ),
           p: ({ children, ...props }) => (
-            <p className="mb-4 leading-7" {...props}>
+            <p className="mb-4 leading-[1.7]" {...props}>
               {children}
             </p>
           ),

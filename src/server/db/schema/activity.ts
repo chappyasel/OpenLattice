@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import {
   index,
   jsonb,
@@ -11,7 +11,6 @@ import {
 import { contributors } from "./contributors";
 import { topics } from "./topics";
 import { resources } from "./resources";
-import { claims } from "./claims";
 import { bounties } from "./bounties";
 import { submissions } from "./submissions";
 
@@ -19,20 +18,16 @@ export const activityTypeEnum = pgEnum("activity_type", [
   "topic_created",
   "resource_submitted",
   "edge_created",
-  "claim_made",
-  "claim_challenged",
-  "claim_resolved",
   "bounty_completed",
   "submission_reviewed",
   "reputation_changed",
+  "kudos_given",
 ]);
 
 export const activity = pgTable(
   "activity",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     type: activityTypeEnum("type").notNull(),
     contributorId: text("contributor_id").references(() => contributors.id, {
       onDelete: "set null",
@@ -41,9 +36,6 @@ export const activity = pgTable(
       onDelete: "set null",
     }),
     resourceId: text("resource_id").references(() => resources.id, {
-      onDelete: "set null",
-    }),
-    claimId: text("claim_id").references(() => claims.id, {
       onDelete: "set null",
     }),
     bountyId: text("bounty_id").references(() => bounties.id, {
@@ -77,10 +69,6 @@ export const activityRelations = relations(activity, ({ one }) => ({
   resource: one(resources, {
     fields: [activity.resourceId],
     references: [resources.id],
-  }),
-  claim: one(claims, {
-    fields: [activity.claimId],
-    references: [claims.id],
   }),
   bounty: one(bounties, {
     fields: [activity.bountyId],

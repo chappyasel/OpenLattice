@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import { pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 import { contributors } from "./contributors";
@@ -6,9 +6,7 @@ import { contributors } from "./contributors";
 export const kudos = pgTable(
   "kudos",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     fromContributorId: text("from_contributor_id")
       .notNull()
       .references(() => contributors.id, { onDelete: "cascade" }),

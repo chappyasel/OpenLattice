@@ -18,7 +18,8 @@ const config = {
     },
     extend: {
       fontFamily: {
-        sans: ["var(--font-inter)", ...fontFamily.sans],
+        sans: ["var(--font-open-sans)", "SF Pro Display", ...fontFamily.sans],
+        serif: ["var(--font-georgia-pro)", "Georgia", ...fontFamily.serif],
         mono: ["var(--font-mono)", ...fontFamily.mono],
       },
       colors: {
@@ -55,6 +56,20 @@ const config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        brand: {
+          blue: "hsl(var(--brand-blue))",
+          orange: "hsl(var(--brand-orange))",
+        },
+        sidebar: {
+          DEFAULT: "hsl(var(--sidebar-background))",
+          foreground: "hsl(var(--sidebar-foreground))",
+          primary: "hsl(var(--sidebar-primary))",
+          "primary-foreground": "hsl(var(--sidebar-primary-foreground))",
+          accent: "hsl(var(--sidebar-accent))",
+          "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
+          border: "hsl(var(--sidebar-border))",
+          ring: "hsl(var(--sidebar-ring))",
+        },
       },
       borderColor: {
         DEFAULT: "hsl(var(--border))",
@@ -76,10 +91,35 @@ const config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "collapse-down": {
+          from: { height: "0", opacity: "0" },
+          to: { height: "var(--radix-collapsible-content-height)", opacity: "1" },
+        },
+        "collapse-up": {
+          from: { height: "var(--radix-collapsible-content-height)", opacity: "1" },
+          to: { height: "0", opacity: "0" },
+        },
+        "fade-in": {
+          from: { opacity: "0", transform: "translateY(8px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        gradient: {
+          "0%, 100%": { backgroundPosition: "0% 50%" },
+          "50%": { backgroundPosition: "100% 50%" },
+        },
+        marquee: {
+          from: { transform: "translateX(0)" },
+          to: { transform: "translateX(calc(-100% - var(--gap)))" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "collapse-down": "collapse-down 0.2s ease-out",
+        "collapse-up": "collapse-up 0.2s ease-out",
+        "fade-in": "fade-in 0.4s ease-out",
+        gradient: "gradient 6s ease infinite",
+        marquee: "marquee var(--duration) linear infinite",
       },
     },
   },

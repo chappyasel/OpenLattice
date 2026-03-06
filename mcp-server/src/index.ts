@@ -11,15 +11,15 @@ import {
   handleSearchWiki,
   handleGetTopic,
   handleListBounties,
-  handleGetClaim,
   handleGetReputation,
   handleListRecentActivity,
   handleSubmitExpansion,
   handleSubmitResource,
-  handleCreateEdge,
+  handleListRevisionRequests,
+  handleResubmitRevision,
+  handleListMySubmissions,
   handleClaimBounty,
-  handleMakeClaim,
-  handleTakePosition,
+  handleCreateEdge,
 } from "./tools.js";
 
 // Log mode
@@ -29,7 +29,7 @@ if (hasApiKey()) {
   );
 } else {
   console.error(
-    "OpenLattice MCP Server: No API key. Read-only mode (search_wiki, get_topic, list_bounties, get_claim, get_reputation, list_recent_activity).",
+    "OpenLattice MCP Server: No API key. Read-only mode (search_wiki, get_topic, list_bounties, get_reputation, list_recent_activity).",
   );
 }
 
@@ -38,7 +38,6 @@ const READ_ONLY_TOOLS = new Set([
   "search_wiki",
   "get_topic",
   "list_bounties",
-  "get_claim",
   "get_reputation",
   "list_recent_activity",
 ]);
@@ -69,9 +68,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case "list_bounties":
       return handleListBounties();
 
-    case "get_claim":
-      return handleGetClaim(args as { slug: string });
-
     case "get_reputation":
       return handleGetReputation(args as { contributorId: string });
 
@@ -98,12 +94,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             targetTopicSlug: string;
             relationType: string;
           }>;
-          claims?: Array<{
-            title: string;
-            description?: string;
-            stakeAmount?: number;
-            evidence?: string;
-          }>;
+          tags?: string[];
           bountyId?: string;
         },
       );
@@ -119,38 +110,38 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         },
       );
 
+    case "list_revision_requests":
+      return handleListRevisionRequests(args as { limit?: number });
+
+    case "resubmit_revision":
+      return handleResubmitRevision(
+        args as {
+          submissionId: string;
+          topic: {
+            title: string;
+            content: string;
+            summary?: string;
+            difficulty?: string;
+            parentTopicSlug?: string;
+          };
+          resources?: Array<{ name: string; url?: string; type: string; summary: string }>;
+          edges?: Array<{ targetTopicSlug: string; relationType: string }>;
+          tags?: string[];
+        },
+      );
+
+    case "list_my_submissions":
+      return handleListMySubmissions(args as { limit?: number });
+
+    case "claim_bounty":
+      return handleClaimBounty(args as { bountyId: string });
+
     case "create_edge":
       return handleCreateEdge(
         args as {
           sourceTopicSlug: string;
           targetTopicSlug: string;
           relationType: string;
-        },
-      );
-
-    case "claim_bounty":
-      return handleClaimBounty(args as { bountyId: string; content: string });
-
-    case "make_claim":
-      return handleMakeClaim(
-        args as {
-          title: string;
-          description?: string;
-          topicSlug: string;
-          stakeAmount?: number;
-          position?: string;
-          evidence?: string;
-        },
-      );
-
-    case "take_position":
-      return handleTakePosition(
-        args as {
-          claimId: string;
-          position: string;
-          stakeAmount?: number;
-          evidence?: string;
-          resourceId?: string;
         },
       );
 

@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import {
   index,
   integer,
@@ -28,9 +28,7 @@ export const bountyStatusEnum = pgEnum("bounty_status", [
 export const bounties = pgTable(
   "bounties",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     title: text("title").notNull(),
     description: text("description").notNull(),
     type: bountyTypeEnum("type").notNull(),
@@ -39,6 +37,13 @@ export const bounties = pgTable(
       onDelete: "set null",
     }),
     karmaReward: integer("karma_reward").notNull().default(10),
+    icon: text("icon"),
+    iconHue: integer("icon_hue"),
+    claimedById: text("claimed_by_id").references(() => contributors.id, {
+      onDelete: "set null",
+    }),
+    claimedAt: timestamp("claimed_at"),
+    claimExpiresAt: timestamp("claim_expires_at"),
     completedById: text("completed_by_id").references(() => contributors.id, {
       onDelete: "set null",
     }),
@@ -59,9 +64,15 @@ export const bountiesRelations = relations(bounties, ({ one, many }) => ({
     fields: [bounties.topicId],
     references: [topics.id],
   }),
+  claimedBy: one(contributors, {
+    fields: [bounties.claimedById],
+    references: [contributors.id],
+    relationName: "bountyClaimedBy",
+  }),
   completedBy: one(contributors, {
     fields: [bounties.completedById],
     references: [contributors.id],
+    relationName: "bountyCompletedBy",
   }),
   submissions: many(submissions),
 }));

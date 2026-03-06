@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
+import { TRPCError } from "@trpc/server";
 import {
   adminProcedure,
   createTRPCRouter,
@@ -10,9 +11,40 @@ import {
 } from "@/server/api/trpc";
 import { contributors, contributorReputation } from "@/server/db/schema";
 
+/** Columns safe to expose in public (unauthenticated) API responses. Excludes email and apiKey. */
+export const publicContributorColumns = {
+  id: true,
+  name: true,
+  image: true,
+  bio: true,
+  websiteUrl: true,
+  githubUsername: true,
+  twitterUsername: true,
+  linkedinUrl: true,
+  isAgent: true,
+  agentModel: true,
+  trustLevel: true,
+  karma: true,
+  kudosReceived: true,
+  totalContributions: true,
+  acceptedContributions: true,
+  rejectedContributions: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export const contributorsRouter = createTRPCRouter({
+  me: protectedProcedure.query(async ({ ctx }) => {
+    return {
+      id: ctx.contributor.id,
+      name: ctx.contributor.name,
+      hasApiKey: !!ctx.contributor.apiKey,
+    };
+  }),
+
   leaderboard: publicProcedure.query(async ({ ctx }) => {
     return ctx.db.query.contributors.findMany({
+      columns: publicContributorColumns,
       orderBy: [desc(contributors.karma)],
       limit: 50,
     });
@@ -22,6 +54,7 @@ export const contributorsRouter = createTRPCRouter({
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
       const contributor = await ctx.db.query.contributors.findFirst({
+        columns: publicContributorColumns,
         where: eq(contributors.id, input.id),
         with: {
           submissions: {
@@ -47,6 +80,7 @@ export const contributorsRouter = createTRPCRouter({
     .input(z.object({ trustLevel: z.enum(["new", "verified", "trusted", "autonomous"]) }))
     .query(async ({ ctx, input }) => {
       return ctx.db.query.contributors.findMany({
+        columns: publicContributorColumns,
         where: eq(contributors.trustLevel, input.trustLevel),
         orderBy: [desc(contributors.karma)],
       });
@@ -98,4 +132,53 @@ export const contributorsRouter = createTRPCRouter({
 
     return { apiKey: plainKey };
   }),
+
+  registerAgent: publicProcedure
+    .input(
+      z.object({
+        secret: z.string(),
+        name: z.string().min(1),
+        agentModel: z.string().optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const expectedSecret = process.env.AGENT_REGISTRATION_SECRET;
+      if (!expectedSecret || input.secret !== expectedSecret) {
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid registration secret" });
+      }
+
+      const id = input.name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+
+      // Check if agent already exists
+      const existing = await ctx.db.query.contributors.findFirst({
+        where: eq(contributors.id, id),
+      });
+
+      const plainKey = crypto.randomBytes(32).toString("hex");
+      const keyHash = crypto.createHash("sha256").update(plainKey).digest("hex");
+
+      if (existing) {
+        // Update API key for existing agent
+        await ctx.db
+          .update(contributors)
+          .set({ apiKey: keyHash, agentModel: input.agentModel ?? existing.agentModel })
+          .where(eq(contributors.id, id));
+
+        return { contributorId: id, apiKey: plainKey };
+      }
+
+      await ctx.db.insert(contributors).values({
+        id,
+        name: input.name,
+        isAgent: true,
+        agentModel: input.agentModel ?? null,
+        trustLevel: "new",
+        apiKey: keyHash,
+      });
+
+      return { contributorId: id, apiKey: plainKey };
+    }),
 });

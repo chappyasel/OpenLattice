@@ -13,7 +13,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "npx tsx ./scripts/seed.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.58",
@@ -30,7 +31,9 @@
     "@radix-ui/react-tabs": "^1.1.12",
     "@radix-ui/react-tooltip": "^1.1.2",
     "@t3-oss/env-nextjs": "^0.13.8",
+    "@tanstack/query-sync-storage-persister": "^5.90.24",
     "@tanstack/react-query": "^5.56.2",
+    "@tanstack/react-query-persist-client": "^5.90.24",
     "@trpc/client": "^11.0.0-rc.446",
     "@trpc/react-query": "^11.0.0-rc.446",
     "@trpc/server": "^11.0.0-rc.446",
@@ -41,10 +44,12 @@
     "date-fns": "^4.1.0",
     "drizzle-kit": "^0.31.5",
     "drizzle-orm": "^0.44.5",
+    "framer-motion": "^12.35.0",
     "next": "15.5.12",
     "next-auth": "^5.0.0-beta.22",
     "next-themes": "^0.3.0",
     "nuqs": "^2.2.3",
+    "ogl": "^1.0.11",
     "postgres": "^3.4.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",

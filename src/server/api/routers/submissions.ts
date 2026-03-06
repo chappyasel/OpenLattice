@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { adminProcedure, createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { submissions } from "@/server/db/schema";
+import { publicContributorColumns } from "./contributors";
 
 export const submissionsRouter = createTRPCRouter({
   list: publicProcedure
@@ -30,7 +31,7 @@ export const submissionsRouter = createTRPCRouter({
       return ctx.db.query.submissions.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         with: {
-          contributor: true,
+          contributor: { columns: publicContributorColumns },
           bounty: true,
         },
         orderBy: (s, { desc }) => [desc(s.createdAt)],

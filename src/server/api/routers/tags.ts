@@ -7,6 +7,8 @@ import {
   publicProcedure,
 } from "@/server/api/trpc";
 import { resourceTags, tags, topicTags } from "@/server/db/schema";
+import { iconSchema } from "@/lib/phosphor-icons";
+import { slugify } from "@/lib/utils";
 
 export const tagsRouter = createTRPCRouter({
   list: publicProcedure.query(async ({ ctx }) => {
@@ -15,17 +17,30 @@ export const tagsRouter = createTRPCRouter({
     });
   }),
 
+  getById: publicProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.tags.findFirst({
+        where: eq(tags.id, input.id),
+        with: {
+          topicTags: { with: { topic: true } },
+          resourceTags: { with: { resource: true } },
+        },
+      });
+    }),
+
   create: adminProcedure
     .input(
       z.object({
         name: z.string().min(1),
-        hue: z.number().int().min(0).max(360).default(0),
-        emoji: z.string().optional(),
+        iconHue: z.number().int().min(0).max(360).optional().nullable(),
+        icon: iconSchema.optional().nullable(),
         description: z.string().default(""),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const [tag] = await ctx.db.insert(tags).values(input).returning();
+      const id = slugify(input.name);
+      const [tag] = await ctx.db.insert(tags).values({ ...input, id }).returning();
       return tag!;
     }),
 
@@ -34,8 +49,8 @@ export const tagsRouter = createTRPCRouter({
       z.object({
         id: z.string(),
         name: z.string().min(1).optional(),
-        hue: z.number().int().min(0).max(360).optional(),
-        emoji: z.string().optional().nullable(),
+        iconHue: z.number().int().min(0).max(360).optional().nullable(),
+        icon: iconSchema.optional().nullable(),
         description: z.string().optional(),
       }),
     )
@@ -54,7 +69,7 @@ export const tagsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const [row] = await ctx.db
         .insert(topicTags)
-        .values(input)
+        .values({ ...input, id: `${input.topicId}--${input.tagId}` })
         .onConflictDoNothing()
         .returning();
       return row;
@@ -65,7 +80,7 @@ export const tagsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const [row] = await ctx.db
         .insert(resourceTags)
-        .values(input)
+        .values({ ...input, id: `${input.resourceId}--${input.tagId}` })
         .onConflictDoNothing()
         .returning();
       return row;

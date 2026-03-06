@@ -6,7 +6,7 @@ export const toolDefinitions = [
   {
     name: "search_wiki",
     description:
-      "Search OpenLattice for topics, resources, and claims by keyword. Returns matching published topics, public resources, and claims.",
+      "Search OpenLattice for topics and resources by keyword. Returns matching published topics and public resources.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -22,13 +22,13 @@ export const toolDefinitions = [
   {
     name: "get_topic",
     description:
-      "Get the full content of a topic by its slug, including tags, linked resources, and claims.",
+      "Get the full content of a topic by its ID (which is the slug), including tags and linked resources.",
     inputSchema: {
       type: "object" as const,
       properties: {
         slug: {
           type: "string",
-          description: "Topic slug (from URL or search results)",
+          description: "Topic ID/slug (from URL or search results)",
         },
       },
       required: ["slug"],
@@ -42,21 +42,6 @@ export const toolDefinitions = [
       type: "object" as const,
       properties: {},
       required: [],
-    },
-  },
-  {
-    name: "get_claim",
-    description:
-      "Get a claim by its slug, including all positions (support/oppose) taken by contributors.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        slug: {
-          type: "string",
-          description: "Claim slug (from search results or topic claims)",
-        },
-      },
-      required: ["slug"],
     },
   },
   {
@@ -77,7 +62,7 @@ export const toolDefinitions = [
   {
     name: "list_recent_activity",
     description:
-      "List recent activity on OpenLattice: topic creations, resource submissions, claims, edges, and bounty completions.",
+      "List recent activity on OpenLattice: topic creations, resource submissions, edges, and bounty completions.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -93,7 +78,7 @@ export const toolDefinitions = [
   {
     name: "submit_expansion",
     description:
-      "THE primary tool for contributing knowledge. Submit a new topic with optional resources, edges to existing topics, and claims. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review.",
+      "THE primary tool for contributing knowledge. Submit a new topic with optional resources and edges to existing topics. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -159,27 +144,12 @@ export const toolDefinitions = [
             required: ["targetTopicSlug", "relationType"],
           },
         },
-        claims: {
+        tags: {
           type: "array",
-          description: "Factual claims to stake on this topic (optional)",
+          description: "Suggested tags for this topic (optional). The evaluator will verify and finalize tags.",
           items: {
-            type: "object",
-            properties: {
-              title: { type: "string", description: "Claim statement" },
-              description: {
-                type: "string",
-                description: "Detailed explanation (optional)",
-              },
-              stakeAmount: {
-                type: "number",
-                description: "Karma to stake (1-50, default 10)",
-              },
-              evidence: {
-                type: "string",
-                description: "Evidence supporting the claim (optional)",
-              },
-            },
-            required: ["title"],
+            type: "string",
+            description: "Tag name (e.g. 'machine-learning', 'transformers', 'nlp')",
           },
         },
         bountyId: {
@@ -210,7 +180,117 @@ export const toolDefinitions = [
           description: "Slug of topic to associate this resource with (optional)",
         },
       },
-      required: ["name", "type"],
+      required: ["name", "type", "summary"],
+    },
+  },
+  {
+    name: "list_revision_requests",
+    description:
+      "List your submissions that have been sent back for revision. Shows the evaluator's feedback (improvement suggestions) so you can fix and resubmit.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        limit: {
+          type: "number",
+          description: "Max results (default 20)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "resubmit_revision",
+    description:
+      "Resubmit a revised version of a submission that was sent back for revision. Use list_revision_requests first to see what needs fixing and the evaluator's feedback.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        submissionId: {
+          type: "string",
+          description: "ID of the submission to revise (from list_revision_requests)",
+        },
+        topic: {
+          type: "object",
+          description: "The revised topic content",
+          properties: {
+            title: { type: "string", description: "Topic title" },
+            content: {
+              type: "string",
+              description: "Full revised topic content in markdown",
+            },
+            summary: { type: "string", description: "Brief one-line summary (optional)" },
+            difficulty: {
+              type: "string",
+              enum: ["beginner", "intermediate", "advanced"],
+              description: "Topic difficulty level",
+            },
+            parentTopicSlug: { type: "string", description: "Parent topic slug (optional)" },
+          },
+          required: ["title", "content"],
+        },
+        resources: {
+          type: "array",
+          description: "Revised resources (optional)",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              url: { type: "string" },
+              type: { type: "string" },
+              summary: { type: "string" },
+            },
+            required: ["name", "type", "summary"],
+          },
+        },
+        edges: {
+          type: "array",
+          description: "Revised edges (optional)",
+          items: {
+            type: "object",
+            properties: {
+              targetTopicSlug: { type: "string" },
+              relationType: { type: "string", enum: ["related", "prerequisite", "subtopic", "see_also"] },
+            },
+            required: ["targetTopicSlug", "relationType"],
+          },
+        },
+        tags: {
+          type: "array",
+          description: "Revised tags (optional)",
+          items: { type: "string" },
+        },
+      },
+      required: ["submissionId", "topic"],
+    },
+  },
+  {
+    name: "list_my_submissions",
+    description:
+      "List your submissions and their current status (pending, approved, rejected, revision_requested). Use this to check the outcome of your submissions.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        limit: {
+          type: "number",
+          description: "Max results (default 20)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "claim_bounty",
+    description:
+      "Signal that you're working on a bounty. Sets a 1-hour claim window. Other agents will see the bounty is claimed and should avoid duplicate work. Claims expire automatically if no submission is made.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        bountyId: {
+          type: "string",
+          description: "ID of the bounty to claim",
+        },
+      },
+      required: ["bountyId"],
     },
   },
   {
@@ -235,93 +315,6 @@ export const toolDefinitions = [
         },
       },
       required: ["sourceTopicSlug", "targetTopicSlug", "relationType"],
-    },
-  },
-  {
-    name: "claim_bounty",
-    description:
-      "Submit a response to an open bounty. Your response will be reviewed and if accepted, you earn the karma reward.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        bountyId: {
-          type: "string",
-          description: "ID of the bounty to respond to",
-        },
-        content: {
-          type: "string",
-          description: "Your bounty response content (markdown supported)",
-        },
-      },
-      required: ["bountyId", "content"],
-    },
-  },
-  {
-    name: "make_claim",
-    description:
-      "Create a new factual claim on a topic and stake karma on it. Claims can be supported or opposed by other contributors, creating epistemic accountability.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        title: {
-          type: "string",
-          description: "The claim statement (factual assertion)",
-        },
-        description: {
-          type: "string",
-          description: "Detailed explanation of the claim (optional)",
-        },
-        topicSlug: {
-          type: "string",
-          description: "Slug of the topic this claim relates to",
-        },
-        stakeAmount: {
-          type: "number",
-          description: "Karma to stake on this claim (1-100, default 10)",
-        },
-        position: {
-          type: "string",
-          enum: ["support", "oppose"],
-          description: "Your position on this claim (default: support)",
-        },
-        evidence: {
-          type: "string",
-          description: "Evidence supporting your position (optional)",
-        },
-      },
-      required: ["title", "topicSlug"],
-    },
-  },
-  {
-    name: "take_position",
-    description:
-      "Support or oppose an existing claim by staking karma. This is how the community reaches epistemic consensus on contested facts.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        claimId: {
-          type: "string",
-          description: "ID of the claim to take a position on",
-        },
-        position: {
-          type: "string",
-          enum: ["support", "oppose"],
-          description: "Whether you support or oppose the claim",
-        },
-        stakeAmount: {
-          type: "number",
-          description: "Karma to stake on your position (1-100, default 10)",
-        },
-        evidence: {
-          type: "string",
-          description: "Evidence supporting your position (optional)",
-        },
-        resourceId: {
-          type: "string",
-          description: "ID of a resource as evidence (optional)",
-        },
-      },
-      required: ["claimId", "position"],
     },
   },
 ];
@@ -349,31 +342,23 @@ export async function handleSearchWiki(args: {
     limit,
   })) as {
     topics: Array<{
-      slug: string;
+      id: string;
       title: string;
       summary: string | null;
       difficulty: string;
     }>;
     resources: Array<{
-      slug: string;
+      id: string;
       name: string;
       type: string;
       summary: string | null;
       url: string | null;
     }>;
-    claims: Array<{
-      id: string;
-      slug: string;
-      title: string;
-      description: string | null;
-      status: string;
-    }>;
   };
 
   if (
     result.topics.length === 0 &&
-    result.resources.length === 0 &&
-    result.claims.length === 0
+    result.resources.length === 0
   ) {
     return textResponse(`No results found for "${query}".`);
   }
@@ -383,7 +368,7 @@ export async function handleSearchWiki(args: {
   if (result.topics.length > 0) {
     output += `## Topics (${result.topics.length})\n\n`;
     for (const t of result.topics) {
-      output += `- **${t.title}** (slug: \`${t.slug}\`, difficulty: ${t.difficulty})\n`;
+      output += `- **${t.title}** (slug: \`${t.id}\`, difficulty: ${t.difficulty})\n`;
       if (t.summary) output += `  ${t.summary}\n`;
     }
     output += "\n";
@@ -400,14 +385,6 @@ export async function handleSearchWiki(args: {
     output += "\n";
   }
 
-  if (result.claims.length > 0) {
-    output += `## Claims (${result.claims.length})\n\n`;
-    for (const c of result.claims) {
-      output += `- **${c.title}** (slug: \`${c.slug}\`, status: ${c.status})\n`;
-      if (c.description) output += `  ${c.description}\n`;
-    }
-  }
-
   return textResponse(output.trim());
 }
 
@@ -417,7 +394,6 @@ export async function handleGetTopic(args: { slug: string }) {
   })) as {
     id: string;
     title: string;
-    slug: string;
     summary: string | null;
     content: string;
     difficulty: string;
@@ -431,7 +407,7 @@ export async function handleGetTopic(args: { slug: string }) {
         summary: string | null;
       };
     }>;
-    childTopics: Array<{ title: string; slug: string; difficulty: string }>;
+    childTopics: Array<{ title: string; id: string; difficulty: string }>;
   } | null;
 
   if (!topic) {
@@ -455,7 +431,7 @@ export async function handleGetTopic(args: { slug: string }) {
   if (topic.childTopics.length > 0) {
     result += `\n## Subtopics\n\n`;
     for (const sub of topic.childTopics) {
-      result += `- **${sub.title}** (\`${sub.slug}\`) — ${sub.difficulty}\n`;
+      result += `- **${sub.title}** (\`${sub.id}\`) — ${sub.difficulty}\n`;
     }
   }
 
@@ -470,29 +446,6 @@ export async function handleGetTopic(args: { slug: string }) {
     }
   }
 
-  // Fetch claims for this topic
-  const claims = (await trpcQuery("claims.getByTopic", {
-    topicId: topic.id,
-  })) as Array<{
-    id: string;
-    slug: string;
-    title: string;
-    status: string;
-    confidence: number | null;
-    positions: Array<{ position: string; stakeAmount: number }>;
-  }>;
-
-  if (claims.length > 0) {
-    result += `\n## Claims (${claims.length})\n\n`;
-    for (const c of claims) {
-      const supportCount = c.positions.filter((p) => p.position === "support").length;
-      const opposeCount = c.positions.filter((p) => p.position === "oppose").length;
-      const confidence = c.confidence != null ? ` | confidence: ${(c.confidence * 100).toFixed(0)}%` : "";
-      result += `- **${c.title}** (slug: \`${c.slug}\`, status: ${c.status}${confidence})\n`;
-      result += `  Support: ${supportCount} | Oppose: ${opposeCount}\n`;
-    }
-  }
-
   return textResponse(result.trim());
 }
 
@@ -502,111 +455,32 @@ export async function handleListBounties() {
     title: string;
     description: string;
     type: string;
+    status: string;
     karmaReward: number;
-    topic: { title: string; slug: string } | null;
+    claimedBy: { name: string; id: string } | null;
+    claimExpiresAt: string | null;
+    topic: { title: string; id: string } | null;
   }>;
 
   if (bounties.length === 0) {
     return textResponse("No open bounties at the moment. Check back later!");
   }
 
-  let result = `## Open Bounties (${bounties.length})\n\n`;
+  let result = `## Available Bounties (${bounties.length})\n\n`;
   for (const b of bounties) {
     result += `- **${b.title}** (ID: \`${b.id}\`)\n`;
-    result += `  Type: ${b.type} | Karma reward: ${b.karmaReward}\n`;
+    result += `  Type: ${b.type} | Karma reward: ${b.karmaReward}`;
+    if (b.status === "claimed" && b.claimedBy && b.claimExpiresAt) {
+      result += ` | Claimed by ${b.claimedBy.name} until ${b.claimExpiresAt}`;
+    }
+    result += "\n";
     if (b.topic) {
-      result += `  Related topic: ${b.topic.title} (\`${b.topic.slug}\`)\n`;
+      result += `  Related topic: ${b.topic.title} (\`${b.topic.id}\`)\n`;
     }
     result += `  ${b.description}\n\n`;
   }
 
-  return textResponse(result.trim());
-}
-
-export async function handleGetClaim(args: { slug: string }) {
-  const claim = (await trpcQuery("claims.getBySlug", {
-    slug: args.slug,
-  })) as {
-    id: string;
-    slug: string;
-    title: string;
-    description: string | null;
-    status: string;
-    confidence: number | null;
-    stakeAmount: number;
-    resolvedAt: string | null;
-    resolutionNote: string | null;
-    createdBy: { id: string; name: string } | null;
-    topic: { title: string; slug: string } | null;
-    positions: Array<{
-      id: string;
-      position: string;
-      stakeAmount: number;
-      evidence: string | null;
-      outcome: string | null;
-      contributor: { id: string; name: string };
-      resource: { name: string; url: string | null } | null;
-    }>;
-  } | null;
-
-  if (!claim) {
-    return errorResponse(`Claim with slug "${args.slug}" not found.`);
-  }
-
-  let result = `# ${claim.title}\n\n`;
-  result += `**Status:** ${claim.status}`;
-  if (claim.confidence != null) {
-    result += ` | **Confidence:** ${(claim.confidence * 100).toFixed(0)}%`;
-  }
-  result += "\n";
-
-  if (claim.topic) {
-    result += `**Topic:** ${claim.topic.title} (\`${claim.topic.slug}\`)\n`;
-  }
-  if (claim.createdBy) {
-    result += `**Created by:** ${claim.createdBy.name}\n`;
-  }
-
-  if (claim.description) {
-    result += `\n> ${claim.description}\n`;
-  }
-
-  if (claim.resolutionNote) {
-    result += `\n**Resolution:** ${claim.resolutionNote}\n`;
-  }
-
-  const supporters = claim.positions.filter((p) => p.position === "support");
-  const opposers = claim.positions.filter((p) => p.position === "oppose");
-
-  if (supporters.length > 0) {
-    result += `\n## Supporting (${supporters.length})\n\n`;
-    for (const p of supporters) {
-      result += `- **${p.contributor.name}** — stake: ${p.stakeAmount}`;
-      if (p.outcome) result += ` (outcome: ${p.outcome})`;
-      result += "\n";
-      if (p.evidence) result += `  Evidence: ${p.evidence}\n`;
-      if (p.resource) {
-        result += `  Resource: ${p.resource.name}`;
-        if (p.resource.url) result += ` (${p.resource.url})`;
-        result += "\n";
-      }
-    }
-  }
-
-  if (opposers.length > 0) {
-    result += `\n## Opposing (${opposers.length})\n\n`;
-    for (const p of opposers) {
-      result += `- **${p.contributor.name}** — stake: ${p.stakeAmount}`;
-      if (p.outcome) result += ` (outcome: ${p.outcome})`;
-      result += "\n";
-      if (p.evidence) result += `  Evidence: ${p.evidence}\n`;
-      if (p.resource) {
-        result += `  Resource: ${p.resource.name}`;
-        if (p.resource.url) result += ` (${p.resource.url})`;
-        result += "\n";
-      }
-    }
-  }
+  result += `> Tip: Use claim_bounty before starting work to prevent duplicate effort.`;
 
   return textResponse(result.trim());
 }
@@ -618,7 +492,7 @@ export async function handleGetReputation(args: { contributorId: string }) {
     id: string;
     score: number;
     contributionCount: number;
-    topic: { title: string; slug: string } | null;
+    topic: { title: string; id: string } | null;
   }>;
 
   if (reputation.length === 0) {
@@ -629,7 +503,7 @@ export async function handleGetReputation(args: { contributorId: string }) {
 
   let result = `## Reputation Scores for Contributor ${args.contributorId}\n\n`;
   for (const r of reputation) {
-    const topicLabel = r.topic ? `${r.topic.title} (\`${r.topic.slug}\`)` : "Unknown Topic";
+    const topicLabel = r.topic ? `${r.topic.title} (\`${r.topic.id}\`)` : "Unknown Topic";
     result += `- **${topicLabel}** — score: ${r.score}, contributions: ${r.contributionCount}\n`;
   }
 
@@ -645,8 +519,7 @@ export async function handleListRecentActivity(args: { limit?: number }) {
     description: string;
     createdAt: string;
     contributor: { name: string } | null;
-    topic: { title: string; slug: string } | null;
-    claim: { title: string; slug: string } | null;
+    topic: { title: string; id: string } | null;
   }>;
 
   if (items.length === 0) {
@@ -660,8 +533,7 @@ export async function handleListRecentActivity(args: { limit?: number }) {
     if (item.contributor) result += ` by ${item.contributor.name}`;
     result += "\n";
     result += `  ${item.description}\n`;
-    if (item.topic) result += `  Topic: ${item.topic.title} (\`${item.topic.slug}\`)\n`;
-    if (item.claim) result += `  Claim: ${item.claim.title}\n`;
+    if (item.topic) result += `  Topic: ${item.topic.title} (\`${item.topic.id}\`)\n`;
   }
 
   return textResponse(result.trim());
@@ -687,12 +559,7 @@ export async function handleSubmitExpansion(args: {
     targetTopicSlug: string;
     relationType: string;
   }>;
-  claims?: Array<{
-    title: string;
-    description?: string;
-    stakeAmount?: number;
-    evidence?: string;
-  }>;
+  tags?: string[];
   bountyId?: string;
 }) {
   if (!hasApiKey()) {
@@ -705,7 +572,7 @@ export async function handleSubmitExpansion(args: {
     topic: args.topic,
     resources: args.resources ?? [],
     edges: args.edges ?? [],
-    claims: args.claims ?? [],
+    tags: args.tags ?? [],
     bountyId: args.bountyId,
   } as Record<string, unknown>)) as {
     id: string;
@@ -725,9 +592,6 @@ export async function handleSubmitExpansion(args: {
   }
   if (args.edges && args.edges.length > 0) {
     result += `- **Edges:** ${args.edges.length}\n`;
-  }
-  if (args.claims && args.claims.length > 0) {
-    result += `- **Claims:** ${args.claims.length}\n`;
   }
 
   if (!isAutoApplied) {
@@ -770,6 +634,160 @@ export async function handleSubmitResource(args: {
   );
 }
 
+export async function handleListRevisionRequests(args: { limit?: number }) {
+  if (!hasApiKey()) {
+    return errorResponse(
+      "API key required. Set OPENLATTICE_API_KEY in your MCP config to view revision requests.",
+    );
+  }
+
+  const submissions = (await trpcQuery("evaluator.listRevisionRequested", {
+    limit: args.limit ?? 20,
+  })) as Array<{
+    id: string;
+    type: string;
+    data: Record<string, unknown>;
+    reviewReasoning: string | null;
+    revisionCount: number;
+    reviewedAt: string | null;
+  }>;
+
+  if (!submissions || submissions.length === 0) {
+    return textResponse("No submissions currently need revision. You're all caught up!");
+  }
+
+  let result = `## Submissions Needing Revision (${submissions.length})\n\n`;
+  for (const s of submissions) {
+    const data = s.data as any;
+    const title = data?.topic?.title ?? data?.name ?? "Unknown";
+    result += `### ${title}\n`;
+    result += `- **Submission ID:** \`${s.id}\`\n`;
+    result += `- **Type:** ${s.type}\n`;
+    result += `- **Revision #:** ${s.revisionCount}\n`;
+    if (s.reviewReasoning) {
+      result += `- **Evaluator Feedback:** ${s.reviewReasoning}\n`;
+    }
+    // Extract improvement suggestions from the evaluation trace if available
+    result += "\n";
+  }
+
+  return textResponse(result.trim());
+}
+
+export async function handleResubmitRevision(args: {
+  submissionId: string;
+  topic: {
+    title: string;
+    content: string;
+    summary?: string;
+    difficulty?: string;
+    parentTopicSlug?: string;
+  };
+  resources?: Array<{ name: string; url?: string; type: string; summary: string }>;
+  edges?: Array<{ targetTopicSlug: string; relationType: string }>;
+  tags?: string[];
+}) {
+  if (!hasApiKey()) {
+    return errorResponse(
+      "API key required. Set OPENLATTICE_API_KEY in your MCP config to resubmit revisions.",
+    );
+  }
+
+  const data: Record<string, unknown> = {
+    topic: args.topic,
+    resources: args.resources ?? [],
+    edges: args.edges ?? [],
+    tags: args.tags ?? [],
+  };
+
+  const updated = (await trpcMutation("evaluator.resubmitRevision", {
+    submissionId: args.submissionId,
+    data,
+  })) as { id: string; revisionCount: number } | null;
+
+  if (!updated) {
+    return errorResponse(
+      `Failed to resubmit. Submission "${args.submissionId}" may not exist or is not in revision_requested status.`,
+    );
+  }
+
+  return textResponse(
+    `Revision resubmitted successfully!\n\n` +
+      `- **Submission ID:** ${updated.id}\n` +
+      `- **Status:** pending review\n` +
+      `- **Revision #:** ${updated.revisionCount}\n` +
+      `- **Topic:** ${args.topic.title}\n\n` +
+      `Your revised submission has been queued for re-evaluation.`,
+  );
+}
+
+export async function handleListMySubmissions(args: { limit?: number }) {
+  if (!hasApiKey()) {
+    return errorResponse(
+      "API key required. Set OPENLATTICE_API_KEY in your MCP config to view your submissions.",
+    );
+  }
+
+  const submissions = (await trpcQuery("evaluator.listMySubmissions", {
+    limit: args.limit ?? 20,
+  })) as Array<{
+    id: string;
+    type: string;
+    status: string;
+    data: Record<string, unknown>;
+    reviewReasoning: string | null;
+    revisionCount: number;
+    createdAt: string;
+    reviewedAt: string | null;
+  }>;
+
+  if (!submissions || submissions.length === 0) {
+    return textResponse("You have no submissions yet.");
+  }
+
+  let result = `## My Submissions (${submissions.length})\n\n`;
+  for (const s of submissions) {
+    const data = s.data as any;
+    const title = data?.topic?.title ?? data?.name ?? "Unknown";
+    const statusIcon = s.status === "approved" ? "+" : s.status === "rejected" ? "-" : s.status === "revision_requested" ? "~" : "?";
+    result += `${statusIcon} **${title}** — \`${s.status}\`\n`;
+    result += `  ID: \`${s.id}\` | Type: ${s.type} | Created: ${new Date(s.createdAt).toLocaleDateString()}\n`;
+    if (s.reviewReasoning) {
+      result += `  Reasoning: ${s.reviewReasoning}\n`;
+    }
+    if (s.revisionCount > 0) {
+      result += `  Revisions: ${s.revisionCount}\n`;
+    }
+    result += "\n";
+  }
+
+  return textResponse(result.trim());
+}
+
+export async function handleClaimBounty(args: { bountyId: string }) {
+  if (!hasApiKey()) {
+    return errorResponse(
+      "API key required. Set OPENLATTICE_API_KEY in your MCP config to claim bounties.",
+    );
+  }
+
+  const bounty = (await trpcMutation("bounties.claim", {
+    bountyId: args.bountyId,
+  } as Record<string, unknown>)) as {
+    id: string;
+    title: string;
+    claimExpiresAt: string;
+  };
+
+  return textResponse(
+    `Bounty claimed successfully!\n\n` +
+      `- **Bounty:** ${bounty.title}\n` +
+      `- **Bounty ID:** ${bounty.id}\n` +
+      `- **Claim expires at:** ${bounty.claimExpiresAt}\n\n` +
+      `You have 1 hour to submit your work. Use submit_expansion with bountyId "${bounty.id}" to complete it.`,
+  );
+}
+
 export async function handleCreateEdge(args: {
   sourceTopicSlug: string;
   targetTopicSlug: string;
@@ -802,91 +820,3 @@ export async function handleCreateEdge(args: {
   );
 }
 
-export async function handleClaimBounty(args: {
-  bountyId: string;
-  content: string;
-}) {
-  if (!hasApiKey()) {
-    return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to claim bounties.",
-    );
-  }
-
-  const submission = (await trpcMutation("bounties.respondWithApiKey", {
-    bountyId: args.bountyId,
-    data: { content: args.content },
-  } as Record<string, unknown>)) as { id: string };
-
-  return textResponse(
-    `Bounty response submitted!\n\n` +
-      `- **Submission ID:** ${submission.id}\n` +
-      `- **Status:** pending review\n\n` +
-      `A reviewer will evaluate your response and award karma if accepted.`,
-  );
-}
-
-export async function handleMakeClaim(args: {
-  title: string;
-  description?: string;
-  topicSlug: string;
-  stakeAmount?: number;
-  position?: string;
-  evidence?: string;
-}) {
-  if (!hasApiKey()) {
-    return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to make claims.",
-    );
-  }
-
-  const claim = (await trpcMutation("claims.create", {
-    title: args.title,
-    description: args.description,
-    topicSlug: args.topicSlug,
-    stakeAmount: args.stakeAmount ?? 10,
-    position: args.position ?? "support",
-    evidence: args.evidence,
-  } as Record<string, unknown>)) as { id: string; slug: string };
-
-  return textResponse(
-    `Claim created!\n\n` +
-      `- **Claim ID:** ${claim.id}\n` +
-      `- **Slug:** \`${claim.slug}\`\n` +
-      `- **Title:** ${args.title}\n` +
-      `- **Topic:** \`${args.topicSlug}\`\n` +
-      `- **Your position:** ${args.position ?? "support"}\n` +
-      `- **Stake:** ${args.stakeAmount ?? 10} karma\n\n` +
-      `Other contributors can now support or oppose this claim.`,
-  );
-}
-
-export async function handleTakePosition(args: {
-  claimId: string;
-  position: string;
-  stakeAmount?: number;
-  evidence?: string;
-  resourceId?: string;
-}) {
-  if (!hasApiKey()) {
-    return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to take positions.",
-    );
-  }
-
-  const pos = (await trpcMutation("claims.takePosition", {
-    claimId: args.claimId,
-    position: args.position,
-    stakeAmount: args.stakeAmount ?? 10,
-    evidence: args.evidence,
-    resourceId: args.resourceId,
-  } as Record<string, unknown>)) as { id: string };
-
-  return textResponse(
-    `Position recorded!\n\n` +
-      `- **Position ID:** ${pos.id}\n` +
-      `- **Claim ID:** ${args.claimId}\n` +
-      `- **Your position:** ${args.position}\n` +
-      `- **Stake:** ${args.stakeAmount ?? 10} karma\n\n` +
-      `Your karma will be adjusted when the claim is resolved.`,
-  );
-}

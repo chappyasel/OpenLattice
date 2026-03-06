@@ -13,11 +13,12 @@ import {
   resources,
   topicResources,
   edges,
-  claims,
-  claimPositions,
   activity,
+  tags,
+  topicTags,
 } from "@/server/db/schema";
-import { slugify } from "@/lib/utils";
+import { activityId, generateUniqueId, slugify } from "@/lib/utils";
+import { publicContributorColumns } from "./contributors";
 
 const expansionSchema = z.object({
   topic: z.object({
@@ -47,17 +48,7 @@ const expansionSchema = z.object({
     )
     .optional()
     .default([]),
-  claims: z
-    .array(
-      z.object({
-        title: z.string(),
-        description: z.string().optional(),
-        stakeAmount: z.number().int().min(1).max(50).default(10),
-        evidence: z.string().optional(),
-      }),
-    )
-    .optional()
-    .default([]),
+  tags: z.array(z.string()).optional().default([]),
   bountyId: z.string().optional(),
 });
 
@@ -71,7 +62,8 @@ export const expansionsRouter = createTRPCRouter({
       const [submission] = await ctx.db
         .insert(submissions)
         .values({
-          type: "expansion",
+          id: activityId("expansion", slugify(ctx.contributor.name)),
+          type: input.bountyId ? "bounty_response" : "expansion",
           status: autoApply ? "approved" : "pending",
           data: input as unknown as Record<string, unknown>,
           contributorId: ctx.contributor.id,
@@ -93,7 +85,7 @@ export const expansionsRouter = createTRPCRouter({
     return ctx.db.query.submissions.findMany({
       where: eq(submissions.type, "expansion"),
       with: {
-        contributor: true,
+        contributor: { columns: publicContributorColumns },
       },
       orderBy: (s, { desc }) => [desc(s.createdAt)],
       limit: 50,
@@ -106,7 +98,7 @@ export const expansionsRouter = createTRPCRouter({
       return ctx.db.query.submissions.findFirst({
         where: eq(submissions.id, input.id),
         with: {
-          contributor: true,
+          contributor: { columns: publicContributorColumns },
           bounty: true,
         },
       });
@@ -140,41 +132,40 @@ export const expansionsRouter = createTRPCRouter({
     }),
 });
 
-async function applyExpansion(
+export async function applyExpansion(
   db: any,
   submissionId: string,
   data: z.infer<typeof expansionSchema>,
   contributorId: string | null,
-) {
+  resolvedTags?: string[],
+  resolvedEdges?: Array<{ targetTopicSlug: string; relationType: "related" | "prerequisite" | "subtopic" | "see_also" }>,
+): Promise<{ topicId: string } | null> {
   // 1. Find parent topic if specified
   let parentTopicId: string | undefined;
   if (data.topic.parentTopicSlug) {
     const parent = await db.query.topics.findFirst({
-      where: eq(topics.slug, data.topic.parentTopicSlug),
+      where: eq(topics.id, data.topic.parentTopicSlug),
     });
     parentTopicId = parent?.id;
   }
 
-  // 2. Create topic
-  const topicSlug = slugify(data.topic.title);
+  // 2. Create topic with a unique slug (generateUniqueId adds suffix if slug exists)
+  const topicId = await generateUniqueId(db, topics, topics.id, data.topic.title);
   const [topic] = await db
     .insert(topics)
     .values({
+      id: topicId,
       title: data.topic.title,
-      slug: topicSlug,
       content: data.topic.content,
       summary: data.topic.summary,
       difficulty: data.topic.difficulty,
       status: "published",
       parentTopicId,
     })
-    .onConflictDoNothing()
     .returning();
 
-  if (!topic) return; // Topic already exists
-
-  // Log topic creation
   await db.insert(activity).values({
+    id: activityId("topic-created", contributorId ?? "system"),
     type: "topic_created",
     contributorId,
     topicId: topic.id,
@@ -184,25 +175,25 @@ async function applyExpansion(
 
   // 3. Create resources and link them
   for (const res of data.resources) {
-    const resSlug = slugify(res.name);
+    const resId = await generateUniqueId(db, resources, resources.id, res.name);
     const [resource] = await db
       .insert(resources)
       .values({
+        id: resId,
         name: res.name,
-        slug: resSlug,
         url: res.url,
         type: res.type as any,
         summary: res.summary,
         visibility: "public",
         submittedById: contributorId,
       })
-      .onConflictDoNothing()
       .returning();
 
     if (resource) {
       await db
         .insert(topicResources)
         .values({
+          id: `${topic.id}--${resource.id}`,
           topicId: topic.id,
           resourceId: resource.id,
           addedById: contributorId,
@@ -210,6 +201,7 @@ async function applyExpansion(
         .onConflictDoNothing();
 
       await db.insert(activity).values({
+        id: activityId("resource-submitted", resId),
         type: "resource_submitted",
         contributorId,
         topicId: topic.id,
@@ -219,15 +211,17 @@ async function applyExpansion(
     }
   }
 
-  // 4. Create edges
-  for (const edge of data.edges) {
+  // 4. Create edges (use evaluator-resolved edges if provided, otherwise agent-submitted)
+  const edgesToApply = resolvedEdges ?? data.edges;
+  for (const edge of edgesToApply) {
     const target = await db.query.topics.findFirst({
-      where: eq(topics.slug, edge.targetTopicSlug),
+      where: eq(topics.id, edge.targetTopicSlug),
     });
     if (target) {
       await db
         .insert(edges)
         .values({
+          id: `${topic.id}--${edge.relationType}--${target.id}`,
           sourceTopicId: topic.id,
           targetTopicId: target.id,
           relationType: edge.relationType,
@@ -235,6 +229,7 @@ async function applyExpansion(
         .onConflictDoNothing();
 
       await db.insert(activity).values({
+        id: activityId("edge-created", topic.id, target.id),
         type: "edge_created",
         contributorId,
         topicId: topic.id,
@@ -243,38 +238,45 @@ async function applyExpansion(
     }
   }
 
-  // 5. Create claims
-  for (const claimData of data.claims) {
-    const claimSlug = slugify(claimData.title);
-    const [claim] = await db
-      .insert(claims)
-      .values({
-        title: claimData.title,
-        slug: claimSlug,
-        description: claimData.description,
-        topicId: topic.id,
-        stakeAmount: claimData.stakeAmount,
-        createdById: contributorId,
-      })
-      .onConflictDoNothing()
-      .returning();
+  // 5. Apply tags (use evaluator-resolved tags if provided, otherwise agent-submitted tags)
+  const tagNames = resolvedTags ?? data.tags;
+  if (tagNames.length > 0) {
+    for (const tagName of tagNames) {
+      const normalized = tagName.trim().toLowerCase();
+      if (!normalized) continue;
 
-    if (claim && contributorId) {
-      await db.insert(claimPositions).values({
-        claimId: claim.id,
-        contributorId,
-        position: "support",
-        stakeAmount: claimData.stakeAmount,
-        evidence: claimData.evidence,
+      // Upsert tag
+      const existing = await db.query.tags.findFirst({
+        where: eq(tags.name, normalized),
       });
 
-      await db.insert(activity).values({
-        type: "claim_made",
-        contributorId,
-        claimId: claim.id,
-        topicId: topic.id,
-        description: `Claim made: "${claimData.title}"`,
-      });
+      let tagId: string;
+      if (existing) {
+        tagId = existing.id;
+      } else {
+        const [created] = await db
+          .insert(tags)
+          .values({ id: slugify(normalized), name: normalized })
+          .onConflictDoNothing()
+          .returning();
+        if (!created) {
+          // Race condition — re-fetch
+          const refetched = await db.query.tags.findFirst({
+            where: eq(tags.name, normalized),
+          });
+          if (!refetched) continue;
+          tagId = refetched.id;
+        } else {
+          tagId = created.id;
+        }
+      }
+
+      await db
+        .insert(topicTags)
+        .values({ id: `${topic.id}--${tagId}`, topicId: topic.id, tagId })
+        .onConflictDoNothing();
     }
   }
+
+  return { topicId: topic.id };
 }

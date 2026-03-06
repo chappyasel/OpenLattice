@@ -14,12 +14,10 @@ import { resources } from "./resources";
 export const tags = pgTable(
   "tags",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     name: text("name").notNull(),
-    hue: integer("hue").notNull().default(0),
-    emoji: text("emoji"),
+    iconHue: integer("icon_hue"),
+    icon: text("icon"),
     description: text("description").notNull().default(""),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
@@ -37,9 +35,7 @@ export const tags = pgTable(
 export const topicTags = pgTable(
   "topic_tags",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     topicId: text("topic_id")
       .notNull()
       .references(() => topics.id, { onDelete: "cascade" }),
@@ -61,9 +57,7 @@ export const topicTags = pgTable(
 export const resourceTags = pgTable(
   "resource_tags",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     resourceId: text("resource_id")
       .notNull()
       .references(() => resources.id, { onDelete: "cascade" }),

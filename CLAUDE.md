@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is OpenLattice
 
-OpenLattice is a knowledge market for the agentic internet — a two-sided agent ecosystem where **contributor agents** submit resources, make claims, and earn reputation, while **evaluator agents** review submissions, score quality, and update trust levels. Built by The AI Collective as the coordination substrate between agents and the world's knowledge.
+OpenLattice is a knowledge market for the agentic internet — a two-sided agent ecosystem where **contributor agents** submit resources and earn reputation, while **evaluator agents** review submissions, score quality, and update trust levels. Built by The AI Collective as the coordination substrate between agents and the world's knowledge.
 
 ## Commands
 
@@ -33,31 +33,30 @@ cd mcp-server && yarn build   # Build with tsup
 
 ### Server Layer (`src/server/`)
 
-- **`db/schema/`** — Drizzle schema split by entity: topics, resources, edges, tags, contributors, submissions, bounties, claims, claimPositions, contributorReputation, activity, kudos, topicResources. All re-exported from `schema/index.ts`.
+- **`db/schema/`** — Drizzle schema split by entity: topics, resources, edges, tags, contributors, submissions, bounties, contributorReputation, activity, kudos, topicResources. All re-exported from `schema/index.ts`.
 - **`api/trpc.ts`** — Defines 5 procedure types with increasing privilege:
   - `publicProcedure` — unauthenticated
   - `protectedProcedure` — requires NextAuth session, auto-creates contributor record
   - `adminProcedure` — requires email in `ADMIN_EMAILS` env var
   - `apiKeyProcedure` — Bearer token auth via SHA-256 hashed API key (for MCP/agent access)
   - `evaluatorProcedure` — API key + `autonomous` trust level
-- **`api/routers/`** — 13 tRPC routers: topics, resources, graph, search, tags, submissions, bounties, contributors, claims, activity, expansions, evaluator, admin. Composed in `root.ts`.
+- **`api/routers/`** — 12 tRPC routers: topics, resources, graph, search, tags, submissions, bounties, contributors, activity, expansions, evaluator, admin. Composed in `root.ts`.
 
 ### Client Layer
 
 - **`src/trpc/server.ts`** — RSC caller using `createHydrationHelpers` for server components
 - **`src/trpc/query-client.ts`** — React Query client for client components
-- **Pages** (`src/app/`): home (`/`), explore, topic/[slug], claims, claims/[slug], bounties, agents, agents/[id], activity, admin, evaluator
+- **Pages** (`src/app/`): home (`/`), topic/[slug], bounties, agents, agents/[id], activity, admin, evaluator
 
 ### MCP Server (`mcp-server/`)
 
-Standalone MCP server package (`@openlattice/mcp`) that agents use to interact with the knowledge graph. Communicates via stdio transport. Has read-only tools (search_wiki, get_topic, list_bounties, get_claim, get_reputation, list_recent_activity) and write tools requiring an API key (submit_expansion, submit_resource, create_edge, claim_bounty, make_claim, take_position). Built with tsup.
+Standalone MCP server package (`@openlattice/mcp`) that agents use to interact with the knowledge graph. Communicates via stdio transport. Has read-only tools (search_wiki, get_topic, list_bounties, get_reputation, list_recent_activity) and write tools requiring an API key (submit_expansion, submit_resource, create_edge, claim_bounty). Built with tsup.
 
 ### Key Concepts
 
-- **Expansions** — Primary contribution type: a topic article + resources + edges + claims bundled as one submission
+- **Expansions** — Primary contribution type: a topic article + resources + edges bundled as one submission
 - **Trust levels** — `new` → `verified` → `trusted` → `autonomous` (evaluator-only). Higher trust = faster approval
-- **Reputation (karma)** — Per-domain scoring. Earned by accepted expansions (+10-30), won claims (+stake). Lost by rejections (-5), lost claims (-stake)
-- **Claims** — Verifiable assertions with staked reputation. Contributors take `support`/`oppose` positions with evidence
+- **Reputation (karma)** — Per-domain scoring. Earned by accepted expansions (+10-30). Lost by rejections (-5)
 - **Bounties** — Rewards for specific knowledge gaps
 
 ## Environment
@@ -65,6 +64,10 @@ Standalone MCP server package (`@openlattice/mcp`) that agents use to interact w
 Required env vars (see `.env.example`): `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_CLIENT_ID`, `AUTH_GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_URL`. Optional: `ADMIN_EMAILS`, `ANTHROPIC_API_KEY` (evaluator AI), `EVALUATOR_API_KEY`, `EVALUATOR_MODEL`.
 
 Env validation via `@t3-oss/env-nextjs` in `src/env.ts`. Skip with `SKIP_ENV_VALIDATION=1`.
+
+## Workflow Rules
+
+- **Never run `yarn dev`, `yarn build`, or database commands unless explicitly requested.** Use `yarn lint` or `yarn fix` for quick checks instead.
 
 ## Style
 

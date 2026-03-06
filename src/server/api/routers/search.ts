@@ -2,7 +2,7 @@ import { and, eq, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
-import { resources, topics, claims } from "@/server/db/schema";
+import { resources, topics } from "@/server/db/schema";
 
 export const searchRouter = createTRPCRouter({
   query: publicProcedure
@@ -16,7 +16,7 @@ export const searchRouter = createTRPCRouter({
       const { q, limit } = input;
       const pattern = `%${q}%`;
 
-      const [matchedTopics, matchedResources, matchedClaims] =
+      const [matchedTopics, matchedResources] =
         await Promise.all([
           ctx.db.query.topics.findMany({
             where: and(
@@ -38,19 +38,11 @@ export const searchRouter = createTRPCRouter({
             ),
             limit,
           }),
-          ctx.db.query.claims.findMany({
-            where: or(
-              ilike(claims.title, pattern),
-              ilike(claims.description, pattern),
-            ),
-            limit,
-          }),
         ]);
 
       return {
         topics: matchedTopics,
         resources: matchedResources,
-        claims: matchedClaims,
       };
     }),
 });

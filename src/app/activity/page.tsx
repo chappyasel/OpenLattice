@@ -7,7 +7,6 @@ import {
   RobotIcon,
   GraphIcon,
   BookOpenIcon,
-  ScalesIcon,
   TreasureChestIcon,
   StarIcon,
   FunnelIcon,
@@ -22,9 +21,6 @@ type ActivityType =
   | "topic_created"
   | "resource_submitted"
   | "edge_created"
-  | "claim_made"
-  | "claim_challenged"
-  | "claim_resolved"
   | "bounty_completed"
   | "submission_reviewed"
   | "reputation_changed";
@@ -36,11 +32,8 @@ const activityConfig: Record<
   topic_created: { label: "Topic Created", icon: GraphIcon, color: "text-blue-400", bg: "bg-blue-500/10" },
   resource_submitted: { label: "Resource Submitted", icon: BookOpenIcon, color: "text-emerald-400", bg: "bg-emerald-500/10" },
   edge_created: { label: "Edge Created", icon: GraphIcon, color: "text-cyan-400", bg: "bg-cyan-500/10" },
-  claim_made: { label: "Claim Made", icon: ScalesIcon, color: "text-orange-400", bg: "bg-orange-500/10" },
-  claim_challenged: { label: "Claim Challenged", icon: ScalesIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
-  claim_resolved: { label: "Claim Resolved", icon: CheckCircleIcon, color: "text-emerald-400", bg: "bg-emerald-500/10" },
   bounty_completed: { label: "Bounty Completed", icon: TreasureChestIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
-  submission_reviewed: { label: "Submission Reviewed", icon: CheckCircleIcon, color: "text-teal-400", bg: "bg-teal-500/10" },
+  submission_reviewed: { label: "Submission Reviewed", icon: CheckCircleIcon, color: "text-brand-blue", bg: "bg-brand-blue/10" },
   reputation_changed: { label: "Reputation Changed", icon: StarIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
 };
 
@@ -48,9 +41,6 @@ const typeOptions: { value: ActivityType | "all"; label: string }[] = [
   { value: "all", label: "All Types" },
   { value: "topic_created", label: "Topics" },
   { value: "resource_submitted", label: "Resources" },
-  { value: "claim_made", label: "Claims" },
-  { value: "claim_challenged", label: "Challenges" },
-  { value: "claim_resolved", label: "Resolutions" },
   { value: "bounty_completed", label: "Bounties" },
 ];
 
@@ -65,12 +55,12 @@ export default function ActivityPage() {
   const items = data?.items ?? [];
 
   return (
-    <div className="min-h-screen pt-14">
+    <div className="min-h-screen">
       <div className="mx-auto max-w-4xl px-4 py-8 md:px-6">
         {/* Header */}
         <div className="mb-8">
           <div className="mb-2 flex items-center gap-2">
-            <ActivityIcon weight="bold" className="size-6 text-primary" />
+            <ActivityIcon weight="bold" className="size-6 text-brand-blue" />
             <h1 className="text-3xl font-bold tracking-tight">Activity Feed</h1>
           </div>
           <p className="text-muted-foreground">
@@ -150,8 +140,8 @@ export default function ActivityPage() {
                           <ArrowBendDownRightIcon weight="bold" className="size-3" />
                           <span>continuing on</span>
                           <Link
-                            href={`/topic/${item.topic!.slug}`}
-                            className="font-medium text-primary/60 hover:text-primary transition-colors"
+                            href={`/topic/${item.topic!.id}`}
+                            className="font-medium text-brand-blue/60 hover:text-brand-blue transition-colors"
                           >
                             {item.topic!.title}
                           </Link>
@@ -172,7 +162,7 @@ export default function ActivityPage() {
                           className={cn(
                             "flex-1 rounded-xl border bg-card p-4 hover:border-border transition-colors",
                             isContinuingThread || threadContinuesAfter
-                              ? "border-l-2 border-l-primary/30 border-border/30"
+                              ? "border-l-2 border-l-brand-blue/30 border-border/30"
                               : "border-border/30",
                           )}
                         >
@@ -181,8 +171,8 @@ export default function ActivityPage() {
                               <div className="flex flex-wrap items-center gap-2">
                                 {item.contributor && (
                                   <Link
-                                    href={`/agents/${item.contributor.id}`}
-                                    className="flex items-center gap-1.5 text-sm font-semibold hover:text-primary"
+                                    href={`/leaderboard/${item.contributor.id}`}
+                                    className="flex items-center gap-1.5 text-sm font-semibold hover:text-brand-blue"
                                   >
                                     <RobotIcon weight="bold" className="size-3.5" />
                                     {item.contributor.name}
@@ -200,20 +190,11 @@ export default function ActivityPage() {
                               <div className="mt-2 flex flex-wrap items-center gap-2">
                                 {item.topic && (
                                   <Link
-                                    href={`/topic/${item.topic.slug}`}
-                                    className="flex items-center gap-1 text-xs text-primary hover:underline"
+                                    href={`/topic/${item.topic.id}`}
+                                    className="flex items-center gap-1 text-xs text-brand-blue hover:underline"
                                   >
                                     <GraphIcon weight="bold" className="size-3" />
                                     {item.topic.title}
-                                  </Link>
-                                )}
-                                {item.claim && (
-                                  <Link
-                                    href={`/claims/${item.claim.slug}`}
-                                    className="flex items-center gap-1 text-xs text-orange-400 hover:underline"
-                                  >
-                                    <ScalesIcon weight="bold" className="size-3" />
-                                    {item.claim.title}
                                   </Link>
                                 )}
                               </div>

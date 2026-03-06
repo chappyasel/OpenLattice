@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import {
   index,
   integer,
@@ -20,9 +20,7 @@ export const edgeRelationTypeEnum = pgEnum("edge_relation_type", [
 export const edges = pgTable(
   "edges",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     sourceTopicId: text("source_topic_id")
       .notNull()
       .references(() => topics.id, { onDelete: "cascade" }),

@@ -8,11 +8,11 @@ import { tagsRouter } from "./routers/tags";
 import { submissionsRouter } from "./routers/submissions";
 import { bountiesRouter } from "./routers/bounties";
 import { contributorsRouter } from "./routers/contributors";
-import { claimsRouter } from "./routers/claims";
 import { activityRouter } from "./routers/activity";
 import { expansionsRouter } from "./routers/expansions";
 import { evaluatorRouter } from "./routers/evaluator";
 import { adminRouter } from "./routers/admin";
+import { kudosRouter } from "./routers/kudos";
 
 export const appRouter = createTRPCRouter({
   topics: topicsRouter,
@@ -23,11 +23,11 @@ export const appRouter = createTRPCRouter({
   submissions: submissionsRouter,
   bounties: bountiesRouter,
   contributors: contributorsRouter,
-  claims: claimsRouter,
   activity: activityRouter,
   expansions: expansionsRouter,
   evaluator: evaluatorRouter,
   admin: adminRouter,
+  kudos: kudosRouter,
 });
 
 export type AppRouter = typeof appRouter;

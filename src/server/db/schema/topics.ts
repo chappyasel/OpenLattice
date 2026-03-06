@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import {
   index,
   integer,
@@ -6,7 +6,6 @@ import {
   pgTable,
   text,
   timestamp,
-  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 import { edges } from "./edges";
@@ -28,10 +27,7 @@ export const topicStatusEnum = pgEnum("topic_status", [
 export const topics = pgTable(
   "topics",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    slug: text("slug").notNull(),
+    id: text("id").primaryKey(),
     title: text("title").notNull(),
     content: text("content").notNull().default(""),
     summary: text("summary"),
@@ -40,6 +36,8 @@ export const topics = pgTable(
     parentTopicId: text("parent_topic_id").references((): any => topics.id, {
       onDelete: "set null",
     }),
+    icon: text("icon"),
+    iconHue: integer("icon_hue"),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
@@ -48,7 +46,6 @@ export const topics = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => ({
-    slugIndex: uniqueIndex("idx_topics_slug").on(table.slug),
     statusIndex: index("idx_topics_status").on(table.status),
     parentIndex: index("idx_topics_parent").on(table.parentTopicId),
   }),

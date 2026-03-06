@@ -5,7 +5,6 @@ import {
   RobotIcon,
   ClipboardIcon,
   BookOpenIcon,
-  ScalesIcon,
   CheckCircleIcon,
   XCircleIcon,
   StarIcon,
@@ -17,6 +16,7 @@ import {
   BrainIcon,
   LightningIcon,
   SealCheckIcon,
+  PlayIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
@@ -55,8 +55,10 @@ function VerdictBadge({ verdict }: { verdict: string }) {
     approved: { label: "Approved", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", icon: CheckCircleIcon },
     reject: { label: "Rejected", color: "bg-red-500/10 text-red-400 border-red-500/20", icon: XCircleIcon },
     rejected: { label: "Rejected", color: "bg-red-500/10 text-red-400 border-red-500/20", icon: XCircleIcon },
+    revise: { label: "Revision Requested", color: "bg-amber-500/10 text-amber-400 border-amber-500/20", icon: ClipboardIcon },
+    revision_requested: { label: "Revision Requested", color: "bg-amber-500/10 text-amber-400 border-amber-500/20", icon: ClipboardIcon },
     scored: { label: "Scored", color: "bg-blue-500/10 text-blue-400 border-blue-500/20", icon: StarIcon },
-    resolved: { label: "Resolved", color: "bg-teal-500/10 text-teal-400 border-teal-500/20", icon: SealCheckIcon },
+    resolved: { label: "Resolved", color: "bg-brand-blue/10 text-brand-blue border-teal-500/20", icon: SealCheckIcon },
   };
 
   const c = configs[verdict] ?? configs.scored!;
@@ -76,7 +78,6 @@ function TypeBadge({ type }: { type: string }) {
   const configs: Record<string, { label: string; color: string }> = {
     expansion_review: { label: "Expansion Review", color: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" },
     resource_score: { label: "Resource Score", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-    claim_resolution: { label: "Claim Resolution", color: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
   };
   const c = configs[type] ?? { label: type, color: "bg-muted text-muted-foreground border-border" };
   return (
@@ -162,7 +163,7 @@ function ExpansionReviewTrace({ data }: { data: Record<string, unknown> }) {
 
       {/* Reasoning */}
       {!!data.reasoning && (
-        <blockquote className="border-l-2 border-primary/50 pl-4 text-sm text-muted-foreground italic leading-relaxed">
+        <blockquote className="border-l-2 border-brand-blue/50 pl-4 text-sm text-muted-foreground italic leading-relaxed">
           {String(data.reasoning)}
         </blockquote>
       )}
@@ -220,50 +221,7 @@ function ResourceScoreTrace({ data }: { data: Record<string, unknown> }) {
       )}
 
       {!!data.reasoning && (
-        <blockquote className="border-l-2 border-primary/50 pl-4 text-sm text-muted-foreground italic leading-relaxed">
-          {String(data.reasoning)}
-        </blockquote>
-      )}
-    </div>
-  );
-}
-
-function ClaimResolutionTrace({ data }: { data: Record<string, unknown> }) {
-  const evidence = data.evidence as { supportStrength?: number; opposeStrength?: number } | undefined;
-  const confidence = data.confidence as number | undefined;
-
-  return (
-    <div className="space-y-4">
-      {!!data.claimTitle && (
-        <div className="rounded-lg bg-muted/30 px-3 py-2.5">
-          <div className="mb-0.5 text-xs text-muted-foreground">Claim</div>
-          <div className="text-sm font-medium">{String(data.claimTitle)}</div>
-        </div>
-      )}
-
-      {confidence !== undefined && (
-        <div className="flex items-center gap-3 rounded-xl border border-border/50 bg-card px-4 py-3 w-fit">
-          <div>
-            <div className="text-xs text-muted-foreground">Confidence</div>
-            <div className="text-3xl font-bold tracking-tight">{Math.round(confidence * 100)}<span className="text-base font-normal text-muted-foreground">%</span></div>
-          </div>
-        </div>
-      )}
-
-      {!!evidence && (
-        <div className="rounded-lg border border-border/40 bg-muted/10 p-4 space-y-2.5">
-          <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Evidence Analysis</div>
-          {evidence.supportStrength !== undefined && (
-            <ScoreBar label="Support strength" value={evidence.supportStrength} max={10} />
-          )}
-          {evidence.opposeStrength !== undefined && (
-            <ScoreBar label="Oppose strength" value={evidence.opposeStrength} max={10} />
-          )}
-        </div>
-      )}
-
-      {!!data.reasoning && (
-        <blockquote className="border-l-2 border-primary/50 pl-4 text-sm text-muted-foreground italic leading-relaxed">
+        <blockquote className="border-l-2 border-brand-blue/50 pl-4 text-sm text-muted-foreground italic leading-relaxed">
           {String(data.reasoning)}
         </blockquote>
       )}
@@ -276,8 +234,6 @@ function EvaluationTrace({ data }: { data: Record<string, unknown> }) {
 
   if (type === "expansion_review") return <ExpansionReviewTrace data={data} />;
   if (type === "resource_score") return <ResourceScoreTrace data={data} />;
-  if (type === "claim_resolution") return <ClaimResolutionTrace data={data} />;
-
   return (
     <pre className="overflow-auto rounded-lg bg-muted/30 p-4 text-xs text-muted-foreground">
       {JSON.stringify(data, null, 2)}
@@ -299,14 +255,12 @@ type FeedItem = {
 function typeIcon(evalType: string) {
   if (evalType === "expansion_review") return ClipboardIcon;
   if (evalType === "resource_score") return BookOpenIcon;
-  if (evalType === "claim_resolution") return ScalesIcon;
   return RobotIcon;
 }
 
 function getVerdict(data: Record<string, unknown>): string {
   if (data.type === "expansion_review") return (data.verdict as string) ?? "reviewed";
   if (data.type === "resource_score") return "scored";
-  if (data.type === "claim_resolution") return "resolved";
   return "reviewed";
 }
 
@@ -337,8 +291,7 @@ function EvalCard({ item, expanded, onToggle }: {
         <div className={cn(
           "flex shrink-0 items-center justify-center rounded-lg p-2",
           evalType === "expansion_review" ? "bg-cyan-500/10 text-cyan-400" :
-          evalType === "resource_score" ? "bg-blue-500/10 text-blue-400" :
-          "bg-orange-500/10 text-orange-400",
+          "bg-blue-500/10 text-blue-400",
         )}>
           <Icon weight="bold" className="size-4" />
         </div>
@@ -381,8 +334,8 @@ function EvalCard({ item, expanded, onToggle }: {
       {expanded && (
         <div className="border-t border-border/50 px-4 pb-5 pt-4">
           <div className="mb-3 flex items-center gap-2">
-            <BrainIcon weight="bold" className="size-3.5 text-primary" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-primary">Evaluation Trace</span>
+            <BrainIcon weight="bold" className="size-3.5 text-brand-blue" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-brand-blue">Evaluation Trace</span>
           </div>
           <EvaluationTrace data={data} />
         </div>
@@ -426,6 +379,9 @@ function StatCard({
 
 export default function EvaluatorPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [runOutput, setRunOutput] = useState<string | null>(null);
+
+  const utils = api.useUtils();
 
   const { data: stats } = api.evaluator.getEvaluationStats.useQuery(undefined, {
     refetchInterval: 10000,
@@ -435,6 +391,17 @@ export default function EvaluatorPage() {
     { limit: 50 },
     { refetchInterval: 10000 },
   );
+
+  const runEvaluator = api.admin.runEvaluator.useMutation({
+    onSuccess: (data) => {
+      setRunOutput(data.output);
+      void utils.evaluator.getEvaluationFeed.invalidate();
+      void utils.evaluator.getEvaluationStats.invalidate();
+    },
+    onError: (err) => {
+      setRunOutput(`Error: ${err.message}`);
+    },
+  });
 
   const items = (feed ?? []) as FeedItem[];
 
@@ -453,14 +420,14 @@ export default function EvaluatorPage() {
       : null;
 
   return (
-    <div className="min-h-screen pt-14">
+    <div className="min-h-screen">
       <div className="mx-auto max-w-7xl px-4 py-8 md:px-6">
         {/* Header */}
         <div className="mb-8 flex items-start justify-between gap-4">
           <div>
             <div className="mb-2 flex items-center gap-3">
-              <div className="flex items-center justify-center rounded-xl bg-teal-500/10 p-2.5">
-                <RobotIcon weight="bold" className="size-6 text-teal-400" />
+              <div className="flex items-center justify-center rounded-xl bg-brand-blue/10 p-2.5">
+                <RobotIcon weight="bold" className="size-6 text-brand-blue" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -476,18 +443,66 @@ export default function EvaluatorPage() {
               </div>
             </div>
             <p className="ml-[52px] text-muted-foreground text-sm">
-              In-house evaluator agent — reviews submissions, scores resources, resolves claims
+              In-house evaluator agent — reviews submissions and scores resources
             </p>
           </div>
+          <button
+            onClick={() => {
+              setRunOutput(null);
+              runEvaluator.mutate();
+            }}
+            disabled={runEvaluator.isPending}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl border border-brand-blue/30 bg-brand-blue/10 px-4 py-2.5 text-sm font-medium text-brand-blue transition-colors hover:bg-brand-blue/20 disabled:opacity-50"
+          >
+            {runEvaluator.isPending ? (
+              <SpinnerIcon weight="bold" className="size-4 animate-spin" />
+            ) : (
+              <PlayIcon weight="bold" className="size-4" />
+            )}
+            {runEvaluator.isPending ? "Running..." : "Run Cycle"}
+          </button>
         </div>
 
+        {/* Evaluator output */}
+        {runOutput !== null && (
+          <div className="mb-8 rounded-xl border border-border/50 bg-card">
+            <div className="flex items-center justify-between border-b border-border/50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <BrainIcon weight="bold" className="size-3.5 text-brand-blue" />
+                <span className="text-xs font-semibold uppercase tracking-wider text-brand-blue">
+                  Cycle Output
+                </span>
+                {runEvaluator.data && (
+                  <span className={cn(
+                    "rounded-full border px-2 py-0.5 text-xs font-medium",
+                    runEvaluator.data.success
+                      ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                      : "border-red-500/20 bg-red-500/10 text-red-400",
+                  )}>
+                    {runEvaluator.data.success ? "Success" : "Failed"}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => setRunOutput(null)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Dismiss
+              </button>
+            </div>
+            <pre className="max-h-80 overflow-auto p-4 text-xs text-muted-foreground font-mono leading-relaxed whitespace-pre-wrap">
+              {runOutput || "No output"}
+            </pre>
+          </div>
+        )}
+
         {/* Stats Row */}
-        <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-5">
+        <div className="mb-8 grid grid-cols-2 gap-3 md:grid-cols-6">
           <StatCard
             label="Total Evaluations"
             value={stats?.total ?? 0}
             icon={ChartBarIcon}
-            color="bg-teal-500/10 text-teal-400"
+            color="bg-brand-blue/10 text-brand-blue"
           />
           <StatCard
             label="Expansion Reviews"
@@ -497,17 +512,18 @@ export default function EvaluatorPage() {
             color="bg-cyan-500/10 text-cyan-400"
           />
           <StatCard
+            label="Revisions Requested"
+            value={stats?.revisionRequests ?? 0}
+            sub="sent back for fixes"
+            icon={LightningIcon}
+            color="bg-amber-500/10 text-amber-400"
+          />
+          <StatCard
             label="Resources Scored"
             value={stats?.resourceScores ?? 0}
             sub={stats?.avgResourceScore ? `avg ${stats.avgResourceScore}/100` : undefined}
             icon={BookOpenIcon}
             color="bg-blue-500/10 text-blue-400"
-          />
-          <StatCard
-            label="Claims Resolved"
-            value={stats?.claimResolutions ?? 0}
-            icon={ScalesIcon}
-            color="bg-orange-500/10 text-orange-400"
           />
           <StatCard
             label="Avg Response"
@@ -522,7 +538,7 @@ export default function EvaluatorPage() {
         <div>
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <BrainIcon weight="bold" className="size-4 text-primary" />
+              <BrainIcon weight="bold" className="size-4 text-brand-blue" />
               <h2 className="text-base font-semibold">Evaluation Feed</h2>
               {items.length > 0 && (
                 <span className="rounded-full bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground">

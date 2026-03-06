@@ -5,6 +5,7 @@ import { ZodError } from "zod";
 import crypto from "crypto";
 
 import { auth, isAdmin } from "@/lib/auth";
+import { generateUniqueId, slugify } from "@/lib/utils";
 import { db } from "@/server/db";
 import { contributors } from "@/server/db/schema";
 
@@ -50,10 +51,13 @@ export const protectedProcedure = t.procedure.use(async ({ next, ctx }) => {
   });
 
   if (!contributor) {
+    const name = ctx.session.user.name ?? ctx.session.user.email.split("@")[0]!;
+    const id = await generateUniqueId(ctx.db, contributors, contributors.id, name);
     const [created] = await ctx.db
       .insert(contributors)
       .values({
-        name: ctx.session.user.name ?? ctx.session.user.email.split("@")[0]!,
+        id,
+        name,
         email: ctx.session.user.email.toLowerCase(),
         image: ctx.session.user.image ?? undefined,
       })

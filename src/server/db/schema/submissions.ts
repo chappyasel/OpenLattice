@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import {
   index,
   integer,
@@ -24,6 +24,7 @@ export const submissionStatusEnum = pgEnum("submission_status", [
   "pending",
   "approved",
   "rejected",
+  "revision_requested",
 ]);
 
 export const submissionSourceEnum = pgEnum("submission_source", [
@@ -36,9 +37,7 @@ export const submissionSourceEnum = pgEnum("submission_source", [
 export const submissions = pgTable(
   "submissions",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     type: submissionTypeEnum("type").notNull(),
     status: submissionStatusEnum("status").notNull().default("pending"),
     data: jsonb("data").$type<Record<string, unknown>>().notNull(),
@@ -59,6 +58,8 @@ export const submissions = pgTable(
     ),
     reviewReasoning: text("review_reasoning"),
     reviewNotes: text("review_notes"),
+    revisionCount: integer("revision_count").notNull().default(0),
+    originalSubmissionId: text("original_submission_id"),
     reviewedAt: timestamp("reviewed_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
@@ -75,6 +76,7 @@ export const submissionsRelations = relations(submissions, ({ one }) => ({
   contributor: one(contributors, {
     fields: [submissions.contributorId],
     references: [contributors.id],
+    relationName: "submittedSubmissions",
   }),
   bounty: one(bounties, {
     fields: [submissions.bountyId],

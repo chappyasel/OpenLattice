@@ -9,7 +9,7 @@ import {
   publicProcedure,
 } from "@/server/api/trpc";
 import { resources, submissions } from "@/server/db/schema";
-import { slugify } from "@/lib/utils";
+import { formatTimestamp, generateUniqueId, slugify } from "@/lib/utils";
 
 const resourceTypeValues = [
   "article", "paper", "book", "course", "video", "podcast", "dataset",
@@ -54,7 +54,7 @@ export const resourcesRouter = createTRPCRouter({
     .input(z.object({ slug: z.string() }))
     .query(async ({ ctx, input }) => {
       const resource = await ctx.db.query.resources.findFirst({
-        where: eq(resources.slug, input.slug),
+        where: eq(resources.id, input.slug),
         with: {
           resourceTags: {
             with: { tag: true },
@@ -82,6 +82,7 @@ export const resourcesRouter = createTRPCRouter({
       const [submission] = await ctx.db
         .insert(submissions)
         .values({
+          id: `resource--${slugify(ctx.contributor.name)}--${formatTimestamp()}`,
           type: "resource",
           status: "pending",
           data: input as Record<string, unknown>,
@@ -107,6 +108,7 @@ export const resourcesRouter = createTRPCRouter({
       const [submission] = await ctx.db
         .insert(submissions)
         .values({
+          id: `resource--${slugify(ctx.contributor.name)}--${formatTimestamp()}`,
           type: "resource",
           status: "pending",
           data: input as Record<string, unknown>,
@@ -133,10 +135,10 @@ export const resourcesRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const slug = slugify(input.name);
+      const id = await generateUniqueId(ctx.db, resources, resources.id, input.name);
       const [resource] = await ctx.db
         .insert(resources)
-        .values({ ...input, slug })
+        .values({ ...input, id })
         .returning();
       return resource!;
     }),

@@ -13,6 +13,7 @@ export const env = createEnv({
     AUTH_GOOGLE_CLIENT_ID: z.string(),
     AUTH_GOOGLE_CLIENT_SECRET: z.string(),
     ADMIN_EMAILS: z.string().optional(),
+    AGENT_REGISTRATION_SECRET: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_URL: z.string().url(),
@@ -25,6 +26,7 @@ export const env = createEnv({
     AUTH_GOOGLE_CLIENT_SECRET: process.env.AUTH_GOOGLE_CLIENT_SECRET,
     NEXT_PUBLIC_URL: process.env.NEXT_PUBLIC_URL,
     ADMIN_EMAILS: process.env.ADMIN_EMAILS,
+    AGENT_REGISTRATION_SECRET: process.env.AGENT_REGISTRATION_SECRET,
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

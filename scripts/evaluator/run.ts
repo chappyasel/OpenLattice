@@ -20,15 +20,24 @@ dotenv.config({ path: "./.env" });
 
 import {
   reviewExpansion,
+  suggestEdges,
+  suggestTags,
+  suggestIcon,
   scoreResource,
-  resolveClaim,
   analyzeGaps,
 } from "./ai.js";
+
+/** Local slugify — mirrors src/lib/utils.ts#slugify */
+function slugify(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
 
 const BASE_URL = process.env.OPENLATTICE_URL ?? "http://localhost:3000";
 const API_KEY = process.env.EVALUATOR_API_KEY;
 const POLL_INTERVAL_MS =
-  (parseInt(process.env.POLL_INTERVAL ?? "300") || 300) * 1000;
+  (parseInt(process.env.POLL_INTERVAL ?? "60") || 60) * 1000;
+const GAP_ANALYSIS_EVERY =
+  parseInt(process.env.GAP_ANALYSIS_EVERY ?? "3") || 3;
 
 if (!API_KEY) {
   console.error("Missing EVALUATOR_API_KEY. Run the seed script first.");
@@ -40,55 +49,78 @@ if (!process.env.ANTHROPIC_API_KEY) {
   process.exit(1);
 }
 
-// ─── tRPC Client ──────────────────────────────────────────────────────────
+// ─── tRPC Client with Retry ───────────────────────────────────────────────
+
+const RETRY_DELAYS = [5000, 15000]; // 5s, 15s backoff
+
+async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      if (attempt < RETRY_DELAYS.length) {
+        const delay = RETRY_DELAYS[attempt]!;
+        console.warn(`  [retry] ${label} failed (attempt ${attempt + 1}/${RETRY_DELAYS.length + 1}), retrying in ${delay / 1000}s: ${err.message}`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+}
 
 async function trpcQuery<T>(
   path: string,
   input: Record<string, unknown> = {},
 ): Promise<T> {
-  const url = new URL(`/api/trpc/${path}`, BASE_URL);
-  url.searchParams.set("input", JSON.stringify({ json: input }));
+  return withRetry(async () => {
+    const url = new URL(`/api/trpc/${path}`, BASE_URL);
+    url.searchParams.set("input", JSON.stringify({ json: input }));
 
-  const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      "Content-Type": "application/json",
-    },
-  });
+    const res = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`tRPC query ${path} failed: ${res.status} ${text}`);
-  }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`tRPC query ${path} failed: ${res.status} ${text}`);
+    }
 
-  const body = (await res.json()) as any;
-  if (body.error) throw new Error(`tRPC error: ${JSON.stringify(body.error)}`);
-  return body.result?.data?.json as T;
+    const body = (await res.json()) as any;
+    if (body.error) throw new Error(`tRPC error: ${JSON.stringify(body.error)}`);
+    return body.result?.data?.json as T;
+  }, `query:${path}`);
 }
 
 async function trpcMutation<T>(
   path: string,
   input: Record<string, unknown> = {},
 ): Promise<T> {
-  const url = new URL(`/api/trpc/${path}`, BASE_URL);
+  return withRetry(async () => {
+    const url = new URL(`/api/trpc/${path}`, BASE_URL);
 
-  const res = await fetch(url.toString(), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ json: input }),
-  });
+    const res = await fetch(url.toString(), {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ json: input }),
+    });
 
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`tRPC mutation ${path} failed: ${res.status} ${text}`);
-  }
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`tRPC mutation ${path} failed: ${res.status} ${text}`);
+    }
 
-  const body = (await res.json()) as any;
-  if (body.error) throw new Error(`tRPC error: ${JSON.stringify(body.error)}`);
-  return body.result?.data?.json as T;
+    const body = (await res.json()) as any;
+    if (body.error) throw new Error(`tRPC error: ${JSON.stringify(body.error)}`);
+    return body.result?.data?.json as T;
+  }, `mutation:${path}`);
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -116,17 +148,15 @@ interface UnscoredResource {
   content: string | null;
 }
 
-interface ContestedClaim {
+interface Bounty {
   id: string;
   title: string;
-  description: string | null;
+  description: string;
+  type: string;
+  status: string;
   topicId: string | null;
-  positions: Array<{
-    position: "support" | "oppose";
-    stakeAmount: number;
-    evidence: string | null;
-    contributor: { name: string };
-  }>;
+  karmaReward: number;
+  topic?: { id: string } | null;
 }
 
 // ─── Evaluation Passes ────────────────────────────────────────────────────
@@ -134,19 +164,31 @@ interface ContestedClaim {
 async function reviewPendingSubmissions(): Promise<number> {
   let reviewed = 0;
 
-  const submissions = await trpcQuery<Submission[]>(
+  const expansions = await trpcQuery<Submission[]>(
     "evaluator.listPendingSubmissions",
     { type: "expansion" },
   );
+  const bountyResponses = await trpcQuery<Submission[]>(
+    "evaluator.listPendingSubmissions",
+    { type: "bounty_response" },
+  );
+  const submissions = [
+    ...(expansions ?? []),
+    ...(bountyResponses ?? []),
+  ];
 
-  if (!submissions?.length) return 0;
+  if (!submissions.length) return 0;
 
-  // Get existing topic slugs for context
-  const allTopics = await trpcQuery<Array<{ slug: string }>>(
+  // Get existing topics for context (edges need title+summary for AI suggestion)
+  const allTopics = await trpcQuery<Array<{ id: string; title: string; summary: string | null }>>(
     "topics.list",
     { status: "published" },
   );
-  const existingTopicSlugs = allTopics?.map((t) => t.slug) ?? [];
+  const existingTopicIds = allTopics?.map((t) => t.id) ?? [];
+
+  // Get existing tags for tag suggestion context
+  const allTags = await trpcQuery<Array<{ name: string }>>("tags.list", {});
+  const existingTagNames = allTags?.map((t) => t.name) ?? [];
 
   for (const submission of submissions) {
     try {
@@ -168,21 +210,187 @@ async function reviewPendingSubmissions(): Promise<number> {
         `  [review] Evaluating "${expansion.topic.title}" from ${contributor?.name ?? "unknown"}...`,
       );
 
+      // 1. Content review
       const { result, durationMs, model } = await reviewExpansion(
         expansion,
         {
-          existingTopicSlugs,
+          existingTopicIds,
           contributorName: contributor?.name ?? "unknown",
           contributorTrustLevel: contributor?.trustLevel ?? "new",
           contributorAcceptanceRate: acceptanceRate,
         },
       );
 
-      await trpcMutation("evaluator.reviewSubmission", {
+      // 2. Independent edge suggestion + diff
+      let edgeDiff: {
+        submittedEdges: Array<{ targetTopicSlug: string; relationType: string }>;
+        evaluatorEdges: Array<{ targetTopicSlug: string; relationType: string; reasoning: string }>;
+        matchedTargets: number;
+        matchedExact: number;
+        missingEdges: number;
+        extraEdges: number;
+        accuracy: number;
+        karmaDelta: number;
+      } | null = null;
+
+      if (allTopics?.length && allTopics.length > 0) {
+        try {
+          const { result: edgeResult, durationMs: edgeDurationMs } = await suggestEdges(
+            {
+              title: expansion.topic.title,
+              content: expansion.topic.content,
+              summary: expansion.topic.summary,
+            },
+            (allTopics ?? []).map((t) => ({
+              id: t.id,
+              title: t.title,
+              summary: t.summary ?? undefined,
+            })),
+          );
+
+          const submittedEdges: Array<{ targetTopicSlug: string; relationType: string }> =
+            expansion.edges ?? [];
+          const evaluatorEdges = edgeResult.suggestedEdges;
+
+          // Diff: how many of the evaluator's edges did the submitter also propose?
+          const evaluatorTargets = new Set(evaluatorEdges.map((e) => e.targetTopicSlug));
+          const submittedTargets = new Set(submittedEdges.map((e) => e.targetTopicSlug));
+
+          let matchedTargets = 0;
+          let matchedExact = 0;
+          for (const evalEdge of evaluatorEdges) {
+            if (submittedTargets.has(evalEdge.targetTopicSlug)) {
+              matchedTargets++;
+              const submittedMatch = submittedEdges.find(
+                (e) => e.targetTopicSlug === evalEdge.targetTopicSlug,
+              );
+              if (submittedMatch?.relationType === evalEdge.relationType) {
+                matchedExact++;
+              }
+            }
+          }
+
+          // Edges the submitter proposed that the evaluator didn't
+          let extraEdges = 0;
+          for (const slug of submittedTargets) {
+            if (!evaluatorTargets.has(slug)) extraEdges++;
+          }
+
+          // Edges the evaluator suggests that the submitter missed
+          const missingEdges = evaluatorEdges.length - matchedTargets;
+
+          // Accuracy: ratio of correct edges over the union of both sets
+          const totalUnique = new Set([...evaluatorTargets, ...submittedTargets]).size;
+          const accuracy = totalUnique > 0 ? matchedExact / totalUnique : 1; // both empty = perfect
+
+          // Karma adjustment: -5 (bad) to +5 (perfect)
+          let karmaDelta = 0;
+          if (totalUnique === 0) {
+            karmaDelta = 0; // both agree: no edges needed
+          } else if (accuracy >= 0.8) {
+            karmaDelta = 5; // excellent edge work
+          } else if (accuracy >= 0.5) {
+            karmaDelta = 2; // decent
+          } else if (accuracy >= 0.2) {
+            karmaDelta = -2; // poor
+          } else {
+            karmaDelta = -5; // completely wrong
+          }
+
+          edgeDiff = {
+            submittedEdges,
+            evaluatorEdges,
+            matchedTargets,
+            matchedExact,
+            missingEdges,
+            extraEdges,
+            accuracy,
+            karmaDelta,
+          };
+
+          console.log(
+            `  [review] Edge diff: ${matchedExact}/${totalUnique} exact match (accuracy: ${(accuracy * 100).toFixed(0)}%, karma: ${karmaDelta > 0 ? "+" : ""}${karmaDelta}) [${edgeDurationMs}ms]`,
+          );
+        } catch (err: any) {
+          console.error(`  [review] Edge suggestion failed:`, err.message);
+        }
+      }
+
+      // 3. Independent tag suggestion
+      let tagResult: {
+        submittedTags: string[];
+        evaluatorTags: string[];
+        resolvedTags: string[];
+      } | null = null;
+
+      try {
+        const submittedTags: string[] = expansion.tags ?? [];
+        const { result: tagSuggestion, durationMs: tagDurationMs } = await suggestTags(
+          {
+            title: expansion.topic.title,
+            content: expansion.topic.content,
+            summary: expansion.topic.summary,
+          },
+          existingTagNames,
+          submittedTags,
+        );
+
+        tagResult = {
+          submittedTags,
+          evaluatorTags: tagSuggestion.suggestedTags,
+          resolvedTags: tagSuggestion.suggestedTags,
+        };
+
+        console.log(
+          `  [review] Tags: evaluator=[${tagSuggestion.suggestedTags.join(", ")}] submitted=[${submittedTags.join(", ")}] [${tagDurationMs}ms]`,
+        );
+      } catch (err: any) {
+        console.error(`  [review] Tag suggestion failed:`, err.message);
+      }
+
+      // 4. Icon suggestion (only if approving)
+      let iconResult: { icon: string; iconHue: number } | null = null;
+      if (result.verdict === "approve") {
+        try {
+          const { result: iconSuggestion, durationMs: iconDurationMs } = await suggestIcon({
+            title: expansion.topic.title,
+            summary: expansion.topic.summary,
+          });
+          iconResult = iconSuggestion;
+          console.log(
+            `  [review] Icon: ${iconSuggestion.icon} (hue: ${iconSuggestion.iconHue}) [${iconDurationMs}ms]`,
+          );
+        } catch (err: any) {
+          console.error(`  [review] Icon suggestion failed:`, err.message);
+        }
+      }
+
+      // Map AI verdict to submission status
+      const verdictToStatus = {
+        approve: "approved",
+        reject: "rejected",
+        revise: "revision_requested",
+      } as const;
+      const submissionVerdict = verdictToStatus[result.verdict];
+
+      // Combine karma: content review + edge accuracy bonus/penalty
+      // For revisions, apply a mild penalty (0 or -1) instead of full negative delta
+      const baseKarma = result.verdict === "revise"
+        ? Math.min(result.suggestedReputationDelta, -1)
+        : result.suggestedReputationDelta;
+      const totalReputationDelta =
+        baseKarma + (result.verdict !== "revise" ? (edgeDiff?.karmaDelta ?? 0) : 0);
+
+      const reviewResult = await trpcMutation<{ submission: any; topicId: string | null }>("evaluator.reviewSubmission", {
         submissionId: submission.id,
-        approved: result.verdict === "approve",
+        verdict: submissionVerdict,
         reasoning: result.reasoning,
-        reputationDelta: result.suggestedReputationDelta,
+        reputationDelta: totalReputationDelta,
+        resolvedTags: tagResult?.resolvedTags,
+        resolvedEdges: edgeDiff?.evaluatorEdges.map((e) => ({
+          targetTopicSlug: e.targetTopicSlug,
+          relationType: e.relationType,
+        })),
         evaluationTrace: {
           type: "expansion_review",
           model,
@@ -195,16 +403,116 @@ async function reviewPendingSubmissions(): Promise<number> {
           verdict: result.verdict,
           topicTitle: expansion.topic.title,
           contributorName: contributor?.name,
+          edgeDiff: edgeDiff
+            ? {
+                submittedEdges: edgeDiff.submittedEdges,
+                evaluatorEdges: edgeDiff.evaluatorEdges,
+                matchedTargets: edgeDiff.matchedTargets,
+                matchedExact: edgeDiff.matchedExact,
+                missingEdges: edgeDiff.missingEdges,
+                extraEdges: edgeDiff.extraEdges,
+                accuracy: edgeDiff.accuracy,
+                karmaDelta: edgeDiff.karmaDelta,
+              }
+            : null,
+          tagDiff: tagResult
+            ? {
+                submittedTags: tagResult.submittedTags,
+                evaluatorTags: tagResult.evaluatorTags,
+                resolvedTags: tagResult.resolvedTags,
+              }
+            : null,
+        },
+      });
+
+      // Apply icon to the newly created topic (post-materialization — only on approve)
+      if (result.verdict === "approve" && iconResult && reviewResult?.topicId) {
+        try {
+          await trpcMutation("evaluator.setTopicIcon", {
+            topicId: reviewResult.topicId,
+            icon: iconResult.icon,
+            iconHue: iconResult.iconHue,
+          });
+        } catch (err: any) {
+          // May fail if topic wasn't created (slug conflict) — that's OK
+          console.error(`  [review] Icon application failed:`, err.message);
+        }
+      }
+
+      reviewed++;
+      const statusIcon = result.verdict === "approve" ? "+" : result.verdict === "revise" ? "~" : "-";
+      console.log(
+        `  [review] ${statusIcon} ${result.verdict.toUpperCase()} (${result.overallScore}/100, karma: ${totalReputationDelta > 0 ? "+" : ""}${totalReputationDelta}, ${durationMs}ms) — ${result.reasoning.slice(0, 80)}`,
+      );
+    } catch (err: any) {
+      console.error(`  [review] Failed on ${submission.id}:`, err.message);
+    }
+  }
+
+  return reviewed;
+}
+
+async function reviewPendingResources(): Promise<number> {
+  let reviewed = 0;
+
+  const submissions = await trpcQuery<Submission[]>(
+    "evaluator.listPendingSubmissions",
+    { type: "resource" },
+  );
+
+  if (!submissions?.length) return 0;
+
+  for (const submission of submissions) {
+    try {
+      const resData = submission.data as any;
+      if (!resData?.name || !resData?.type) {
+        console.log(
+          `  [resource-review] Skipping ${submission.id.slice(0, 8)}... — invalid resource data`,
+        );
+        continue;
+      }
+
+      const contributor = submission.contributor;
+      console.log(
+        `  [resource-review] Evaluating "${resData.name}" from ${contributor?.name ?? "unknown"}...`,
+      );
+
+      const { result, durationMs, model } = await scoreResource({
+        name: resData.name,
+        url: resData.url,
+        type: resData.type,
+        summary: resData.summary,
+      });
+
+      const approved = result.score >= 50;
+      const reputationDelta = approved ? 5 : -2;
+
+      await trpcMutation("evaluator.reviewSubmission", {
+        submissionId: submission.id,
+        verdict: approved ? "approved" : "rejected",
+        reasoning: result.reasoning,
+        reputationDelta,
+        evaluationTrace: {
+          type: "resource_submission_review",
+          model,
+          durationMs,
+          score: result.score,
+          relevance: result.relevance,
+          authority: result.authority,
+          practicalValue: result.practicalValue,
+          verdict: approved ? "approve" : "reject",
+          resourceName: resData.name,
+          contributorName: contributor?.name,
         },
       });
 
       reviewed++;
-      const icon = result.verdict === "approve" ? "+" : "-";
+      const icon = approved ? "+" : "-";
       console.log(
-        `  [review] ${icon} ${result.verdict.toUpperCase()} (${result.overallScore}/100, ${durationMs}ms) — ${result.reasoning.slice(0, 80)}`,
+        `  [resource-review] ${icon} ${approved ? "APPROVED" : "REJECTED"} (${result.score}/100, ${durationMs}ms) — ${result.reasoning.slice(0, 80)}`,
       );
     } catch (err: any) {
-      console.error(`  [review] Failed on ${submission.id}:`, err.message);
+      console.error(`  [resource-review] Failed on ${submission.id}:`, err.message);
     }
   }
 
@@ -260,69 +568,11 @@ async function scoreUnscoredResources(): Promise<number> {
   return scored;
 }
 
-async function resolveContestedClaims(): Promise<number> {
-  let resolved = 0;
-
-  const claims = await trpcQuery<ContestedClaim[]>(
-    "evaluator.listContestedClaims",
-    { minPositions: 2 },
-  );
-
-  if (!claims?.length) return 0;
-
-  for (const claim of claims) {
-    if (claim.positions.length < 2) continue;
-
-    try {
-      console.log(`  [resolve] Evaluating "${claim.title.slice(0, 50)}"...`);
-
-      const { result, durationMs, model } = await resolveClaim(
-        {
-          title: claim.title,
-          description: claim.description,
-        },
-        claim.positions.map((p) => ({
-          position: p.position,
-          stakeAmount: p.stakeAmount,
-          evidence: p.evidence,
-          contributorName: p.contributor.name,
-        })),
-      );
-
-      await trpcMutation("evaluator.resolveClaim", {
-        claimId: claim.id,
-        resolution: result.resolution,
-        resolutionNote: result.reasoning,
-        evaluationTrace: {
-          type: "claim_resolution",
-          model,
-          durationMs,
-          confidence: result.confidence,
-          evidenceAnalysis: result.evidenceAnalysis,
-          reasoning: result.reasoning,
-          claimTitle: claim.title,
-        },
-      });
-
-      resolved++;
-      const label = result.resolution === "resolved_true" ? "TRUE" : "FALSE";
-      console.log(
-        `  [resolve] ${label} (confidence: ${(result.confidence * 100).toFixed(0)}%, ${durationMs}ms) — ${result.reasoning.slice(0, 80)}`,
-      );
-    } catch (err: any) {
-      console.error(`  [resolve] Failed on ${claim.id}:`, err.message);
-    }
-  }
-
-  return resolved;
-}
-
 async function runGapAnalysis(): Promise<number> {
   try {
     const topics = await trpcQuery<
       Array<{
         id: string;
-        slug: string;
         title: string;
         content: string;
         topicResources: Array<unknown>;
@@ -332,31 +582,29 @@ async function runGapAnalysis(): Promise<number> {
 
     if (!topics?.length || topics.length < 5) return 0;
 
-    const allClaims = await trpcQuery<Array<{ topicId: string | null }>>(
-      "claims.list",
-      {},
-    );
-    const claimsByTopic = new Map<string, number>();
-    for (const c of allClaims ?? []) {
-      if (c.topicId) {
-        claimsByTopic.set(c.topicId, (claimsByTopic.get(c.topicId) ?? 0) + 1);
-      }
-    }
-
     const topicStats = topics.map((t) => ({
-      slug: t.slug,
+      id: t.id,
       title: t.title,
       resourceCount: t.topicResources?.length ?? 0,
-      claimCount: claimsByTopic.get(t.id) ?? 0,
       hasSubtopics: (t.childTopics?.length ?? 0) > 0,
       contentLength: t.content?.length ?? 0,
     }));
 
+    // Fetch existing open bounties to avoid duplicates
+    const openBounties = await trpcQuery<Bounty[]>(
+      "bounties.list",
+      { status: "open" },
+    );
+    const existingBounties = (openBounties ?? []).map((b) => ({
+      title: b.title,
+      topicSlug: b.topic?.id,
+    }));
+
     console.log(
-      `  [gaps] Analyzing ${topicStats.length} topics for gaps...`,
+      `  [gaps] Analyzing ${topicStats.length} topics for gaps (${existingBounties.length} existing bounties)...`,
     );
 
-    const { result, durationMs } = await analyzeGaps(topicStats);
+    const { result, durationMs } = await analyzeGaps(topicStats, existingBounties);
 
     let posted = 0;
     for (const gap of result.gaps) {
@@ -407,24 +655,38 @@ async function runEvaluationCycle(): Promise<void> {
     `\n${"=".repeat(60)}\n[Arbiter] Cycle #${cycleCount} — ${new Date().toISOString()}\n${"=".repeat(60)}`,
   );
 
-  const reviewed = await reviewPendingSubmissions();
-  const scored = await scoreUnscoredResources();
-  const resolved = await resolveContestedClaims();
+  let reviewed = 0, resourcesReviewed = 0, scored = 0, bountiesPosted = 0;
 
-  // Gap analysis every 3rd cycle
-  let bountiesPosted = 0;
-  if (cycleCount % 3 === 0) {
-    bountiesPosted = await runGapAnalysis();
+  try { reviewed = await reviewPendingSubmissions(); }
+  catch (err: any) { console.error("[Arbiter] reviewPendingSubmissions failed:", err.message); }
+
+  try { resourcesReviewed = await reviewPendingResources(); }
+  catch (err: any) { console.error("[Arbiter] reviewPendingResources failed:", err.message); }
+
+  try { scored = await scoreUnscoredResources(); }
+  catch (err: any) { console.error("[Arbiter] scoreUnscoredResources failed:", err.message); }
+
+  // Gap analysis every N cycles (configurable via GAP_ANALYSIS_EVERY)
+  if (cycleCount % GAP_ANALYSIS_EVERY === 0) {
+    try { bountiesPosted = await runGapAnalysis(); }
+    catch (err: any) { console.error("[Arbiter] runGapAnalysis failed:", err.message); }
   }
 
-  await recalculateReputation();
+  try { await recalculateReputation(); }
+  catch (err: any) { console.error("[Arbiter] recalculateReputation failed:", err.message); }
 
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
   console.log(
     `\n[Arbiter] Cycle #${cycleCount} complete in ${elapsed}s` +
-      ` — reviewed: ${reviewed}, scored: ${scored}, resolved: ${resolved}` +
+      ` — expansions: ${reviewed}, resources: ${resourcesReviewed}, scored: ${scored}` +
       (bountiesPosted > 0 ? `, bounties: ${bountiesPosted}` : ""),
   );
+}
+
+const ONCE = process.argv.includes("--once");
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function main(): Promise<void> {
@@ -434,17 +696,26 @@ async function main(): Promise<void> {
 ====================================================
   URL:      ${BASE_URL}
   Model:    ${process.env.EVALUATOR_MODEL ?? "claude-haiku-4-5-20251001"}
-  Interval: ${POLL_INTERVAL_MS / 1000}s
+  Mode:     ${ONCE ? "single cycle" : `polling (${POLL_INTERVAL_MS / 1000}s)`}
 ====================================================
 `);
 
   await runEvaluationCycle();
 
-  setInterval(() => {
-    runEvaluationCycle().catch((err) => {
+  if (ONCE) {
+    console.log("[Arbiter] Single cycle complete, exiting.");
+    process.exit(0);
+  }
+
+  // Sequential loop prevents overlapping cycles (unlike setInterval)
+  while (true) {
+    await sleep(POLL_INTERVAL_MS);
+    try {
+      await runEvaluationCycle();
+    } catch (err) {
       console.error("[Arbiter] Unhandled cycle error:", err);
-    });
-  }, POLL_INTERVAL_MS);
+    }
+  }
 }
 
 main().catch((err) => {

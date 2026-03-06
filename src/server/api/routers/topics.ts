@@ -7,7 +7,7 @@ import {
   publicProcedure,
 } from "@/server/api/trpc";
 import { edges, topicTags, topicResources, topics } from "@/server/db/schema";
-import { slugify } from "@/lib/utils";
+import { generateUniqueId, slugify } from "@/lib/utils";
 
 export const topicsRouter = createTRPCRouter({
   list: publicProcedure
@@ -44,6 +44,8 @@ export const topicsRouter = createTRPCRouter({
           topicTags: {
             with: { tag: true },
           },
+          topicResources: true,
+          childTopics: true,
         },
         orderBy: (t, { asc }) => [asc(t.sortOrder), asc(t.title)],
       });
@@ -53,8 +55,9 @@ export const topicsRouter = createTRPCRouter({
     .input(z.object({ slug: z.string() }))
     .query(async ({ ctx, input }) => {
       const topic = await ctx.db.query.topics.findFirst({
-        where: eq(topics.slug, input.slug),
+        where: eq(topics.id, input.slug),
         with: {
+          parentTopic: true,
           topicTags: {
             with: { tag: true },
           },
@@ -99,10 +102,10 @@ export const topicsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const slug = slugify(input.title);
+      const id = await generateUniqueId(ctx.db, topics, topics.id, input.title);
       const [topic] = await ctx.db
         .insert(topics)
-        .values({ ...input, slug })
+        .values({ ...input, id })
         .returning();
       return topic!;
     }),
@@ -127,9 +130,6 @@ export const topicsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { id, ...rest } = input;
       const values: Record<string, unknown> = { ...rest };
-      if (rest.title) {
-        values.slug = slugify(rest.title);
-      }
       const [updated] = await ctx.db
         .update(topics)
         .set(values)

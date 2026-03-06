@@ -1,21 +1,64 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { iconSchema } from "@/lib/phosphor-icons";
 import {
   createTRPCRouter,
+  apiKeyProcedure,
   evaluatorProcedure,
   publicProcedure,
 } from "@/server/api/trpc";
 import {
   submissions,
   resources,
-  claims,
-  claimPositions,
+  topicResources,
   contributors,
   bounties,
   activity,
   topics,
+  tags,
 } from "@/server/db/schema";
+import { activityId, generateUniqueId } from "@/lib/utils";
+import { applyExpansion } from "./expansions";
+import { publicContributorColumns } from "./contributors";
+
+// Shared helper: complete bounty for an approved submission
+async function completeBountyForSubmission(db: any, updated: any) {
+  if (!updated.bountyId || !updated.contributorId) return;
+
+  const bounty = await db.query.bounties.findFirst({
+    where: and(
+      eq(bounties.id, updated.bountyId),
+      eq(bounties.status, "open"),
+    ),
+  });
+
+  if (!bounty) return;
+
+  await db
+    .update(bounties)
+    .set({
+      status: "completed",
+      completedById: updated.contributorId,
+    })
+    .where(
+      and(eq(bounties.id, bounty.id), eq(bounties.status, "open")),
+    );
+
+  await db
+    .update(contributors)
+    .set({
+      karma: sql`${contributors.karma} + ${bounty.karmaReward}`,
+    })
+    .where(eq(contributors.id, updated.contributorId));
+
+  await db.insert(activity).values({
+    id: activityId("bounty-completed", updated.contributorId),
+    type: "bounty_completed",
+    contributorId: updated.contributorId,
+    description: `Bounty completed: "${bounty.title}" (+${bounty.karmaReward} karma)`,
+  });
+}
 
 export const evaluatorRouter = createTRPCRouter({
   // ─── Queries (for evaluator script) ───────────────────────────────────
@@ -31,7 +74,7 @@ export const evaluatorRouter = createTRPCRouter({
         where: and(...conditions),
         with: { contributor: true },
         orderBy: (s, { asc }) => [asc(s.createdAt)],
-        limit: 20,
+        limit: 50,
       });
     }),
 
@@ -41,25 +84,9 @@ export const evaluatorRouter = createTRPCRouter({
         eq(resources.visibility, "public"),
         eq(resources.score, 0),
       ),
-      limit: 20,
+      limit: 50,
     });
   }),
-
-  listContestedClaims: evaluatorProcedure
-    .input(
-      z.object({ minPositions: z.number().int().default(2) }).optional(),
-    )
-    .query(async ({ ctx }) => {
-      return ctx.db.query.claims.findMany({
-        where: eq(claims.status, "contested"),
-        with: {
-          positions: {
-            with: { contributor: true },
-          },
-        },
-        limit: 10,
-      });
-    }),
 
   // ─── Mutations (called by evaluator script) ───────────────────────────
 
@@ -67,38 +94,49 @@ export const evaluatorRouter = createTRPCRouter({
     .input(
       z.object({
         submissionId: z.string(),
-        approved: z.boolean(),
+        verdict: z.enum(["approved", "rejected", "revision_requested"]),
         reasoning: z.string(),
         reputationDelta: z.number().int().optional(),
         evaluationTrace: z.record(z.unknown()).optional(),
+        resolvedTags: z.array(z.string()).optional(),
+        resolvedEdges: z.array(z.object({
+          targetTopicSlug: z.string(),
+          relationType: z.enum(["related", "prerequisite", "subtopic", "see_also"]),
+        })).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Only update if still pending (prevents double-review race condition)
       const [updated] = await ctx.db
         .update(submissions)
         .set({
-          status: input.approved ? "approved" : "rejected",
+          status: input.verdict,
           reviewReasoning: input.reasoning,
           reviewedByContributorId: ctx.contributor.id,
           reputationDelta: input.reputationDelta,
           reviewedAt: new Date(),
         })
-        .where(eq(submissions.id, input.submissionId))
+        .where(and(eq(submissions.id, input.submissionId), eq(submissions.status, "pending")))
         .returning();
 
+      if (!updated) return null; // Already reviewed by another evaluator cycle
+
       if (updated?.contributorId) {
-        const field = input.approved
-          ? contributors.acceptedContributions
-          : contributors.rejectedContributions;
-        await ctx.db
-          .update(contributors)
-          .set({
-            totalContributions: sql`${contributors.totalContributions} + 1`,
-            [input.approved
-              ? "acceptedContributions"
-              : "rejectedContributions"]: sql`${field} + 1`,
-          })
-          .where(eq(contributors.id, updated.contributorId));
+        // Only increment contribution counters for final verdicts (not revision requests)
+        if (input.verdict !== "revision_requested") {
+          const field = input.verdict === "approved"
+            ? contributors.acceptedContributions
+            : contributors.rejectedContributions;
+          await ctx.db
+            .update(contributors)
+            .set({
+              totalContributions: sql`${contributors.totalContributions} + 1`,
+              [input.verdict === "approved"
+                ? "acceptedContributions"
+                : "rejectedContributions"]: sql`${field} + 1`,
+            })
+            .where(eq(contributors.id, updated.contributorId));
+        }
 
         if (input.reputationDelta) {
           await ctx.db
@@ -111,17 +149,112 @@ export const evaluatorRouter = createTRPCRouter({
       }
 
       // Log activity with full evaluation trace
+      const verdictLabel = input.verdict === "revision_requested" ? "revision requested" : input.verdict;
       await ctx.db.insert(activity).values({
+        id: activityId("submission-reviewed", ctx.contributor.id),
         type: "submission_reviewed",
         contributorId: ctx.contributor.id,
         submissionId: input.submissionId,
-        description: `Submission ${input.approved ? "approved" : "rejected"}: ${input.reasoning.slice(0, 100)}`,
+        description: `Submission ${verdictLabel}: ${input.reasoning.slice(0, 100)}`,
         data: input.evaluationTrace
           ? (input.evaluationTrace as Record<string, unknown>)
           : undefined,
       });
 
-      return updated!;
+      // Materialize expansion into graph if approved
+      let createdTopicId: string | null = null;
+      if (input.verdict === "approved" && (updated?.type === "expansion" || updated?.type === "bounty_response")) {
+        const expansionData = updated.data as any;
+        if (expansionData?.topic?.title && expansionData?.topic?.content) {
+          try {
+            const expansionResult = await applyExpansion(ctx.db, updated.id, expansionData, updated.contributorId, input.resolvedTags, input.resolvedEdges);
+            createdTopicId = expansionResult?.topicId ?? null;
+          } catch (applyError: any) {
+            // Revert submission to pending so it gets retried next cycle
+            await ctx.db
+              .update(submissions)
+              .set({
+                status: "pending",
+                reviewReasoning: null,
+                reviewedByContributorId: null,
+                reputationDelta: null,
+                reviewedAt: null,
+              })
+              .where(eq(submissions.id, input.submissionId));
+
+            await ctx.db.insert(activity).values({
+              id: activityId("apply-expansion-failed", input.submissionId),
+              type: "submission_reviewed",
+              contributorId: ctx.contributor.id,
+              submissionId: input.submissionId,
+              description: `applyExpansion failed, reverted to pending: ${applyError.message?.slice(0, 150)}`,
+            });
+
+            return { submission: { ...updated, status: "pending" }, topicId: null };
+          }
+
+          // If this expansion was responding to a bounty, complete it
+          await completeBountyForSubmission(ctx.db, updated);
+        }
+      }
+
+      // Materialize resource submission into graph if approved
+      if (input.verdict === "approved" && updated?.type === "resource") {
+        const resData = updated.data as any;
+        if (resData?.name && resData?.type) {
+          const resId = await generateUniqueId(
+            ctx.db,
+            resources,
+            resources.id,
+            resData.name,
+          );
+          const [resource] = await ctx.db
+            .insert(resources)
+            .values({
+              id: resId,
+              name: resData.name,
+              url: resData.url ?? null,
+              type: resData.type,
+              summary: resData.summary ?? "",
+              visibility: "public",
+              submittedById: updated.contributorId,
+            })
+            .returning();
+
+          if (resource) {
+            // Link to topic if specified
+            if (resData.topicSlug) {
+              const topic = await ctx.db.query.topics.findFirst({
+                where: eq(topics.id, resData.topicSlug),
+              });
+              if (topic) {
+                await ctx.db
+                  .insert(topicResources)
+                  .values({
+                    id: `${topic.id}--${resource.id}`,
+                    topicId: topic.id,
+                    resourceId: resource.id,
+                    addedById: updated.contributorId,
+                  })
+                  .onConflictDoNothing();
+              }
+            }
+
+            await ctx.db.insert(activity).values({
+              id: activityId("resource-submitted", resId),
+              type: "resource_submitted",
+              contributorId: updated.contributorId,
+              resourceId: resource.id,
+              description: `Resource created: "${resData.name}"`,
+            });
+          }
+
+          // Complete bounty if this resource submission was responding to one
+          await completeBountyForSubmission(ctx.db, updated);
+        }
+      }
+
+      return { submission: updated, topicId: createdTopicId };
     }),
 
   scoreResource: evaluatorProcedure
@@ -142,6 +275,7 @@ export const evaluatorRouter = createTRPCRouter({
       // Log activity with trace
       if (input.evaluationTrace) {
         await ctx.db.insert(activity).values({
+          id: activityId("resource-scored", input.resourceId),
           type: "submission_reviewed",
           contributorId: ctx.contributor.id,
           resourceId: input.resourceId,
@@ -153,69 +287,87 @@ export const evaluatorRouter = createTRPCRouter({
       return updated!;
     }),
 
-  resolveClaim: evaluatorProcedure
+  resubmitRevision: apiKeyProcedure
     .input(
       z.object({
-        claimId: z.string(),
-        resolution: z.enum(["resolved_true", "resolved_false"]),
-        resolutionNote: z.string(),
-        evaluationTrace: z.record(z.unknown()).optional(),
+        submissionId: z.string(),
+        data: z.record(z.unknown()),
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const claim = await ctx.db.query.claims.findFirst({
-        where: eq(claims.id, input.claimId),
-        with: { positions: true },
+      // Only allow resubmission of revision_requested submissions
+      const submission = await ctx.db.query.submissions.findFirst({
+        where: and(
+          eq(submissions.id, input.submissionId),
+          eq(submissions.status, "revision_requested"),
+        ),
       });
 
-      if (!claim) throw new Error("Claim not found");
-
-      const [updated] = await ctx.db
-        .update(claims)
-        .set({
-          status: input.resolution,
-          resolvedAt: new Date(),
-          resolutionNote: input.resolutionNote,
-          confidence: input.resolution === "resolved_true" ? 1.0 : 0.0,
-        })
-        .where(eq(claims.id, input.claimId))
-        .returning();
-
-      const winningPosition =
-        input.resolution === "resolved_true" ? "support" : "oppose";
-
-      for (const pos of claim.positions) {
-        const won = pos.position === winningPosition;
-        const delta = won ? pos.stakeAmount : -pos.stakeAmount;
-
-        await ctx.db
-          .update(claimPositions)
-          .set({
-            outcome: won ? "won" : "lost",
-            reputationDelta: delta,
-          })
-          .where(eq(claimPositions.id, pos.id));
-
-        await ctx.db
-          .update(contributors)
-          .set({
-            karma: sql`${contributors.karma} + ${delta}`,
-          })
-          .where(eq(contributors.id, pos.contributorId));
+      if (!submission) {
+        throw new Error("Submission not found or not in revision_requested status");
       }
 
-      // Log activity with evaluation trace
+      // Verify the contributor owns this submission
+      if (submission.contributorId !== ctx.contributor.id) {
+        throw new Error("You can only resubmit your own submissions");
+      }
+
+      // Update the submission with revised data and reset to pending
+      const [updated] = await ctx.db
+        .update(submissions)
+        .set({
+          data: input.data as Record<string, unknown>,
+          status: "pending",
+          revisionCount: sql`${submissions.revisionCount} + 1`,
+          originalSubmissionId: submission.originalSubmissionId ?? submission.id,
+          reviewReasoning: null,
+          reviewedByContributorId: null,
+          reputationDelta: null,
+          reviewedAt: null,
+        })
+        .where(
+          and(
+            eq(submissions.id, input.submissionId),
+            eq(submissions.status, "revision_requested"),
+          ),
+        )
+        .returning();
+
+      if (!updated) return null;
+
+      // Log activity
       await ctx.db.insert(activity).values({
-        type: "claim_resolved",
+        id: activityId("revision-submitted", ctx.contributor.id),
+        type: "submission_reviewed",
         contributorId: ctx.contributor.id,
-        claimId: input.claimId,
-        description: `Claim resolved as ${input.resolution === "resolved_true" ? "TRUE" : "FALSE"}: "${claim.title}"`,
-        data: input.evaluationTrace
-          ? (input.evaluationTrace as Record<string, unknown>)
-          : undefined,
+        submissionId: input.submissionId,
+        description: `Revision submitted for "${(input.data as any)?.topic?.title ?? "submission"}" (revision #${updated.revisionCount})`,
       });
 
-      return updated!;
+      return updated;
+    }),
+
+  listRevisionRequested: apiKeyProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }).optional())
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.submissions.findMany({
+        where: and(
+          eq(submissions.contributorId, ctx.contributor.id),
+          eq(submissions.status, "revision_requested"),
+        ),
+        orderBy: (s, { desc }) => [desc(s.reviewedAt)],
+        limit: input?.limit ?? 20,
+      });
+    }),
+
+  listMySubmissions: apiKeyProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }).optional())
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.submissions.findMany({
+        where: eq(submissions.contributorId, ctx.contributor.id),
+        orderBy: (s, { desc: d }) => [d(s.createdAt)],
+        limit: input?.limit ?? 20,
+      });
     }),
 
   postBounty: evaluatorProcedure
@@ -232,14 +384,28 @@ export const evaluatorRouter = createTRPCRouter({
       let topicId: string | undefined;
       if (input.topicSlug) {
         const topic = await ctx.db.query.topics.findFirst({
-          where: eq(topics.slug, input.topicSlug),
+          where: eq(topics.id, input.topicSlug),
         });
         topicId = topic?.id;
       }
 
+      // Dedup: check for existing open bounty with same topicId + type
+      if (topicId) {
+        const existing = await ctx.db.query.bounties.findFirst({
+          where: and(
+            eq(bounties.topicId, topicId),
+            eq(bounties.type, input.type),
+            eq(bounties.status, "open"),
+          ),
+        });
+        if (existing) return existing;
+      }
+
+      const id = await generateUniqueId(ctx.db, bounties, bounties.id, input.title);
       const [bounty] = await ctx.db
         .insert(bounties)
         .values({
+          id,
           title: input.title,
           description: input.description,
           type: input.type,
@@ -250,6 +416,89 @@ export const evaluatorRouter = createTRPCRouter({
         .returning();
 
       return bounty!;
+    }),
+
+  completeBounty: evaluatorProcedure
+    .input(
+      z.object({
+        bountyId: z.string(),
+        contributorId: z.string(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Only complete if bounty is still open (handles race conditions)
+      const bounty = await ctx.db.query.bounties.findFirst({
+        where: and(
+          eq(bounties.id, input.bountyId),
+          eq(bounties.status, "open"),
+        ),
+      });
+
+      if (!bounty) return null;
+
+      const [updated] = await ctx.db
+        .update(bounties)
+        .set({
+          status: "completed",
+          completedById: input.contributorId,
+        })
+        .where(
+          and(eq(bounties.id, input.bountyId), eq(bounties.status, "open")),
+        )
+        .returning();
+
+      if (updated) {
+        // Award karma to the contributor
+        await ctx.db
+          .update(contributors)
+          .set({
+            karma: sql`${contributors.karma} + ${bounty.karmaReward}`,
+          })
+          .where(eq(contributors.id, input.contributorId));
+
+        await ctx.db.insert(activity).values({
+          id: activityId("bounty-completed", input.contributorId),
+          type: "bounty_completed",
+          contributorId: input.contributorId,
+          description: `Bounty completed: "${bounty.title}" (+${bounty.karmaReward} karma)`,
+        });
+      }
+
+      return updated ?? null;
+    }),
+
+  setTopicIcon: evaluatorProcedure
+    .input(
+      z.object({
+        topicId: z.string(),
+        icon: iconSchema.nullable(),
+        iconHue: z.number().int().min(0).max(360).nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [updated] = await ctx.db
+        .update(topics)
+        .set({ icon: input.icon, iconHue: input.iconHue })
+        .where(eq(topics.id, input.topicId))
+        .returning();
+      return updated!;
+    }),
+
+  setTagIcon: evaluatorProcedure
+    .input(
+      z.object({
+        tagId: z.string(),
+        icon: iconSchema.nullable(),
+        iconHue: z.number().int().min(0).max(360).nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const [updated] = await ctx.db
+        .update(tags)
+        .set({ icon: input.icon, iconHue: input.iconHue })
+        .where(eq(tags.id, input.tagId))
+        .returning();
+      return updated!;
     }),
 
   recalculateReputation: evaluatorProcedure.mutation(async ({ ctx }) => {
@@ -293,9 +542,8 @@ export const evaluatorRouter = createTRPCRouter({
       return ctx.db.query.activity.findMany({
         where: sql`${activity.data} IS NOT NULL AND ${activity.data}->>'type' IS NOT NULL`,
         with: {
-          contributor: true,
+          contributor: { columns: publicContributorColumns },
           topic: true,
-          claim: true,
           resource: true,
           submission: true,
         },
@@ -315,9 +563,9 @@ export const evaluatorRouter = createTRPCRouter({
       total: allEvals.length,
       expansionReviews: 0,
       resourceScores: 0,
-      claimResolutions: 0,
       approvals: 0,
       rejections: 0,
+      revisionRequests: 0,
       avgResourceScore: 0,
       avgDurationMs: 0,
       totalDurationMs: 0,
@@ -337,15 +585,13 @@ export const evaluatorRouter = createTRPCRouter({
         case "expansion_review":
           stats.expansionReviews++;
           if (data.verdict === "approve") stats.approvals++;
+          else if (data.verdict === "revise") stats.revisionRequests++;
           else stats.rejections++;
           break;
         case "resource_score":
           stats.resourceScores++;
           resourceScoreSum += (data.score as number) ?? 0;
           resourceScoreCount++;
-          break;
-        case "claim_resolution":
-          stats.claimResolutions++;
           break;
       }
     }

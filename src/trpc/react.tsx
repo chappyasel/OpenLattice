@@ -2,6 +2,8 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import { QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister";
 import {
   httpLink,
   loggerLink,
@@ -29,6 +31,16 @@ export const api = createTRPCReact<AppRouter>();
 
 export type RouterInputs = inferRouterInputs<AppRouter>;
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
+
+const persister =
+  typeof window !== "undefined"
+    ? createSyncStoragePersister({
+        storage: window.localStorage,
+        key: "ol-query-cache",
+        serialize: (data) => SuperJSON.stringify(data),
+        deserialize: (data) => SuperJSON.parse(data),
+      })
+    : undefined;
 
 export function TRPCReactProvider(props: { children: React.ReactNode }) {
   const queryClient = getQueryClient();
@@ -66,12 +78,39 @@ export function TRPCReactProvider(props: { children: React.ReactNode }) {
     }),
   );
 
+  const Wrapper =
+    typeof window !== "undefined" && persister
+      ? ({ children }: { children: React.ReactNode }) => (
+          <PersistQueryClientProvider
+            client={queryClient}
+            persistOptions={{
+              persister,
+              maxAge: 24 * 60 * 60 * 1000,
+              dehydrateOptions: {
+                shouldDehydrateQuery: (query) => {
+                  const key = query.queryKey as unknown[];
+                  if (!Array.isArray(key) || !Array.isArray(key[0]))
+                    return false;
+                  const path = key[0] as string[];
+                  return (
+                    (path[0] === "topics" && path[1] === "list") ||
+                    (path[0] === "tags" && path[1] === "list")
+                  );
+                },
+              },
+            }}
+          >
+            {children}
+          </PersistQueryClientProvider>
+        )
+      : QueryClientProvider;
+
   return (
-    <QueryClientProvider client={queryClient}>
+    <Wrapper client={queryClient}>
       <api.Provider client={trpcClient} queryClient={queryClient}>
         {props.children}
       </api.Provider>
-    </QueryClientProvider>
+    </Wrapper>
   );
 }
 

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { activity } from "@/server/db/schema";
+import { publicContributorColumns } from "./contributors";
 
 export const activityRouter = createTRPCRouter({
   list: publicProcedure
@@ -14,12 +15,10 @@ export const activityRouter = createTRPCRouter({
               "topic_created",
               "resource_submitted",
               "edge_created",
-              "claim_made",
-              "claim_challenged",
-              "claim_resolved",
               "bounty_completed",
               "submission_reviewed",
               "reputation_changed",
+              "kudos_given",
             ])
             .optional(),
           contributorId: z.string().optional(),
@@ -40,9 +39,8 @@ export const activityRouter = createTRPCRouter({
       const items = await ctx.db.query.activity.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         with: {
-          contributor: true,
+          contributor: { columns: publicContributorColumns },
           topic: true,
-          claim: true,
           bounty: true,
         },
         orderBy: [desc(activity.createdAt)],
@@ -63,9 +61,8 @@ export const activityRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       return ctx.db.query.activity.findMany({
         with: {
-          contributor: true,
+          contributor: { columns: publicContributorColumns },
           topic: true,
-          claim: true,
         },
         orderBy: [desc(activity.createdAt)],
         limit: input?.limit ?? 10,

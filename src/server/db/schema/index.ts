@@ -7,7 +7,5 @@ export * from "./contributors";
 export * from "./submissions";
 export * from "./bounties";
 export * from "./kudos";
-export * from "./claims";
-export * from "./claimPositions";
 export * from "./contributorReputation";
 export * from "./activity";

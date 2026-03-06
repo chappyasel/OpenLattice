@@ -6,9 +6,8 @@ import { useRouter } from "next/navigation";
 
 interface GraphNode {
   id: string;
-  slug?: string;
   title: string;
-  type: "topic" | "claim";
+  type: "topic";
   connectionCount?: number;
 }
 
@@ -38,14 +37,12 @@ function getEdgeColor(relationType?: string): string {
     case "see_also":
       return "rgba(34, 197, 94, 0.5)";
     default:
-      return "rgba(100, 116, 139, 0.5)";
+      return "rgba(0, 118, 219, 0.6)";
   }
 }
 
-function getNodeColor(type: "topic" | "claim"): string {
-  return type === "topic"
-    ? "hsl(230, 80%, 60%)"
-    : "hsl(25, 90%, 55%)";
+function getNodeColor(_type: "topic"): string {
+  return "#0076db";
 }
 
 export function GraphViewer({
@@ -82,6 +79,7 @@ export function GraphViewer({
           source: edge.sourceTopicId,
           target: edge.targetTopicId,
           fill: getEdgeColor(edge.relationType),
+          size: 3,
         })),
     [edges, nodes],
   );
@@ -99,8 +97,8 @@ export function GraphViewer({
       const graphNode = node.data ?? nodes.find((n) => n.id === node.id);
       if (onNodeClick && graphNode) {
         onNodeClick(graphNode as GraphNode);
-      } else if (graphNode?.slug) {
-        router.push(`/topic/${graphNode.slug}`);
+      } else if (graphNode?.id) {
+        router.push(`/topic/${graphNode.id}`);
       }
     },
     [nodes, onNodeClick, onSelect, router],
@@ -117,10 +115,10 @@ export function GraphViewer({
         onNodeClick={handleNodeClick as never}
         onCanvasClick={onCanvasClick}
         theme={{
-          canvas: { background: "hsl(224, 20%, 6%)", fog: undefined },
+          canvas: { background: undefined, fog: undefined },
           node: {
-            fill: "hsl(230, 80%, 60%)",
-            activeFill: "hsl(230, 80%, 75%)",
+            fill: "#0076db",
+            activeFill: "#3399e6",
             opacity: 1,
             selectedOpacity: 1,
             inactiveOpacity: 0.3,
@@ -128,28 +126,28 @@ export function GraphViewer({
               color: "hsl(220, 14%, 96%)",
               activeColor: "hsl(220, 14%, 100%)",
             },
-            ring: { fill: "hsl(230, 80%, 75%)" },
+            ring: { fill: "#3399e6" },
             port: {
-              fill: "hsl(230, 80%, 60%)",
-              activeFill: "hsl(230, 80%, 75%)",
+              fill: "#0076db",
+              activeFill: "#3399e6",
             },
           },
-          lasso: { border: "1px solid hsl(230, 80%, 60%)", background: "rgba(99, 102, 241, 0.1)" },
-          ring: { fill: "hsl(230, 80%, 60%)", activeFill: "hsl(230, 80%, 75%)" },
+          lasso: { border: "1px solid #0076db", background: "rgba(0, 118, 219, 0.1)" },
+          ring: { fill: "#0076db", activeFill: "#3399e6" },
           edge: {
-            fill: "rgba(100, 116, 139, 0.5)",
-            activeFill: "hsl(230, 80%, 60%)",
+            fill: "rgba(0, 118, 219, 0.6)",
+            activeFill: "#3399e6",
             opacity: 1,
             selectedOpacity: 1,
             inactiveOpacity: 0.1,
             label: { color: "hsl(220, 14%, 96%)", activeColor: "hsl(220, 14%, 100%)", fontSize: 8 },
           },
           arrow: {
-            fill: "rgba(100, 116, 139, 0.5)",
-            activeFill: "hsl(230, 80%, 60%)",
+            fill: "rgba(0, 118, 219, 0.6)",
+            activeFill: "#3399e6",
           },
           cluster: {
-            stroke: "hsl(224, 16%, 16%)",
+            stroke: "hsl(210, 20%, 16%)",
             opacity: 1,
             selectedOpacity: 1,
             inactiveOpacity: 0.1,

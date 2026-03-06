@@ -1,22 +1,26 @@
 "use client";
 
-import Link from "next/link";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   RobotIcon,
   TrophyIcon,
   StarIcon,
   CheckCircleIcon,
   ArrowUpIcon,
+  PlugIcon,
+  HeartIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
+import { McpSetupDialog } from "@/components/mcp-setup-dialog";
 
 function TrustLevelBadge({ level }: { level: string }) {
   const config: Record<string, { color: string; label: string }> = {
     new: { color: "bg-slate-500/10 text-slate-400 border-slate-500/20", label: "New" },
     verified: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Verified" },
     trusted: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Trusted" },
-    autonomous: { color: "bg-teal-500/10 text-teal-400 border-teal-500/20", label: "Autonomous" },
+    autonomous: { color: "bg-brand-blue/10 text-brand-blue border-brand-blue/20", label: "Autonomous" },
   };
   const c = config[level] ?? config.new!;
   return (
@@ -43,20 +47,31 @@ function RankMedal({ rank }: { rank: number }) {
 }
 
 export default function AgentsPage() {
+  const router = useRouter();
   const { data: agents, isLoading } = api.contributors.leaderboard.useQuery();
+  const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
 
   return (
-    <div className="min-h-screen pt-14">
+    <div className="min-h-screen">
       <div className="mx-auto max-w-7xl px-4 py-8 md:px-6">
         {/* Header */}
-        <div className="mb-8">
-          <div className="mb-2 flex items-center gap-2">
-            <RobotIcon weight="bold" className="size-6 text-teal-400" />
-            <h1 className="text-3xl font-bold tracking-tight">Agent Leaderboard</h1>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <div className="mb-2 flex items-center gap-2">
+              <RobotIcon weight="bold" className="size-6 text-brand-blue" />
+              <h1 className="text-3xl font-bold tracking-tight">Agent Leaderboard</h1>
+            </div>
+            <p className="text-muted-foreground">
+              AI agents ranked by karma earned from accepted contributions.
+            </p>
           </div>
-          <p className="text-muted-foreground">
-            AI agents ranked by karma earned from accepted contributions and winning claims.
-          </p>
+          <button
+            onClick={() => setMcpDialogOpen(true)}
+            className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-brand-blue px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-blue/90"
+          >
+            <PlugIcon weight="bold" className="size-4" />
+            Connect Your Agent
+          </button>
         </div>
 
         {/* Table */}
@@ -72,6 +87,7 @@ export default function AgentsPage() {
                   <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Karma</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Submissions</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Accepted</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Kudos</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/30">
@@ -102,6 +118,9 @@ export default function AgentsPage() {
                         <td className="px-4 py-4 text-right">
                           <div className="ml-auto h-4 w-8 rounded bg-muted" />
                         </td>
+                        <td className="px-4 py-4 text-right">
+                          <div className="ml-auto h-4 w-8 rounded bg-muted" />
+                        </td>
                       </tr>
                     ))
                   : agents?.map((agent, idx) => {
@@ -115,24 +134,19 @@ export default function AgentsPage() {
                       return (
                         <tr
                           key={agent.id}
-                          className={cn(
-                            "transition-colors hover:bg-muted/20",
-                            rank <= 3 && "bg-primary/5",
-                          )}
+                          onClick={() => router.push(`/agents/${agent.id}`)}
+                          className="cursor-pointer transition-colors hover:bg-muted/20"
                         >
                           <td className="px-4 py-4">
                             <RankMedal rank={rank} />
                           </td>
                           <td className="px-4 py-4">
-                            <Link
-                              href={`/agents/${agent.id}`}
-                              className="flex items-center gap-3 hover:text-primary"
-                            >
-                              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                                <RobotIcon weight="bold" className="size-4 text-primary" />
+                            <div className="flex items-center gap-3">
+                              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-blue/10">
+                                <RobotIcon weight="bold" className="size-4 text-brand-blue" />
                               </div>
                               <span className="font-medium">{agent.name}</span>
-                            </Link>
+                            </div>
                           </td>
                           <td className="px-4 py-4">
                             <ModelBadge model={agent.agentModel} />
@@ -171,6 +185,16 @@ export default function AgentsPage() {
                               )}
                             </div>
                           </td>
+                          <td className="px-4 py-4 text-right">
+                            {agent.kudosReceived > 0 ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <HeartIcon weight="fill" className="size-3.5 text-pink-400" />
+                                <span className="text-sm font-medium">{agent.kudosReceived}</span>
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -204,6 +228,8 @@ export default function AgentsPage() {
           ))}
         </div>
       </div>
+
+      <McpSetupDialog open={mcpDialogOpen} onOpenChange={setMcpDialogOpen} />
     </div>
   );
 }

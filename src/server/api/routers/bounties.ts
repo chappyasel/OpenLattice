@@ -1,6 +1,8 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { formatTimestamp, generateUniqueId, slugify } from "@/lib/utils";
+import { iconSchema } from "@/lib/phosphor-icons";
 import {
   adminProcedure,
   apiKeyProcedure,
@@ -9,27 +11,55 @@ import {
   publicProcedure,
 } from "@/server/api/trpc";
 import { bounties, contributors, submissions } from "@/server/db/schema";
+import { publicContributorColumns } from "./contributors";
 
 export const bountiesRouter = createTRPCRouter({
   listOpen: publicProcedure.query(async ({ ctx }) => {
+    // Lazy expiration: reset stale claims back to open
+    await ctx.db
+      .update(bounties)
+      .set({
+        status: "open",
+        claimedById: null,
+        claimedAt: null,
+        claimExpiresAt: null,
+      })
+      .where(
+        and(
+          eq(bounties.status, "claimed"),
+          lt(bounties.claimExpiresAt, new Date()),
+        ),
+      );
+
     return ctx.db.query.bounties.findMany({
-      where: eq(bounties.status, "open"),
+      where: inArray(bounties.status, ["open", "claimed"]),
       with: {
         topic: true,
+        claimedBy: { columns: publicContributorColumns },
       },
       orderBy: (b, { desc }) => [desc(b.karmaReward), desc(b.createdAt)],
     });
   }),
 
-  list: publicProcedure.query(async ({ ctx }) => {
-    return ctx.db.query.bounties.findMany({
-      with: {
-        topic: true,
-        completedBy: true,
-      },
-      orderBy: (b, { desc }) => [desc(b.createdAt)],
-    });
-  }),
+  list: publicProcedure
+    .input(
+      z
+        .object({
+          status: z.enum(["open", "claimed", "completed", "cancelled"]).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.bounties.findMany({
+        where: input?.status ? eq(bounties.status, input.status) : undefined,
+        with: {
+          topic: true,
+          claimedBy: { columns: publicContributorColumns },
+          completedBy: { columns: publicContributorColumns },
+        },
+        orderBy: (b, { desc }) => [desc(b.createdAt)],
+      });
+    }),
 
   getById: publicProcedure
     .input(z.string())
@@ -38,9 +68,10 @@ export const bountiesRouter = createTRPCRouter({
         where: eq(bounties.id, input),
         with: {
           topic: true,
-          completedBy: true,
+          claimedBy: { columns: publicContributorColumns },
+          completedBy: { columns: publicContributorColumns },
           submissions: {
-            with: { contributor: true },
+            with: { contributor: { columns: publicContributorColumns } },
           },
         },
       });
@@ -58,6 +89,7 @@ export const bountiesRouter = createTRPCRouter({
       const [submission] = await ctx.db
         .insert(submissions)
         .values({
+          id: `bounty-response--${slugify(ctx.contributor.name)}--${formatTimestamp()}`,
           type: "bounty_response",
           status: "pending",
           data: input.data,
@@ -80,6 +112,7 @@ export const bountiesRouter = createTRPCRouter({
       const [submission] = await ctx.db
         .insert(submissions)
         .values({
+          id: `bounty-response--${slugify(ctx.contributor.name)}--${formatTimestamp()}`,
           type: "bounty_response",
           status: "pending",
           data: input.data,
@@ -91,6 +124,50 @@ export const bountiesRouter = createTRPCRouter({
       return submission!;
     }),
 
+  claim: apiKeyProcedure
+    .input(z.object({ bountyId: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const bounty = await ctx.db.query.bounties.findFirst({
+        where: eq(bounties.id, input.bountyId),
+      });
+
+      if (!bounty) {
+        throw new Error("Bounty not found");
+      }
+
+      if (bounty.status === "completed" || bounty.status === "cancelled") {
+        throw new Error(`Bounty is already ${bounty.status}`);
+      }
+
+      // If claimed by someone else and not expired
+      if (
+        bounty.status === "claimed" &&
+        bounty.claimExpiresAt &&
+        bounty.claimExpiresAt > new Date() &&
+        bounty.claimedById !== ctx.contributor.id
+      ) {
+        throw new Error(
+          `Bounty is claimed by another contributor until ${bounty.claimExpiresAt.toISOString()}`,
+        );
+      }
+
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
+
+      const [updated] = await ctx.db
+        .update(bounties)
+        .set({
+          status: "claimed",
+          claimedById: ctx.contributor.id,
+          claimedAt: now,
+          claimExpiresAt: expiresAt,
+        })
+        .where(eq(bounties.id, input.bountyId))
+        .returning();
+
+      return updated!;
+    }),
+
   create: adminProcedure
     .input(
       z.object({
@@ -99,12 +176,15 @@ export const bountiesRouter = createTRPCRouter({
         type: z.enum(["topic", "resource", "edit"]),
         topicId: z.string().optional(),
         karmaReward: z.number().int().min(0).default(10),
+        icon: iconSchema.optional(),
+        iconHue: z.number().int().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const id = await generateUniqueId(ctx.db, bounties, bounties.id, input.title);
       const [bounty] = await ctx.db
         .insert(bounties)
-        .values({ ...input, status: "open" })
+        .values({ ...input, id, status: "open" })
         .returning();
       return bounty!;
     }),

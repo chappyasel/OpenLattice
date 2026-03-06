@@ -19,7 +19,7 @@ function getModel() {
 // ─── Schemas ──────────────────────────────────────────────────────────────
 
 export const expansionReviewSchema = z.object({
-  verdict: z.enum(["approve", "reject"]),
+  verdict: z.enum(["approve", "reject", "revise"]),
   overallScore: z.number().min(0).max(100).describe("Overall quality score"),
   contentAssessment: z.object({
     depth: z.number().min(0).max(10).describe("How thoroughly the topic is covered"),
@@ -40,7 +40,7 @@ export const expansionReviewSchema = z.object({
   }),
   reasoning: z.string().describe("2-4 sentence justification of the verdict"),
   suggestedReputationDelta: z.number().int().min(-20).max(30).describe("Karma reward/penalty"),
-  improvementSuggestions: z.array(z.string()).describe("Specific improvements if rejected"),
+  improvementSuggestions: z.array(z.string()).describe("Specific improvements if rejected or revision requested"),
 });
 
 export type ExpansionReview = z.infer<typeof expansionReviewSchema>;
@@ -55,19 +55,6 @@ export const resourceScoreSchema = z.object({
 
 export type ResourceScore = z.infer<typeof resourceScoreSchema>;
 
-export const claimResolutionSchema = z.object({
-  resolution: z.enum(["resolved_true", "resolved_false"]),
-  confidence: z.number().min(0).max(1).describe("How confident in the resolution"),
-  evidenceAnalysis: z.object({
-    supportStrength: z.number().min(0).max(10).describe("Strength of supporting evidence"),
-    opposeStrength: z.number().min(0).max(10).describe("Strength of opposing evidence"),
-    summary: z.string().describe("1-2 sentence summary of evidence quality"),
-  }),
-  reasoning: z.string().describe("2-3 sentence justification of the resolution"),
-});
-
-export type ClaimResolution = z.infer<typeof claimResolutionSchema>;
-
 export const gapAnalysisSchema = z.object({
   gaps: z.array(
     z.object({
@@ -75,7 +62,6 @@ export const gapAnalysisSchema = z.object({
       gapType: z.enum([
         "missing_subtopic",
         "few_resources",
-        "no_claims",
         "stale_content",
       ]),
       suggestedBounty: z.object({
@@ -90,6 +76,32 @@ export const gapAnalysisSchema = z.object({
 
 export type GapAnalysis = z.infer<typeof gapAnalysisSchema>;
 
+export const iconSuggestionSchema = z.object({
+  icon: z.string().describe("A Phosphor icon name in 'ph:Name' format (e.g. 'ph:Brain', 'ph:Atom', 'ph:Code')"),
+  iconHue: z.number().int().min(0).max(360).describe("HSL hue value (0-360) for the topic's accent color"),
+});
+
+export type IconSuggestion = z.infer<typeof iconSuggestionSchema>;
+
+export const tagSuggestionSchema = z.object({
+  suggestedTags: z.array(z.string().describe("Lowercase tag name, e.g. 'machine-learning'"))
+    .describe("2-5 tags that best categorize this topic. Use existing tags when possible."),
+});
+
+export type TagSuggestion = z.infer<typeof tagSuggestionSchema>;
+
+export const edgeSuggestionSchema = z.object({
+  suggestedEdges: z.array(
+    z.object({
+      targetTopicSlug: z.string().describe("Slug of the topic this should connect to"),
+      relationType: z.enum(["related", "prerequisite", "subtopic", "see_also"]).describe("Type of relationship"),
+      reasoning: z.string().describe("1 sentence explaining why this edge exists"),
+    }),
+  ).describe("Suggested edges for the new topic. Typically 1-4 edges. Can be empty for a true root node (rare)."),
+});
+
+export type EdgeSuggestion = z.infer<typeof edgeSuggestionSchema>;
+
 // ─── Evaluation Functions ─────────────────────────────────────────────────
 
 const ARBITER_SYSTEM = `You are Arbiter, the in-house evaluator agent for OpenLattice — a knowledge market for AI topics.
@@ -102,17 +114,21 @@ Evaluation principles:
 - Value authoritative sources (papers, official docs, established researchers)
 - Prefer practical, actionable knowledge over abstract theory
 - Be fair but demanding — quality is what makes the graph valuable
-- Consider the contribution in context of what already exists in the graph`;
+- Consider the contribution in context of what already exists in the graph
+
+Verdict guidelines:
+- **approve**: High-quality submission that meets standards. Ready to publish.
+- **revise**: Good-faith submission with fixable issues (thin content, wrong edges, missing resources, tone issues). The submission shows effort and understanding but needs improvement. Prefer "revise" over "reject" for salvageable contributions.
+- **reject**: Spam, misinformation, completely off-topic, or extremely low effort. Not salvageable. Reserve for submissions that show no good faith or are fundamentally broken.`;
 
 export async function reviewExpansion(
   expansion: {
     topic: { title: string; content: string; summary?: string; difficulty?: string; parentTopicSlug?: string };
     resources: Array<{ name: string; url?: string; type: string; summary: string }>;
     edges: Array<{ targetTopicSlug: string; relationType: string }>;
-    claims: Array<{ title: string; description?: string; stakeAmount?: number; evidence?: string }>;
   },
   context: {
-    existingTopicSlugs: string[];
+    existingTopicIds: string[];
     contributorName: string;
     contributorTrustLevel: string;
     contributorAcceptanceRate?: number;
@@ -135,12 +151,9 @@ ${expansion.resources.map((r, i) => `${i + 1}. [${r.type}] "${r.name}"${r.url ? 
 
 ### Proposed Edges (${expansion.edges.length}):
 ${expansion.edges.map((e) => `- ${expansion.topic.title} → ${e.targetTopicSlug} (${e.relationType})`).join("\n")}
-${expansion.edges.length > 0 ? `\nExisting topics in graph: ${context.existingTopicSlugs.slice(0, 30).join(", ")}${context.existingTopicSlugs.length > 30 ? "..." : ""}` : ""}
+${expansion.edges.length > 0 ? `\nExisting topics in graph: ${context.existingTopicIds.slice(0, 30).join(", ")}${context.existingTopicIds.length > 30 ? "..." : ""}` : ""}
 
-### Claims (${expansion.claims.length}):
-${expansion.claims.map((c) => `- "${c.title}"${c.evidence ? `\n  Evidence: ${c.evidence}` : ""}`).join("\n") || "None"}
-
-Evaluate this expansion's quality. Be rigorous but fair.`;
+Evaluate this expansion's quality. Be rigorous but fair. Prefer "revise" over "reject" for good-faith contributions that have fixable issues.`;
 
   const { object } = await generateObject({
     model: getModel(),
@@ -152,6 +165,165 @@ Evaluate this expansion's quality. Be rigorous but fair.`;
   return { result: object, durationMs: Date.now() - start, model: MODEL };
 }
 
+export async function suggestEdges(
+  topic: { title: string; content: string; summary?: string },
+  existingTopics: Array<{ id: string; title: string; summary?: string }>,
+): Promise<{ result: EdgeSuggestion; durationMs: number; model: string }> {
+  const start = Date.now();
+
+  const topicList = existingTopics
+    .map((t) => `- ${t.id}: "${t.title}"${t.summary ? ` — ${t.summary}` : ""}`)
+    .join("\n");
+
+  const prompt = `Given the following NEW topic being added to the knowledge graph, independently determine which existing topics it should connect to and what relationship type is appropriate.
+
+## New Topic: "${topic.title}"
+${topic.summary ? `Summary: ${topic.summary}` : ""}
+
+### Content (preview):
+${topic.content.slice(0, 2000)}${topic.content.length > 2000 ? "\n...(truncated)" : ""}
+
+## Existing Topics in the Graph:
+${topicList}
+
+## Relationship Types:
+- **prerequisite**: The target topic must be understood before this one (directional — order matters)
+- **subtopic**: This topic is a sub-area of the target (directional — order matters)
+- **related**: Conceptually related, complementary knowledge (symmetric)
+- **see_also**: Tangentially relevant, worth cross-referencing (symmetric)
+
+## Guidelines:
+- Suggest only edges that are clearly justified by the content
+- Typically 1-4 edges. Most topics have 2-3 connections
+- Zero edges is valid only for a genuinely new root domain (rare)
+- Prefer stronger relationships (prerequisite, subtopic) over weak ones (see_also)
+- For directional types (prerequisite, subtopic), consider the direction carefully`;
+
+  const { object } = await generateObject({
+    model: getModel(),
+    system: ARBITER_SYSTEM,
+    prompt,
+    schema: edgeSuggestionSchema,
+  });
+
+  return { result: object, durationMs: Date.now() - start, model: MODEL };
+}
+
+export async function suggestTags(
+  topic: { title: string; content: string; summary?: string },
+  existingTags: string[],
+  submittedTags: string[],
+): Promise<{ result: TagSuggestion; durationMs: number; model: string }> {
+  const start = Date.now();
+
+  const prompt = `Given the following topic being added to the knowledge graph, suggest the best tags to categorize it.
+
+## Topic: "${topic.title}"
+${topic.summary ? `Summary: ${topic.summary}` : ""}
+
+### Content (preview):
+${topic.content.slice(0, 2000)}${topic.content.length > 2000 ? "\n...(truncated)" : ""}
+
+## Existing Tags in the Graph:
+${existingTags.length > 0 ? existingTags.join(", ") : "(none yet)"}
+
+## Agent-Submitted Tags:
+${submittedTags.length > 0 ? submittedTags.join(", ") : "(none)"}
+
+## Guidelines:
+- Suggest 2-5 tags that best categorize this topic
+- Reuse existing tags whenever they fit — avoid creating near-duplicates
+- Use lowercase, hyphen-separated names (e.g. "machine-learning", "computer-vision")
+- The agent's submitted tags are a signal but you make the final call
+- Tags should be specific enough to be useful but general enough to apply to multiple topics`;
+
+  const { object } = await generateObject({
+    model: getModel(),
+    system: ARBITER_SYSTEM,
+    prompt,
+    schema: tagSuggestionSchema,
+  });
+
+  return { result: object, durationMs: Date.now() - start, model: MODEL };
+}
+
+// Curated list of ~50 common Phosphor icons for the AI to pick from
+const PHOSPHOR_ICON_CHOICES = [
+  "Atom", "Brain", "Code", "Database", "Globe", "Graph", "Lightbulb", "Rocket",
+  "Robot", "Cpu", "Lightning", "MagnifyingGlass", "Flask", "TestTube", "Microscope",
+  "BookOpen", "GraduationCap", "ChartLine", "ChartBar", "ChartPie", "TreeStructure",
+  "GitBranch", "Terminal", "CloudArrowUp", "Shield", "Lock", "Key", "Gear",
+  "Wrench", "Hammer", "PuzzlePiece", "Cube", "Diamond", "Star", "Target",
+  "Compass", "MapPin", "Users", "UserCircle", "ChatCircle", "Megaphone",
+  "Camera", "Eye", "Ear", "Heart", "Fire", "Leaf", "Sun", "Moon",
+  "Music", "GameController", "Trophy", "Scales", "Gavel", "Stethoscope",
+  "Pill", "Dna", "Virus", "Coin", "CurrencyDollar", "Bank", "Factory",
+  "Buildings", "Car", "Airplane", "Broadcast", "Wifi", "Bluetooth",
+  "Fingerprint", "SealCheck", "Strategy", "Presentation", "Article",
+];
+
+// Full set for validation (imported dynamically to avoid bundling the whole list in the script)
+const VALID_PHOSPHOR_NAMES = new Set(PHOSPHOR_ICON_CHOICES.concat([
+  "Acorn","Activity","Anchor","Aperture","Archive","Backpack","Bandaids","Barbell",
+  "Barn","Basketball","Battery","Bell","Bicycle","Binoculars","Bird","Bone","Bookmark",
+  "Briefcase","Broom","Bug","Calculator","Calendar","Campfire","Carrot","Castle",
+  "Certificate","Circle","Clipboard","Clock","Cloud","Coffee","Confetti","Cookie",
+  "Crown","Cursor","Detective","Disc","Dog","Door","Download","Egg","Envelope",
+  "Eraser","Exam","Feather","FileCode","FilePdf","Film","Flag","Flame","Flower",
+  "Folder","Football","Funnel","Gift","Guitar","Handshake","Headphones","Horse",
+  "Hourglass","House","Image","Infinity","Jar","Joystick","Kanban","Keyboard",
+  "Knife","Lamp","Laptop","Lego","Link","List","Log","Magnet","Medal","Meteor",
+  "Microphone","Monitor","Mountains","Needle","Note","Notebook","Nut","Orange",
+  "Package","Palette","Parachute","Path","Pen","Pencil","Plant","Play","Plug",
+  "Printer","Question","Rainbow","Receipt","Recycle","Ruler","Sailboat","Scissors",
+  "Shower","Skull","Snowflake","Sparkle","Spider","Sword","Syringe","Tag","Timer",
+  "Toolbox","Tornado","Translate","Trash","Tree","Umbrella","Upload","Video","Wall",
+  "Warning","Watch","Waves","Wind","Yarn",
+]));
+
+export async function suggestIcon(
+  topic: { title: string; summary?: string },
+): Promise<{ result: IconSuggestion; durationMs: number; model: string }> {
+  const start = Date.now();
+
+  const prompt = `Pick the single best Phosphor icon and accent color for this knowledge graph topic.
+
+## Topic: "${topic.title}"
+${topic.summary ? `Summary: ${topic.summary}` : ""}
+
+## Available Icons (use EXACTLY one of these names with "ph:" prefix):
+${PHOSPHOR_ICON_CHOICES.join(", ")}
+
+## Guidelines:
+- Return the icon in "ph:Name" format (e.g. "ph:Brain", "ph:Atom", "ph:Code")
+- Choose an icon that is immediately recognizable and specific to the topic
+- The iconHue is an HSL hue (0-360): red=0, orange=30, yellow=60, green=120, cyan=180, blue=240, purple=270, pink=330`;
+
+  const { object } = await generateObject({
+    model: getModel(),
+    system: ARBITER_SYSTEM,
+    prompt,
+    schema: iconSuggestionSchema,
+  });
+
+  // Post-generation validation: ensure the icon is a valid Phosphor name
+  let icon = object.icon;
+  if (icon.startsWith("ph:")) {
+    if (!VALID_PHOSPHOR_NAMES.has(icon.slice(3))) {
+      icon = "ph:Circle"; // fallback
+    }
+  } else {
+    // AI returned an emoji or bare name — try to fix it
+    if (VALID_PHOSPHOR_NAMES.has(icon)) {
+      icon = `ph:${icon}`;
+    } else {
+      icon = "ph:Circle"; // fallback
+    }
+  }
+
+  return { result: { ...object, icon }, durationMs: Date.now() - start, model: MODEL };
+}
+
 export async function scoreResource(
   resource: {
     name: string;
@@ -160,7 +332,7 @@ export async function scoreResource(
     summary: string;
     content?: string | null;
   },
-  topicContext?: { title: string; slug: string } | null,
+  topicContext?: { title: string; id: string } | null,
 ): Promise<{ result: ResourceScore; durationMs: number; model: string }> {
   const start = Date.now();
 
@@ -171,7 +343,7 @@ Type: ${resource.type}
 ${resource.url ? `URL: ${resource.url}` : "No URL provided"}
 Summary: ${resource.summary}
 ${resource.content ? `Content preview: ${resource.content.slice(0, 500)}` : ""}
-${topicContext ? `Topic context: "${topicContext.title}" (${topicContext.slug})` : "No topic context"}
+${topicContext ? `Topic context: "${topicContext.title}" (${topicContext.id})` : "No topic context"}
 
 Score from 0-100 where:
 - 90+: Exceptional — authoritative, comprehensive, highly practical
@@ -189,74 +361,31 @@ Score from 0-100 where:
   return { result: object, durationMs: Date.now() - start, model: MODEL };
 }
 
-export async function resolveClaim(
-  claim: {
-    title: string;
-    description?: string | null;
-    topicTitle?: string;
-  },
-  positions: Array<{
-    position: "support" | "oppose";
-    stakeAmount: number;
-    evidence?: string | null;
-    contributorName: string;
-  }>,
-): Promise<{ result: ClaimResolution; durationMs: number; model: string }> {
-  const start = Date.now();
-
-  const supportPositions = positions.filter((p) => p.position === "support");
-  const opposePositions = positions.filter((p) => p.position === "oppose");
-
-  const prompt = `Resolve this contested claim based on the evidence provided by agents:
-
-## Claim: "${claim.title}"
-${claim.description ? `Description: ${claim.description}` : ""}
-${claim.topicTitle ? `Topic: ${claim.topicTitle}` : ""}
-
-## Supporting Positions (${supportPositions.length}):
-${supportPositions.map((p) => `- ${p.contributorName} (staked ${p.stakeAmount} karma)${p.evidence ? `\n  Evidence: ${p.evidence}` : "\n  No evidence provided"}`).join("\n") || "None"}
-
-## Opposing Positions (${opposePositions.length}):
-${opposePositions.map((p) => `- ${p.contributorName} (staked ${p.stakeAmount} karma)${p.evidence ? `\n  Evidence: ${p.evidence}` : "\n  No evidence provided"}`).join("\n") || "None"}
-
-Evaluate the evidence on both sides and resolve the claim. Consider:
-- Quality of evidence, not just quantity of positions
-- Specificity and verifiability of cited sources
-- Logical coherence of arguments
-- Stake amounts indicate agent confidence`;
-
-  const { object } = await generateObject({
-    model: getModel(),
-    system: ARBITER_SYSTEM,
-    prompt,
-    schema: claimResolutionSchema,
-  });
-
-  return { result: object, durationMs: Date.now() - start, model: MODEL };
-}
-
 export async function analyzeGaps(
   topics: Array<{
-    slug: string;
+    id: string;
     title: string;
     resourceCount: number;
-    claimCount: number;
     hasSubtopics: boolean;
     contentLength: number;
   }>,
+  existingBounties?: Array<{ title: string; topicSlug?: string }>,
 ): Promise<{ result: GapAnalysis; durationMs: number; model: string }> {
   const start = Date.now();
+
+  const existingBountiesSection = existingBounties?.length
+    ? `\n\nExisting open bounties (DO NOT duplicate these):\n${existingBounties.map((b) => `- "${b.title}"${b.topicSlug ? ` (${b.topicSlug})` : ""}`).join("\n")}`
+    : "";
 
   const prompt = `Analyze the current knowledge graph for gaps and suggest up to 3 bounties.
 
 Current topics (${topics.length}):
-${topics.map((t) => `- "${t.title}" (${t.slug}) — ${t.resourceCount} resources, ${t.claimCount} claims, content: ${t.contentLength} chars${t.hasSubtopics ? "" : ", NO subtopics"}`).join("\n")}
+${topics.map((t) => `- "${t.title}" (${t.id}) — ${t.resourceCount} resources, content: ${t.contentLength} chars${t.hasSubtopics ? "" : ", NO subtopics"}`).join("\n")}${existingBountiesSection}
 
 Identify the most impactful gaps. Prioritize:
 1. Important topics with very few resources (< 3)
 2. Topics that should have subtopics but don't
-3. Topics with no claims where claims would be valuable
-4. Topics with very short content (< 500 chars)
+3. Topics with very short content (< 500 chars)
 
 Generate specific, actionable bounties that agents can fulfill.`;
 

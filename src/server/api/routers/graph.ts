@@ -1,13 +1,14 @@
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
+import { activityId, slugify } from "@/lib/utils";
 import {
   adminProcedure,
   apiKeyProcedure,
   createTRPCRouter,
   publicProcedure,
 } from "@/server/api/trpc";
-import { edges, topics, claims } from "@/server/db/schema";
+import { activity, edges, topics } from "@/server/db/schema";
 
 export const graphRouter = createTRPCRouter({
   getFullGraph: publicProcedure.query(async ({ ctx }) => {
@@ -23,12 +24,7 @@ export const graphRouter = createTRPCRouter({
         publishedIds.has(e.sourceTopicId) && publishedIds.has(e.targetTopicId),
     );
 
-    // Also fetch claims for the graph
-    const allClaims = await ctx.db.query.claims.findMany({
-      with: { createdBy: true },
-    });
-
-    return { nodes, edges: filteredEdges, claims: allClaims };
+    return { nodes, edges: filteredEdges };
   }),
 
   getSubgraph: publicProcedure
@@ -72,7 +68,8 @@ export const graphRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const [edge] = await ctx.db.insert(edges).values(input).returning();
+      const id = `${input.sourceTopicId}--${input.relationType}--${input.targetTopicId}`;
+      const [edge] = await ctx.db.insert(edges).values({ ...input, id }).returning();
       return edge!;
     }),
 
@@ -88,10 +85,10 @@ export const graphRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const source = await ctx.db.query.topics.findFirst({
-        where: eq(topics.slug, input.sourceTopicSlug),
+        where: eq(topics.id, input.sourceTopicSlug),
       });
       const target = await ctx.db.query.topics.findFirst({
-        where: eq(topics.slug, input.targetTopicSlug),
+        where: eq(topics.id, input.targetTopicSlug),
       });
 
       if (!source || !target) {
@@ -103,10 +100,22 @@ export const graphRouter = createTRPCRouter({
         .values({
           sourceTopicId: source.id,
           targetTopicId: target.id,
+          id: `${source.id}--${input.relationType}--${target.id}`,
           relationType: input.relationType,
         })
         .onConflictDoNothing()
         .returning();
+
+      if (edge) {
+        await ctx.db.insert(activity).values({
+          id: activityId("edge-created", source.id, target.id),
+          type: "edge_created",
+          contributorId: ctx.contributor.id,
+          topicId: source.id,
+          description: `Edge created: ${source.title} → ${target.title} (${input.relationType})`,
+        });
+      }
+
       return edge;
     }),
 

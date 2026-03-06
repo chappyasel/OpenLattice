@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import {
   index,
   integer,
@@ -7,7 +7,6 @@ import {
   pgTable,
   text,
   timestamp,
-  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 import { contributors } from "./contributors";
@@ -50,10 +49,7 @@ export const resourceVisibilityEnum = pgEnum("resource_visibility", [
 export const resources = pgTable(
   "resources",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    slug: text("slug").notNull(),
+    id: text("id").primaryKey(),
     name: text("name").notNull(),
     url: text("url"),
     type: resourceTypeEnum("type").notNull(),
@@ -77,7 +73,6 @@ export const resources = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => ({
-    slugIndex: uniqueIndex("idx_resources_slug").on(table.slug),
     typeIndex: index("idx_resources_type").on(table.type),
     visibilityIndex: index("idx_resources_visibility").on(table.visibility),
     scoreIndex: index("idx_resources_score").on(table.score),

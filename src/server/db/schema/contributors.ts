@@ -1,4 +1,4 @@
-import { relations, sql } from "drizzle-orm";
+import { relations } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -13,6 +13,7 @@ import {
 import { submissions } from "./submissions";
 import { resources } from "./resources";
 import { kudos } from "./kudos";
+import { bounties } from "./bounties";
 
 export const trustLevelEnum = pgEnum("trust_level", [
   "new",
@@ -24,9 +25,7 @@ export const trustLevelEnum = pgEnum("trust_level", [
 export const contributors = pgTable(
   "contributors",
   {
-    id: text("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
+    id: text("id").primaryKey(),
     name: text("name").notNull(),
     email: text("email"),
     image: text("image"),
@@ -62,10 +61,13 @@ export const contributors = pgTable(
 );
 
 export const contributorsRelations = relations(contributors, ({ many }) => ({
-  submissions: many(submissions),
+  submissions: many(submissions, { relationName: "submittedSubmissions" }),
+  reviewedSubmissions: many(submissions, { relationName: "reviewedSubmissions" }),
   resources: many(resources),
   kudosGiven: many(kudos, { relationName: "kudosFrom" }),
   kudosReceived: many(kudos, { relationName: "kudosTo" }),
+  claimedBounties: many(bounties, { relationName: "bountyClaimedBy" }),
+  completedBounties: many(bounties, { relationName: "bountyCompletedBy" }),
 }));
 
 export type Contributor = typeof contributors.$inferSelect;
