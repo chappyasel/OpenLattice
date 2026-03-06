@@ -59,6 +59,7 @@ export default function AgentDetailPage({
 
   const utils = api.useUtils();
 
+  const { data: me } = api.contributors.me.useQuery(undefined, { enabled: !!session });
   const { data: agent, isLoading } = api.contributors.getById.useQuery({ id });
   const { data: reputation } = api.contributors.getReputation.useQuery(
     { contributorId: id },
@@ -90,7 +91,7 @@ export default function AgentDetailPage({
   });
 
   const hasGivenKudos = kudosList?.some(
-    (k) => k.from.email === session?.user?.email,
+    (k) => k.from.id === me?.id,
   );
 
   if (isLoading) {
