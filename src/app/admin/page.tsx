@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ShieldCheckIcon,
@@ -134,8 +134,9 @@ export default function AdminPage() {
         )}
 
         {/* Actions Row */}
-        <div className="mb-8">
+        <div className="mb-8 space-y-4">
           <RunEvaluatorButton />
+          <DeduplicateButton />
         </div>
 
         {/* Pending Submissions */}
@@ -185,18 +186,45 @@ const activityTypeConfig: Record<
 
 function RunEvaluatorButton() {
   const utils = api.useUtils();
-  const [output, setOutput] = useState<string | null>(null);
-  const runMutation = api.admin.runEvaluator.useMutation({
-    onSuccess: (data) => {
-      setOutput(data.output);
+  const [lines, setLines] = useState<string[]>([]);
+  const [running, setRunning] = useState(false);
+  const outputRef = useRef<HTMLPreElement>(null);
+
+  const startEvaluator = () => {
+    setLines([]);
+    setRunning(true);
+
+    const eventSource = new EventSource("/api/evaluator/stream");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const line = JSON.parse(event.data) as string;
+        setLines((prev) => [...prev, line]);
+      } catch {
+        setLines((prev) => [...prev, event.data]);
+      }
+    };
+
+    eventSource.addEventListener("done", () => {
+      eventSource.close();
+      setRunning(false);
       void utils.admin.listPendingSubmissions.invalidate();
       void utils.admin.getStats.invalidate();
       void utils.activity.getRecent.invalidate();
-    },
-    onError: (err) => {
-      setOutput(`Error: ${err.message}`);
-    },
-  });
+    });
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      setRunning(false);
+      setLines((prev) => [...prev, "[Connection lost]"]);
+    };
+  };
+
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [lines]);
 
   return (
     <div className="rounded-2xl border border-border/50 bg-card p-5">
@@ -206,26 +234,64 @@ function RunEvaluatorButton() {
           <p className="text-sm text-muted-foreground">Review pending submissions with AI</p>
         </div>
         <button
-          onClick={() => {
-            setOutput(null);
-            runMutation.mutate();
-          }}
-          disabled={runMutation.isPending}
+          onClick={startEvaluator}
+          disabled={running}
           className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-blue/90 disabled:opacity-50"
         >
-          {runMutation.isPending ? (
+          {running ? (
             <SpinnerIcon weight="bold" className="size-4 animate-spin" />
           ) : (
             <PlayIcon weight="bold" className="size-4" />
           )}
-          {runMutation.isPending ? "Running…" : "Run Evaluator"}
+          {running ? "Running…" : "Run Evaluator"}
         </button>
       </div>
-      {output && (
-        <pre className="mt-4 max-h-48 overflow-auto rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono whitespace-pre-wrap">
-          {output}
+      {lines.length > 0 && (
+        <pre
+          ref={outputRef}
+          className="mt-4 max-h-64 overflow-auto rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono whitespace-pre-wrap"
+        >
+          {lines.join("\n")}
         </pre>
       )}
+    </div>
+  );
+}
+
+function DeduplicateButton() {
+  const utils = api.useUtils();
+  const mutation = api.admin.deduplicateTopics.useMutation({
+    onSuccess: (data) => {
+      void utils.admin.getStats.invalidate();
+      void utils.topics.list.invalidate();
+      alert(`Removed ${data.count} duplicate topic(s): ${data.removed.join(", ")}`);
+    },
+  });
+
+  return (
+    <div className="rounded-2xl border border-border/50 bg-card p-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold">Deduplicate Topics</h3>
+          <p className="text-sm text-muted-foreground">Remove duplicate topics (keeps oldest)</p>
+        </div>
+        <button
+          onClick={() => {
+            if (confirm("Remove all duplicate topics? This keeps the oldest copy of each.")) {
+              mutation.mutate();
+            }
+          }}
+          disabled={mutation.isPending}
+          className="inline-flex items-center gap-2 rounded-lg border border-border/50 px-4 py-2 text-sm font-medium transition-colors hover:bg-muted/30 disabled:opacity-50"
+        >
+          {mutation.isPending ? (
+            <SpinnerIcon weight="bold" className="size-4 animate-spin" />
+          ) : (
+            <TrashIcon weight="bold" className="size-4" />
+          )}
+          {mutation.isPending ? "Deduplicating…" : "Deduplicate"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -234,7 +300,7 @@ function ActivityLog() {
   const { data, isLoading } = api.activity.getRecent.useQuery({ limit: 20 });
 
   return (
-    <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6">
+    <div className="mb-8 overflow-hidden rounded-2xl border border-border/50 bg-card p-6">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ActivityIcon weight="bold" className="size-4 text-brand-blue" />
@@ -275,9 +341,9 @@ function ActivityLog() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm truncate">{item.description}</p>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0 overflow-hidden">
                     {item.contributor && (
-                      <span className="flex items-center gap-1">
+                      <span className="flex shrink-0 items-center gap-1">
                         <RobotIcon weight="bold" className="size-3" />
                         {item.contributor.name}
                       </span>

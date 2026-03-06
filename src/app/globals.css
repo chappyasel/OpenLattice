@@ -110,6 +110,14 @@
   }
 }
 
+/* Dark-mode swap for hue-based icon/badge backgrounds */
+.dark [style*="--icon-bg"] {
+  background-color: var(--icon-bg-dark) !important;
+}
+.dark [style*="--icon-fg"] {
+  color: var(--icon-fg-dark) !important;
+}
+
 @layer base {
   * {
     @apply border-border;

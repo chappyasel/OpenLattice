@@ -26,6 +26,9 @@ export const searchRouter = createTRPCRouter({
                 ilike(topics.content, pattern),
               ),
             ),
+            with: {
+              topicTags: { with: { tag: true } },
+            },
             limit,
           }),
           ctx.db.query.resources.findMany({

@@ -380,6 +380,7 @@ function StatCard({
 export default function EvaluatorPage() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [runOutput, setRunOutput] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
 
   const utils = api.useUtils();
 
@@ -392,16 +393,29 @@ export default function EvaluatorPage() {
     { refetchInterval: 10000 },
   );
 
-  const runEvaluator = api.admin.runEvaluator.useMutation({
-    onSuccess: (data) => {
-      setRunOutput(data.output);
-      void utils.evaluator.getEvaluationFeed.invalidate();
-      void utils.evaluator.getEvaluationStats.invalidate();
+  const runEvaluator = {
+    isPending: isRunning,
+    mutate: () => {
+      setIsRunning(true);
+      setRunOutput("");
+      const es = new EventSource("/api/evaluator/stream");
+      es.onmessage = (e) => {
+        const line = JSON.parse(e.data as string) as string;
+        setRunOutput((prev) => (prev ? prev + "\n" + line : line));
+      };
+      es.addEventListener("done", () => {
+        es.close();
+        setIsRunning(false);
+        void utils.evaluator.getEvaluationFeed.invalidate();
+        void utils.evaluator.getEvaluationStats.invalidate();
+      });
+      es.onerror = () => {
+        es.close();
+        setIsRunning(false);
+        setRunOutput((prev) => (prev ? prev + "\nConnection error" : "Connection error"));
+      };
     },
-    onError: (err) => {
-      setRunOutput(`Error: ${err.message}`);
-    },
-  });
+  };
 
   const items = (feed ?? []) as FeedItem[];
 
@@ -472,14 +486,14 @@ export default function EvaluatorPage() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-brand-blue">
                   Cycle Output
                 </span>
-                {runEvaluator.data && (
+                {runOutput !== null && !isRunning && (
                   <span className={cn(
                     "rounded-full border px-2 py-0.5 text-xs font-medium",
-                    runEvaluator.data.success
+                    !runOutput.includes("[Fatal]") && !runOutput.includes("Connection error")
                       ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
                       : "border-red-500/20 bg-red-500/10 text-red-400",
                   )}>
-                    {runEvaluator.data.success ? "Success" : "Failed"}
+                    {!runOutput.includes("[Fatal]") && !runOutput.includes("Connection error") ? "Success" : "Failed"}
                   </span>
                 )}
               </div>

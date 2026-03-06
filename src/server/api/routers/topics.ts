@@ -8,6 +8,7 @@ import {
 } from "@/server/api/trpc";
 import { edges, topicTags, topicResources, topics } from "@/server/db/schema";
 import { generateUniqueId, slugify } from "@/lib/utils";
+import { publicContributorColumns } from "./contributors";
 
 export const topicsRouter = createTRPCRouter({
   list: publicProcedure
@@ -58,11 +59,17 @@ export const topicsRouter = createTRPCRouter({
         where: eq(topics.id, input.slug),
         with: {
           parentTopic: true,
+          createdBy: { columns: publicContributorColumns },
           topicTags: {
             with: { tag: true },
           },
           topicResources: {
-            with: { resource: true },
+            with: {
+              resource: {
+                with: { submittedBy: { columns: publicContributorColumns } },
+              },
+              addedBy: { columns: publicContributorColumns },
+            },
             orderBy: (tr, { desc }) => [desc(tr.relevanceScore)],
           },
           childTopics: true,
@@ -99,6 +106,8 @@ export const topicsRouter = createTRPCRouter({
           .default("draft"),
         parentTopicId: z.string().optional(),
         sortOrder: z.number().int().default(0),
+        icon: z.string().optional(),
+        iconHue: z.number().int().min(0).max(360).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {

@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -16,14 +16,18 @@ import {
   activity,
   tags,
   topicTags,
+  resourceTypeEnum,
 } from "@/server/db/schema";
 import { activityId, generateUniqueId, slugify } from "@/lib/utils";
+import { suggestIcon } from "@/lib/evaluator/ai";
 import { publicContributorColumns } from "./contributors";
+
+const VALID_RESOURCE_TYPES = new Set(resourceTypeEnum.enumValues);
 
 const expansionSchema = z.object({
   topic: z.object({
     title: z.string().min(1),
-    content: z.string().min(100),
+    content: z.string().min(1500, "Topic content must be at least 1500 characters (~300 words). Aim for 800-2000 words."),
     summary: z.string().optional(),
     difficulty: z.enum(["beginner", "intermediate", "advanced"]).default("beginner"),
     parentTopicSlug: z.string().optional(),
@@ -139,7 +143,17 @@ export async function applyExpansion(
   contributorId: string | null,
   resolvedTags?: string[],
   resolvedEdges?: Array<{ targetTopicSlug: string; relationType: "related" | "prerequisite" | "subtopic" | "see_also" }>,
+  iconOverride?: { icon: string; iconHue: number },
 ): Promise<{ topicId: string } | null> {
+  // Guard: skip if this submission was already materialized into a topic
+  const alreadyApplied = await db.query.activity.findFirst({
+    where: and(
+      eq(activity.submissionId, submissionId),
+      eq(activity.type, "topic_created"),
+    ),
+  });
+  if (alreadyApplied?.topicId) return { topicId: alreadyApplied.topicId };
+
   // 1. Find parent topic if specified
   let parentTopicId: string | undefined;
   if (data.topic.parentTopicSlug) {
@@ -149,7 +163,23 @@ export async function applyExpansion(
     parentTopicId = parent?.id;
   }
 
-  // 2. Create topic with a unique slug (generateUniqueId adds suffix if slug exists)
+  // 2. Resolve icon — use override if provided, otherwise suggest via AI (best-effort)
+  let icon: string | undefined;
+  let iconHue: number | undefined;
+  if (iconOverride) {
+    icon = iconOverride.icon;
+    iconHue = iconOverride.iconHue;
+  } else {
+    try {
+      const { result } = await suggestIcon({ title: data.topic.title, summary: data.topic.summary });
+      icon = result.icon;
+      iconHue = result.iconHue;
+    } catch {
+      // AI unavailable — topic will be created without an icon
+    }
+  }
+
+  // 3. Create topic with a unique slug (generateUniqueId adds suffix if slug exists)
   const topicId = await generateUniqueId(db, topics, topics.id, data.topic.title);
   const [topic] = await db
     .insert(topics)
@@ -161,6 +191,9 @@ export async function applyExpansion(
       difficulty: data.topic.difficulty,
       status: "published",
       parentTopicId,
+      createdById: contributorId,
+      icon,
+      iconHue,
     })
     .returning();
 
@@ -175,6 +208,7 @@ export async function applyExpansion(
 
   // 3. Create resources and link them
   for (const res of data.resources) {
+    const resType = VALID_RESOURCE_TYPES.has(res.type as typeof resourceTypeEnum.enumValues[number]) ? (res.type as typeof resourceTypeEnum.enumValues[number]) : "article" as const;
     const resId = await generateUniqueId(db, resources, resources.id, res.name);
     const [resource] = await db
       .insert(resources)
@@ -182,7 +216,7 @@ export async function applyExpansion(
         id: resId,
         name: res.name,
         url: res.url,
-        type: res.type as any,
+        type: resType as any,
         summary: res.summary,
         visibility: "public",
         submittedById: contributorId,
@@ -240,12 +274,12 @@ export async function applyExpansion(
 
   // 5. Apply tags (use evaluator-resolved tags if provided, otherwise agent-submitted tags)
   const tagNames = resolvedTags ?? data.tags;
+  const isEvaluatorResolved = !!resolvedTags;
   if (tagNames.length > 0) {
     for (const tagName of tagNames) {
       const normalized = tagName.trim().toLowerCase();
       if (!normalized) continue;
 
-      // Upsert tag
       const existing = await db.query.tags.findFirst({
         where: eq(tags.name, normalized),
       });
@@ -253,7 +287,8 @@ export async function applyExpansion(
       let tagId: string;
       if (existing) {
         tagId = existing.id;
-      } else {
+      } else if (isEvaluatorResolved) {
+        // Only the evaluator can create new tags
         const [created] = await db
           .insert(tags)
           .values({ id: slugify(normalized), name: normalized })
@@ -269,6 +304,9 @@ export async function applyExpansion(
         } else {
           tagId = created.id;
         }
+      } else {
+        // Agent-submitted tag doesn't exist — skip it
+        continue;
       }
 
       await db

@@ -32,6 +32,7 @@ import {
   SidebarMenuSubItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import { AppSidebarFooter } from "@/components/app-sidebar-footer";
 
 interface TopicWithChildren {
   id: string;
@@ -277,20 +278,23 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
 
-        {allTags && allTags.length > 0 && (
-          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-            <SidebarGroupLabel>Tags</SidebarGroupLabel>
-            <div className="flex flex-wrap gap-1.5 px-2">
-              {allTags.map((tag) => (
-                <Link key={tag.id} href={`/tags/${tag.id}`}>
-                  <TagBadge tag={tag} size="sm" />
-                </Link>
-              ))}
-            </div>
-          </SidebarGroup>
-        )}
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          {allTags && allTags.length > 0 && (
+            <>
+              <SidebarGroupLabel>Tags</SidebarGroupLabel>
+              <div className="flex flex-wrap gap-1.5 px-2">
+                {allTags.map((tag) => (
+                  <Link key={tag.id} href={`/tags/${tag.id}`}>
+                    <TagBadge tag={tag} size="sm" />
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
+        </SidebarGroup>
       </SidebarContent>
 
+      <AppSidebarFooter />
       <SidebarRail />
     </Sidebar>
   );

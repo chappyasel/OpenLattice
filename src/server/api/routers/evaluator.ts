@@ -103,6 +103,8 @@ export const evaluatorRouter = createTRPCRouter({
           targetTopicSlug: z.string(),
           relationType: z.enum(["related", "prerequisite", "subtopic", "see_also"]),
         })).optional(),
+        icon: z.string().optional(),
+        iconHue: z.number().int().min(0).max(360).optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -167,18 +169,17 @@ export const evaluatorRouter = createTRPCRouter({
         const expansionData = updated.data as any;
         if (expansionData?.topic?.title && expansionData?.topic?.content) {
           try {
-            const expansionResult = await applyExpansion(ctx.db, updated.id, expansionData, updated.contributorId, input.resolvedTags, input.resolvedEdges);
+            const expansionResult = await applyExpansion(ctx.db, updated.id, expansionData, updated.contributorId, input.resolvedTags, input.resolvedEdges, input.icon && input.iconHue != null ? { icon: input.icon, iconHue: input.iconHue } : undefined);
             createdTopicId = expansionResult?.topicId ?? null;
           } catch (applyError: any) {
-            // Revert submission to pending so it gets retried next cycle
+            // Mark as rejected so it doesn't get re-evaluated in an infinite loop
             await ctx.db
               .update(submissions)
               .set({
-                status: "pending",
-                reviewReasoning: null,
-                reviewedByContributorId: null,
-                reputationDelta: null,
-                reviewedAt: null,
+                status: "rejected",
+                reviewReasoning: `Approved but failed to apply: ${applyError.message?.slice(0, 200)}`,
+                reviewedByContributorId: ctx.contributor.id,
+                reviewedAt: new Date(),
               })
               .where(eq(submissions.id, input.submissionId));
 
@@ -187,10 +188,10 @@ export const evaluatorRouter = createTRPCRouter({
               type: "submission_reviewed",
               contributorId: ctx.contributor.id,
               submissionId: input.submissionId,
-              description: `applyExpansion failed, reverted to pending: ${applyError.message?.slice(0, 150)}`,
+              description: `applyExpansion failed, rejected: ${applyError.message?.slice(0, 150)}`,
             });
 
-            return { submission: { ...updated, status: "pending" }, topicId: null };
+            return { submission: { ...updated, status: "rejected" }, topicId: null };
           }
 
           // If this expansion was responding to a bounty, complete it
@@ -266,9 +267,18 @@ export const evaluatorRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Build reviewNotes from evaluation trace if available
+      const trace = input.evaluationTrace as Record<string, unknown> | undefined;
+      const reviewNotes = trace?.reasoning
+        ? String(trace.reasoning)
+        : undefined;
+
       const [updated] = await ctx.db
         .update(resources)
-        .set({ score: input.score })
+        .set({
+          score: input.score,
+          ...(reviewNotes ? { reviewNotes } : {}),
+        })
         .where(eq(resources.id, input.resourceId))
         .returning();
 

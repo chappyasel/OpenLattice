@@ -1,11 +1,7 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useTheme } from "next-themes";
-
-const Grainient = dynamic(() => import("@/components/reactbits/grainient"), {
-  ssr: false,
-});
+import Grainient from "@/components/reactbits/grainient";
 
 export function GrainientBackground() {
   const { resolvedTheme } = useTheme();
@@ -13,7 +9,7 @@ export function GrainientBackground() {
 
   return (
     <div
-      className="pointer-events-none fixed inset-0 z-0 animate-fade-in"
+      className="pointer-events-none fixed inset-0 z-0"
       style={{
         opacity: 0.7,
         maskImage:

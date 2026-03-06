@@ -1,7 +1,5 @@
 import crypto from "crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
-import { spawn } from "child_process";
-import path from "path";
 import { z } from "zod";
 
 import { isAdmin } from "@/lib/auth";
@@ -16,6 +14,10 @@ import {
   bounties,
   contributors,
   submissions,
+  edges,
+  topicResources,
+  topicTags,
+  activity,
 } from "@/server/db/schema";
 
 export const adminRouter = createTRPCRouter({
@@ -136,34 +138,47 @@ export const adminRouter = createTRPCRouter({
       return { success: true };
     }),
 
-  runEvaluator: adminProcedure.mutation(async () => {
-    const projectRoot = path.resolve(process.cwd());
-    const scriptPath = path.join(projectRoot, "scripts/evaluator/run.ts");
+  deleteTopic: adminProcedure
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      // Delete related records first (no cascade on these FKs)
+      await ctx.db.delete(topicResources).where(eq(topicResources.topicId, input.id));
+      await ctx.db.delete(topicTags).where(eq(topicTags.topicId, input.id));
+      await ctx.db.delete(edges).where(eq(edges.sourceTopicId, input.id));
+      await ctx.db.delete(edges).where(eq(edges.targetTopicId, input.id));
+      await ctx.db.delete(activity).where(eq(activity.topicId, input.id));
+      await ctx.db.delete(topics).where(eq(topics.id, input.id));
+      return { success: true };
+    }),
 
-    return new Promise<{ success: boolean; output: string }>((resolve) => {
-      const child = spawn("npx", ["tsx", scriptPath, "--once"], {
-        cwd: projectRoot,
-        env: { ...process.env },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-
-      let output = "";
-      child.stdout.on("data", (data: Buffer) => {
-        output += data.toString();
-      });
-      child.stderr.on("data", (data: Buffer) => {
-        output += data.toString();
-      });
-
-      const timeout = setTimeout(() => {
-        child.kill();
-        resolve({ success: false, output: output + "\n[Timed out after 120s]" });
-      }, 120_000);
-
-      child.on("close", (code) => {
-        clearTimeout(timeout);
-        resolve({ success: code === 0, output });
-      });
+  deduplicateTopics: adminProcedure.mutation(async ({ ctx }) => {
+    const allTopics = await ctx.db.query.topics.findMany({
+      orderBy: (t, { asc }) => [asc(t.createdAt)],
     });
+
+    // Group by title — duplicates have same title but suffixed IDs
+    const byTitle = new Map<string, typeof allTopics>();
+    for (const t of allTopics) {
+      const group = byTitle.get(t.title) ?? [];
+      group.push(t);
+      byTitle.set(t.title, group);
+    }
+
+    const removed: string[] = [];
+    for (const [, group] of byTitle) {
+      if (group.length <= 1) continue;
+      // Keep the first (oldest), remove the rest
+      for (const dup of group.slice(1)) {
+        await ctx.db.delete(topicResources).where(eq(topicResources.topicId, dup.id));
+        await ctx.db.delete(topicTags).where(eq(topicTags.topicId, dup.id));
+        await ctx.db.delete(edges).where(eq(edges.sourceTopicId, dup.id));
+        await ctx.db.delete(edges).where(eq(edges.targetTopicId, dup.id));
+        await ctx.db.delete(activity).where(eq(activity.topicId, dup.id));
+        await ctx.db.delete(topics).where(eq(topics.id, dup.id));
+        removed.push(dup.id);
+      }
+    }
+
+    return { removed, count: removed.length };
   }),
 });

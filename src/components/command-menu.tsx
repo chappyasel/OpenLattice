@@ -8,13 +8,16 @@ import {
   TrophyIcon,
   ClockCounterClockwiseIcon,
   ShieldCheckIcon,
-  TagIcon,
-  LinkIcon,
+  CircleIcon,
+  MoonIcon,
+  SunIcon,
+  DesktopIcon,
 } from "@phosphor-icons/react";
+import { useTheme } from "next-themes";
 import { api } from "@/trpc/react";
 import { useTopicContext } from "@/components/topic-context";
 import { TopicIcon } from "@/components/topic-icon";
-import { ResourceTypeBadge } from "@/components/badges";
+import { DifficultyBadge, ResourceTypeBadge, TagBadge } from "@/components/badges";
 import {
   CommandDialog,
   CommandEmpty,
@@ -95,6 +98,7 @@ export function CommandMenu() {
   const { open, setOpen } = useCommandMenu();
   const router = useRouter();
   const { setSelectedSlug } = useTopicContext();
+  const { theme, setTheme } = useTheme();
   const [search, setSearch] = React.useState("");
   const debouncedSearch = useDebounce(search, 200);
   const hasSearch = debouncedSearch.trim().length > 0;
@@ -183,6 +187,34 @@ export function CommandMenu() {
           </CommandGroup>
         )}
 
+        <CommandGroup heading="Theme">
+          <CommandItem
+            onSelect={() => {
+              const currentTheme = theme === "system" ? "light" : theme;
+              setTheme(currentTheme === "light" ? "dark" : "light");
+              setOpen(false);
+            }}
+          >
+            <MoonIcon weight="bold" className="mr-2 size-4" />
+            Toggle Theme
+            <kbd className="ml-auto flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">
+              ⌥⌘L
+            </kbd>
+          </CommandItem>
+          <CommandItem onSelect={() => { setTheme("light"); setOpen(false); }}>
+            <SunIcon weight="bold" className="mr-2 size-4" />
+            Light
+          </CommandItem>
+          <CommandItem onSelect={() => { setTheme("dark"); setOpen(false); }}>
+            <MoonIcon weight="bold" className="mr-2 size-4" />
+            Dark
+          </CommandItem>
+          <CommandItem onSelect={() => { setTheme("system"); setOpen(false); }}>
+            <DesktopIcon weight="bold" className="mr-2 size-4" />
+            System
+          </CommandItem>
+        </CommandGroup>
+
         {displayTopics && displayTopics.length > 0 && (
           <CommandGroup heading="Topics">
             {displayTopics.map((topic) => (
@@ -191,10 +223,15 @@ export function CommandMenu() {
                 value={topic.title}
                 onSelect={() => selectTopic(topic.id)}
               >
-                <span className="mr-2">
-                  <TopicIcon icon={topic.icon} hue={topic.iconHue} size="sm" />
-                </span>
-                {topic.title}
+                {topic.icon ? (
+                  <TopicIcon icon={topic.icon} hue={topic.iconHue} size="sm" className="mr-2" />
+                ) : (
+                  <span className="mr-2 flex size-4 shrink-0 items-center justify-center">
+                    <CircleIcon weight="fill" className="!size-1.5 opacity-40" />
+                  </span>
+                )}
+                <span className="flex-1 truncate">{topic.title}</span>
+                <DifficultyBadge difficulty={topic.difficulty} size="sm" />
               </CommandItem>
             ))}
           </CommandGroup>
@@ -213,7 +250,9 @@ export function CommandMenu() {
                   }
                 }}
               >
-                <LinkIcon weight="bold" className="mr-2 size-4 shrink-0" />
+                <span className="mr-2 flex size-4 shrink-0 items-center justify-center">
+                    <CircleIcon weight="fill" className="!size-1.5 opacity-40" />
+                  </span>
                 <span className="flex-1 truncate">{resource.name}</span>
                 <ResourceTypeBadge type={resource.type} size="sm" />
               </CommandItem>
@@ -229,14 +268,7 @@ export function CommandMenu() {
                 value={`tag-${tag.name}`}
                 onSelect={() => navigate(`/tags/${tag.id}`)}
               >
-                {tag.icon ? (
-                  <span className="mr-2">
-                    <TopicIcon icon={tag.icon} hue={tag.iconHue} size="sm" />
-                  </span>
-                ) : (
-                  <TagIcon weight="bold" className="mr-2 size-4" />
-                )}
-                {tag.name}
+                <TagBadge tag={tag} size="sm" />
               </CommandItem>
             ))}
           </CommandGroup>

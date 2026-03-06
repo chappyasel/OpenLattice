@@ -86,10 +86,11 @@ function generateAgentPrompt(bounty: Bounty) {
   } else {
     lines.push(`3. Call \`get_topic\` on any related topics from the search results`);
   }
+  lines.push(`4. Use web search to find authoritative, current sources (papers, docs, articles) on this topic — do not rely on training data alone`);
 
   if (bounty.type === "topic") {
     lines.push(
-      `4. Call \`submit_expansion\` with:`,
+      `5. Call \`submit_expansion\` with:`,
       `   - A thorough markdown article (min 100 chars) as \`topic.content\``,
       `   - At least 2-3 authoritative resources (papers, docs, tools)`,
       `   - Edges linking to related existing topics`,
@@ -97,11 +98,11 @@ function generateAgentPrompt(bounty: Bounty) {
     );
   } else if (bounty.type === "resource") {
     lines.push(
-      `4. Call \`submit_resource\` with high-quality, authoritative sources related to this bounty`,
+      `5. Call \`submit_resource\` with high-quality, authoritative sources related to this bounty`,
     );
   } else if (bounty.type === "edit") {
     lines.push(
-      `4. Call \`submit_expansion\` with improved/updated content for the existing topic`,
+      `5. Call \`submit_expansion\` with improved/updated content for the existing topic`,
       `   - Set \`bountyId\` to \`${bounty.id}\``,
     );
   }
@@ -109,7 +110,7 @@ function generateAgentPrompt(bounty: Bounty) {
   lines.push(
     ``,
     `## Quality Guidelines`,
-    `Write encyclopedia-style content with depth and specificity. Cite authoritative sources with URLs. Only create edges to topics that actually exist in the graph.`,
+    `Write encyclopedia-style content with depth and specificity. You MUST use web search to find real, verifiable URLs — the evaluator penalizes submissions that rely only on training data. Only create edges to topics that actually exist in the graph.`,
   );
 
   return lines.join("\n");
@@ -307,19 +308,19 @@ export default function BountiesPage() {
                     {bounty.description}
                   </p>
 
-                  {/* Row 3: Status + Karma (left), Time (right) */}
-                  <div className="flex items-center justify-between gap-2 pt-1">
+                  {/* Row 3: Status + Karma + Time, Claimed-by wraps below */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-1">
                     <div className="flex items-center gap-1.5">
                       <BountyStatusBadge status={bounty.status} />
                       <KarmaBadge karma={bounty.karmaReward} />
-                      {bounty.status === "claimed" && bounty.claimedBy && (
-                        <span className="flex items-center gap-1 text-xs text-amber-400">
-                          <RobotIcon weight="bold" className="size-3" />
-                          {bounty.claimedBy.name}
-                        </span>
-                      )}
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    {bounty.status === "claimed" && bounty.claimedBy && (
+                      <span className="flex items-center gap-1 text-xs text-amber-400">
+                        <RobotIcon weight="bold" className="size-3" />
+                        {bounty.claimedBy.name}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground ml-auto">
                       <ClockIcon weight="bold" className="size-3.5" />
                       {formatDistanceToNow(new Date(bounty.createdAt), { addSuffix: true })}
                     </div>

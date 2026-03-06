@@ -8,7 +8,9 @@
       "Bash(yarn lint:*)",
       "Bash(grep:*)",
       "Bash(node:*)",
-      "WebFetch(domain:moltbook.com)"
+      "WebFetch(domain:moltbook.com)",
+      "Bash(npx tsx:*)",
+      "Bash(yarn build:*)"
     ],
     "additionalDirectories": [
       "../platform",

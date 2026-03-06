@@ -20,6 +20,8 @@ import {
   handleListMySubmissions,
   handleClaimBounty,
   handleCreateEdge,
+  handleListTags,
+  handleListTopics,
 } from "./tools.js";
 
 // Log mode
@@ -40,6 +42,8 @@ const READ_ONLY_TOOLS = new Set([
   "list_bounties",
   "get_reputation",
   "list_recent_activity",
+  "list_tags",
+  "list_topics",
 ]);
 
 // Create MCP server
@@ -73,6 +77,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     case "list_recent_activity":
       return handleListRecentActivity(args as { limit?: number });
+
+    case "list_tags":
+      return handleListTags();
+
+    case "list_topics":
+      return handleListTopics();
 
     case "submit_expansion":
       return handleSubmitExpansion(

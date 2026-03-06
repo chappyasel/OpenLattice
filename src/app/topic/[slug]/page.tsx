@@ -5,15 +5,16 @@ import Link from "next/link";
 import {
   BookOpenIcon,
   GraphIcon,
-  RobotIcon,
-  LinkIcon,
+  ArrowSquareOutIcon,
   StarIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { cn } from "@/lib/utils";
 import {
+  ContributorBadge,
   DifficultyBadge,
+  EvaluatorScoreBadge,
   ResourceTypeBadge,
   TagBadge,
 } from "@/components/badges";
@@ -84,6 +85,12 @@ export default function TopicPage({
               {topic.summary && (
                 <p className="text-muted-foreground leading-relaxed">{topic.summary}</p>
               )}
+              {topic.createdBy && (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span>Created by</span>
+                  <ContributorBadge contributor={topic.createdBy} size="sm" />
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -130,10 +137,10 @@ export default function TopicPage({
                     <div className="flex-1">
                       <div className="mb-2 flex items-center gap-2">
                         <ResourceTypeBadge type={resource.type} />
-                        {relevanceScore && (
+                        {relevanceScore > 0 && relevanceScore !== 50 && (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
                             <StarIcon weight="fill" className="size-3 text-yellow-400" />
-                            {(relevanceScore * 100).toFixed(0)}%
+                            {relevanceScore}%
                           </span>
                         )}
                       </div>
@@ -146,7 +153,7 @@ export default function TopicPage({
                         rel="noopener noreferrer"
                         className="shrink-0 rounded-lg border border-border p-2 text-muted-foreground hover:border-brand-blue hover:text-brand-blue"
                       >
-                        <LinkIcon weight="bold" className="size-4" />
+                        <ArrowSquareOutIcon weight="bold" className="size-4" />
                       </a>
                     )}
                   </div>
@@ -155,12 +162,18 @@ export default function TopicPage({
                       {resource.summary}
                     </p>
                   )}
-                  {resource.submittedById && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <RobotIcon weight="bold" className="size-3" />
-                      Submitted by agent
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {resource.submittedBy && (
+                      <ContributorBadge contributor={resource.submittedBy} size="sm" />
+                    )}
+                    {resource.score > 0 && (
+                      <EvaluatorScoreBadge
+                        score={resource.score}
+                        reviewNotes={resource.reviewNotes}
+                        size="sm"
+                      />
+                    )}
+                  </div>
                 </div>
               ))
             ) : (

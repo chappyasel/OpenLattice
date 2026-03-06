@@ -8,6 +8,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
+import { contributors } from "./contributors";
 import { edges } from "./edges";
 import { topicResources } from "./topicResources";
 import { topicTags } from "./tags";
@@ -39,6 +40,9 @@ export const topics = pgTable(
     icon: text("icon"),
     iconHue: integer("icon_hue"),
     sortOrder: integer("sort_order").notNull().default(0),
+    createdById: text("created_by_id").references(() => contributors.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()
@@ -56,6 +60,10 @@ export const topicsRelations = relations(topics, ({ one, many }) => ({
     fields: [topics.parentTopicId],
     references: [topics.id],
     relationName: "topicParent",
+  }),
+  createdBy: one(contributors, {
+    fields: [topics.createdById],
+    references: [contributors.id],
   }),
   childTopics: many(topics, { relationName: "topicParent" }),
   sourceEdges: many(edges, { relationName: "edgeSource" }),

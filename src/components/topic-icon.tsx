@@ -76,6 +76,7 @@ export function TopicIcon({ icon, hue, size = "sm", className }: TopicIconProps)
         }
 
         if (hue != null) {
+            const isTransparent = className?.includes("bg-transparent");
             return (
                 <span
                     className={cn(
@@ -83,9 +84,17 @@ export function TopicIcon({ icon, hue, size = "sm", className }: TopicIconProps)
                         className,
                     )}
                     style={{
-                        backgroundColor: `hsl(${hue}, 80%, 92%)`,
-                        color: `hsl(${hue}, 70%, 45%)`,
-                    }}
+                        ...(isTransparent
+                            ? {}
+                            : {
+                                  "--icon-bg": `hsl(${hue} 80% 92%)`,
+                                  "--icon-bg-dark": `hsl(${hue} 50% 18%)`,
+                                  backgroundColor: "var(--icon-bg)",
+                              }),
+                        "--icon-fg": `hsl(${hue} 70% 45%)`,
+                        "--icon-fg-dark": `hsl(${hue} 70% 72%)`,
+                        color: "var(--icon-fg)",
+                    } as React.CSSProperties}
                 >
                     <IconComponent weight="bold" className={iconSizeClass} />
                 </span>
@@ -109,7 +118,11 @@ export function TopicIcon({ icon, hue, size = "sm", className }: TopicIconProps)
         return (
             <span
                 className={`${containerSize} inline-flex shrink-0 items-center justify-center rounded text-xs leading-none`}
-                style={{ backgroundColor: `hsl(${hue}, 80%, 92%)` }}
+                style={{
+                    "--icon-bg": `hsl(${hue} 80% 92%)`,
+                    "--icon-bg-dark": `hsl(${hue} 50% 18%)`,
+                    backgroundColor: "var(--icon-bg)",
+                } as React.CSSProperties}
             >
                 {icon}
             </span>

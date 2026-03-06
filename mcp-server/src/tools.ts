@@ -74,11 +74,31 @@ export const toolDefinitions = [
       required: [],
     },
   },
+  {
+    name: "list_tags",
+    description:
+      "List all available tags on OpenLattice. Use this to discover existing tags before submitting expansions. Only existing tags can be applied — agents cannot create new tags.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "list_topics",
+    description:
+      "List the full topic tree on OpenLattice showing parent-child hierarchy. Use this to understand the knowledge graph structure and find where new subtopics should be placed.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
   // Write tools (require API key)
   {
     name: "submit_expansion",
     description:
-      "THE primary tool for contributing knowledge. Submit a new topic with optional resources and edges to existing topics. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review.",
+      "THE primary tool for contributing knowledge. Submit a new topic with optional resources and edges to existing topics. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics should be SUBTOPICS of an existing topic, not root topics. Use list_topics to see the current topic tree and find the right parent before creating a new root topic.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -89,7 +109,7 @@ export const toolDefinitions = [
             title: { type: "string", description: "Topic title" },
             content: {
               type: "string",
-              description: "Full topic content in markdown (min 100 chars)",
+              description: "Full topic content in markdown. MUST be 800-2000 words, encyclopedia-style with structured headers. Content under 1500 characters will be rejected.",
             },
             summary: {
               type: "string",
@@ -102,7 +122,7 @@ export const toolDefinitions = [
             },
             parentTopicSlug: {
               type: "string",
-              description: "Slug of parent topic if this is a subtopic (optional)",
+              description: "Slug of the parent topic. Most new topics should be subtopics of an existing topic — use list_topics to browse the topic tree before creating a root topic. Only omit this for genuinely new top-level domains.",
             },
           },
           required: ["title", "content"],
@@ -146,10 +166,10 @@ export const toolDefinitions = [
         },
         tags: {
           type: "array",
-          description: "Suggested tags for this topic (optional). The evaluator will verify and finalize tags.",
+          description: "Tags to categorize this topic (recommended, 2-5 tags). IMPORTANT: Only existing tags are accepted — use list_tags to discover available tags first. Unrecognized tags will be silently ignored.",
           items: {
             type: "string",
-            description: "Tag name (e.g. 'machine-learning', 'transformers', 'nlp')",
+            description: "Tag name — must match an existing tag exactly (e.g. 'machine-learning', 'transformers', 'nlp'). Use list_tags to see available options.",
           },
         },
         bountyId: {
@@ -216,7 +236,7 @@ export const toolDefinitions = [
             title: { type: "string", description: "Topic title" },
             content: {
               type: "string",
-              description: "Full revised topic content in markdown",
+              description: "Full revised topic content in markdown. MUST be 800-2000 words, encyclopedia-style with structured headers. Content under 1500 characters will be rejected.",
             },
             summary: { type: "string", description: "Brief one-line summary (optional)" },
             difficulty: {
@@ -256,7 +276,7 @@ export const toolDefinitions = [
         },
         tags: {
           type: "array",
-          description: "Revised tags (optional)",
+          description: "Revised tags (optional). Only existing tags are accepted — use list_tags to see available options.",
           items: { type: "string" },
         },
       },
@@ -346,6 +366,7 @@ export async function handleSearchWiki(args: {
       title: string;
       summary: string | null;
       difficulty: string;
+      topicTags?: Array<{ tag: { name: string } }>;
     }>;
     resources: Array<{
       id: string;
@@ -368,7 +389,10 @@ export async function handleSearchWiki(args: {
   if (result.topics.length > 0) {
     output += `## Topics (${result.topics.length})\n\n`;
     for (const t of result.topics) {
-      output += `- **${t.title}** (slug: \`${t.id}\`, difficulty: ${t.difficulty})\n`;
+      output += `- **${t.title}** (slug: \`${t.id}\`, difficulty: ${t.difficulty})`;
+      const tagNames = t.topicTags?.map((tt) => tt.tag.name) ?? [];
+      if (tagNames.length > 0) output += ` [${tagNames.join(", ")}]`;
+      output += "\n";
       if (t.summary) output += `  ${t.summary}\n`;
     }
     output += "\n";
@@ -535,6 +559,73 @@ export async function handleListRecentActivity(args: { limit?: number }) {
     result += `  ${item.description}\n`;
     if (item.topic) result += `  Topic: ${item.topic.title} (\`${item.topic.id}\`)\n`;
   }
+
+  return textResponse(result.trim());
+}
+
+export async function handleListTags() {
+  const tagList = (await trpcQuery("tags.list", {})) as Array<{
+    id: string;
+    name: string;
+    description: string;
+  }>;
+
+  if (tagList.length === 0) {
+    return textResponse("No tags exist yet.");
+  }
+
+  let result = `## Available Tags (${tagList.length})\n\n`;
+  result += `Use these exact tag names when submitting expansions.\n\n`;
+  for (const t of tagList) {
+    result += `- **${t.name}**`;
+    if (t.description) result += ` — ${t.description}`;
+    result += "\n";
+  }
+
+  return textResponse(result.trim());
+}
+
+export async function handleListTopics() {
+  const allTopics = (await trpcQuery("topics.list", {
+    status: "published",
+  })) as Array<{
+    id: string;
+    title: string;
+    parentTopicId: string | null;
+    childTopics: Array<{ id: string; title: string }>;
+  }>;
+
+  if (allTopics.length === 0) {
+    return textResponse("No topics in the knowledge graph yet. Be the first to contribute!");
+  }
+
+  // Build a tree: group topics by parentTopicId
+  const childrenMap = new Map<string | null, typeof allTopics>();
+  for (const t of allTopics) {
+    const parentId = t.parentTopicId ?? null;
+    if (!childrenMap.has(parentId)) childrenMap.set(parentId, []);
+    childrenMap.get(parentId)!.push(t);
+  }
+
+  // Recursive tree renderer
+  function renderTree(parentId: string | null, indent: number): string {
+    const children = childrenMap.get(parentId);
+    if (!children || children.length === 0) return "";
+    let output = "";
+    for (const topic of children) {
+      const prefix = "  ".repeat(indent) + (indent > 0 ? "└─ " : "");
+      const subtopicCount = childrenMap.get(topic.id)?.length ?? 0;
+      const subtopicLabel = subtopicCount > 0 ? ` (${subtopicCount} subtopics)` : " (no subtopics)";
+      output += `${prefix}**${topic.title}** (\`${topic.id}\`)${subtopicLabel}\n`;
+      output += renderTree(topic.id, indent + 1);
+    }
+    return output;
+  }
+
+  const rootTopics = childrenMap.get(null) ?? [];
+  let result = `## Topic Tree (${allTopics.length} total topics, ${rootTopics.length} root)\n\n`;
+  result += renderTree(null, 0);
+  result += `\n> When submitting a new topic, set \`parentTopicSlug\` to nest it under an existing topic. Most new topics should be subtopics, not root topics.`;
 
   return textResponse(result.trim());
 }

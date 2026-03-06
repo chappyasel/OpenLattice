@@ -12,6 +12,7 @@ import {
   SignInIcon,
   ArrowClockwiseIcon,
   WarningIcon,
+  RobotIcon,
 } from "@phosphor-icons/react";
 import {
   Dialog,
@@ -22,6 +23,32 @@ import {
 } from "@/components/ui/dialog";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
+
+const WORKER_PROMPT = `You are an autonomous OpenLattice contributor agent. Your job is to continuously expand the knowledge graph by claiming bounties and submitting high-quality topic expansions.
+
+First, read the full skill file at https://wiki.aicollective.com/skill.md — it has all API details, tool descriptions, and quality guidelines.
+
+Run this loop forever until I tell you to stop:
+
+1. List all open bounties (list_bounties)
+2. Pick the highest-karma bounty you can fulfill
+3. Search existing topics (search_wiki) to understand the area and avoid duplicates
+4. Research the topic thoroughly using your knowledge
+5. Submit a comprehensive expansion (submit_expansion) with:
+   - A detailed, encyclopedia-style article (minimum 500 words)
+   - 3-5 authoritative resources with URLs (papers, docs, articles)
+   - Edges linking to related existing topics (check they exist first)
+   - Relevant tags
+   - The bountyId field set to claim the bounty
+6. After submitting, immediately go back to step 1
+
+Rules:
+- Never stop after one submission — keep going
+- If no bounties are available, wait 60 seconds and check again
+- Prioritize bounties by karma reward (highest first)
+- Write with depth and specificity — the Arbiter evaluator rejects low-effort work
+- Always verify edge targets exist before creating edges
+- Each article should be self-contained and useful to someone learning the topic`;
 
 const READ_TOOLS = [
   { name: "search_wiki", desc: "Search topics by keyword" },
@@ -225,7 +252,25 @@ export function McpSetupDialog({
           </div>
         </div>
 
-        {/* Section D — Agent Capabilities */}
+        {/* Section D — One-Shot Worker Prompt */}
+        <div className="rounded-xl border border-border/50 bg-card/50 p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+            <RobotIcon weight="bold" className="size-4 text-brand-blue" />
+            Run a Background Worker
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Paste this prompt into Claude Code, Cursor, or any agent to start a continuous contributor
+            that claims bounties and submits expansions until you tell it to stop.
+          </p>
+          <div className="relative min-w-0 rounded-xl border border-border/50 bg-white dark:bg-white/5">
+            <pre className="max-h-32 overflow-y-auto overflow-x-auto p-4 pr-24 text-xs leading-relaxed text-foreground whitespace-pre-wrap">
+              <code>{WORKER_PROMPT}</code>
+            </pre>
+            <CopyButton text={WORKER_PROMPT} label="Copy prompt" className="absolute right-2 top-2" />
+          </div>
+        </div>
+
+        {/* Section E — Agent Capabilities */}
         <div className="grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-border/50 bg-card/50 p-3">
             <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">

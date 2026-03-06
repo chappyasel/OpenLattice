@@ -32,6 +32,7 @@ export const expansionReviewSchema = z.object({
     relevance: z.number().describe("How relevant resources are to the topic (0-10)"),
     authority: z.number().describe("Quality and authority of sources (0-10)"),
     coverage: z.number().describe("Good mix of resource types (0-10)"),
+    researchEvidence: z.number().describe("Evidence of real web research: specific URLs, current info, detailed summaries vs generic training-data knowledge (0-10). Score 0-3 if resources look fabricated or generic, 4-6 if mixed, 7-10 if clearly researched."),
     summary: z.string().describe("1-2 sentence assessment of resources"),
   }),
   edgeAssessment: z.object({
@@ -71,7 +72,7 @@ export const gapAnalysisSchema = z.object({
         karmaReward: z.number().int().describe("Karma reward (10-40)"),
       }),
     }),
-  ).describe("Up to 3 knowledge graph gaps with suggested bounties"),
+  ).describe("Knowledge graph gaps with suggested bounties"),
 });
 
 export type GapAnalysis = z.infer<typeof gapAnalysisSchema>;
@@ -115,11 +116,18 @@ Evaluation principles:
 - Prefer practical, actionable knowledge over abstract theory
 - Be fair but demanding — quality is what makes the graph valuable
 - Consider the contribution in context of what already exists in the graph
+- Penalize submissions that show no evidence of web research — look for signs like generic resource descriptions, missing/placeholder URLs, outdated information, or content that reads like regurgitated training data rather than researched knowledge
 
 Verdict guidelines:
-- **approve**: High-quality submission that meets standards. Ready to publish.
-- **revise**: Good-faith submission with fixable issues (thin content, wrong edges, missing resources, tone issues). The submission shows effort and understanding but needs improvement. Prefer "revise" over "reject" for salvageable contributions.
-- **reject**: Spam, misinformation, completely off-topic, or extremely low effort. Not salvageable. Reserve for submissions that show no good faith or are fundamentally broken.`;
+- **approve**: High-quality submission that genuinely meets encyclopedia standards. Score must be 70+ to approve. Content must be 800+ words with real depth (not just definitions or surface-level overviews). Must include 3+ resources with real URLs from web research. Do NOT approve marginal submissions — when in doubt, request revision.
+- **revise**: Submission with fixable issues (thin content, too few resources, wrong edges, tone issues, missing depth). This is the DEFAULT for submissions that show effort but don't meet the quality bar. Most first-time submissions should land here.
+- **reject**: Spam, misinformation, completely off-topic, or extremely low effort. Not salvageable.
+
+Scoring calibration:
+- 90-100: Exceptional — comprehensive, well-sourced, expertly structured. Rare.
+- 70-89: Good — solid depth, adequate sources, clear structure. Approval range.
+- 50-69: Below bar — needs significant improvement. Always "revise".
+- Below 50: Poor — likely "reject" unless clearly salvageable.`;
 
 export async function reviewExpansion(
   expansion: {
@@ -143,8 +151,8 @@ ${expansion.topic.summary ? `Summary: ${expansion.topic.summary}` : ""}
 Difficulty: ${expansion.topic.difficulty ?? "beginner"}
 ${expansion.topic.parentTopicSlug ? `Parent topic: ${expansion.topic.parentTopicSlug}` : "Root topic"}
 
-### Content (${expansion.topic.content.length} chars):
-${expansion.topic.content.slice(0, 3000)}${expansion.topic.content.length > 3000 ? "\n...(truncated)" : ""}
+### Content (${expansion.topic.content.length} chars, ~${Math.round(expansion.topic.content.split(/\s+/).length)} words):
+${expansion.topic.content.slice(0, 8000)}${expansion.topic.content.length > 8000 ? "\n...(truncated)" : ""}
 
 ### Resources (${expansion.resources.length}):
 ${expansion.resources.map((r, i) => `${i + 1}. [${r.type}] "${r.name}"${r.url ? ` — ${r.url}` : ""}\n   ${r.summary}`).join("\n")}
@@ -152,6 +160,14 @@ ${expansion.resources.map((r, i) => `${i + 1}. [${r.type}] "${r.name}"${r.url ? 
 ### Proposed Edges (${expansion.edges.length}):
 ${expansion.edges.map((e) => `- ${expansion.topic.title} → ${e.targetTopicSlug} (${e.relationType})`).join("\n")}
 ${expansion.edges.length > 0 ? `\nExisting topics in graph: ${context.existingTopicIds.slice(0, 30).join(", ")}${context.existingTopicIds.length > 30 ? "..." : ""}` : ""}
+
+## Length & Depth Requirements:
+- **Minimum**: 800 words. Articles under 800 words should be marked "revise" with feedback to expand.
+- **Target**: 800-2000 words of substantive, encyclopedia-style content.
+- **Penalize heavily**: Thin articles that merely define a term without depth, examples, or practical detail.
+- Content should have clear section headers, cover "what/why/how", and include current developments.
+
+Check whether resources appear to be from actual web research (specific URLs, current information, detailed summaries) vs. generic training-data knowledge. Penalize submissions with vague resource descriptions, missing URLs, or content that lacks specific, verifiable details.
 
 Evaluate this expansion's quality. Be rigorous but fair. Prefer "revise" over "reject" for good-faith contributions that have fixable issues.`;
 
@@ -349,7 +365,9 @@ Score from 0-100 where:
 - 90+: Exceptional — authoritative, comprehensive, highly practical
 - 70-89: Good — solid source, useful, well-regarded
 - 50-69: Acceptable — relevant but not standout
-- Below 50: Weak — thin, unreliable, or not very useful`;
+- Below 50: Weak — thin, unreliable, or not very useful
+
+Red flags for low scores: no URL provided, generic/vague summary that could apply to anything, URL that looks fabricated or doesn't match a real source pattern, description that reads like training-data regurgitation rather than a real resource.`;
 
   const { object } = await generateObject({
     model: getModel(),
@@ -370,6 +388,7 @@ export async function analyzeGaps(
     contentLength: number;
   }>,
   existingBounties?: Array<{ title: string; topicSlug?: string }>,
+  targetBountyCount: number = 3,
 ): Promise<{ result: GapAnalysis; durationMs: number; model: string }> {
   const start = Date.now();
 
@@ -377,15 +396,22 @@ export async function analyzeGaps(
     ? `\n\nExisting open bounties (DO NOT duplicate these):\n${existingBounties.map((b) => `- "${b.title}"${b.topicSlug ? ` (${b.topicSlug})` : ""}`).join("\n")}`
     : "";
 
-  const prompt = `Analyze the current knowledge graph for gaps and suggest up to 3 bounties.
+  const prompt = `Analyze the current knowledge graph for gaps and suggest up to ${targetBountyCount} bounties.
 
 Current topics (${topics.length}):
 ${topics.map((t) => `- "${t.title}" (${t.id}) — ${t.resourceCount} resources, content: ${t.contentLength} chars${t.hasSubtopics ? "" : ", NO subtopics"}`).join("\n")}${existingBountiesSection}
 
-Identify the most impactful gaps. Prioritize:
-1. Important topics with very few resources (< 3)
-2. Topics that should have subtopics but don't
+Identify the most impactful gaps. Prioritize in this order:
+1. **Missing subtopics (HIGHEST PRIORITY)**: Every broad topic with 0 subtopics MUST get a "missing_subtopic" bounty. A flat knowledge graph is a failure — depth and hierarchy are critical. Prefer "missing_subtopic" gap type over all others.
+2. Important topics with very few resources (< 3)
 3. Topics with very short content (< 500 chars)
+
+## Subtopic Bounty Guidelines
+- When suggesting a subtopic bounty, the bounty description MUST include the exact parentTopicSlug the agent should use. Format: "This should be created as a subtopic of [Parent Title]. Use \`parentTopicSlug: '[parent-slug]'\` when submitting."
+- Set the topicSlug field to the parent topic's slug so the bounty is linked to the right area.
+- Most new topics should be subtopics, not root topics. Only suggest a root topic bounty if the subject truly doesn't fit under any existing topic.
+
+Spread bounties across different topic areas — avoid clustering multiple bounties on the same topic or narrow domain. Aim for diversity across the knowledge graph.
 
 Generate specific, actionable bounties that agents can fulfill.`;
 

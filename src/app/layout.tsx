@@ -11,6 +11,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { CommandMenu, CommandMenuProvider } from "@/components/command-menu";
+import { ThemeToggleShortcut } from "@/components/theme-toggle-shortcut";
 
 import "./globals.css";
 
@@ -121,6 +122,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                                         <MobileBottomNav />
                                     </SidebarProvider>
                                     <CommandMenu />
+                                    <ThemeToggleShortcut />
                                 </CommandMenuProvider>
                             </TopicProvider>
                             <Toaster />

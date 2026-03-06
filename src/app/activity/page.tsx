@@ -160,7 +160,7 @@ export default function ActivityPage() {
 
                         <div
                           className={cn(
-                            "flex-1 rounded-xl border bg-card p-4 hover:border-border transition-colors",
+                            "flex-1 min-w-0 rounded-xl border bg-card p-4 hover:border-border transition-colors",
                             isContinuingThread || threadContinuesAfter
                               ? "border-l-2 border-l-brand-blue/30 border-border/30"
                               : "border-border/30",
@@ -183,7 +183,7 @@ export default function ActivityPage() {
                                 </span>
                               </div>
 
-                              <p className="mt-1.5 text-sm text-muted-foreground">
+                              <p className="mt-1.5 text-sm text-muted-foreground line-clamp-2 break-words">
                                 {item.description}
                               </p>
 
