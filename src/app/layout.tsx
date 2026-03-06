@@ -83,6 +83,8 @@ const mono = JetBrains_Mono({
     variable: "--font-mono",
 });
 
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
     title: "The AI Wiki — The AI Collective Knowledge Base",
     description:

@@ -31,8 +31,7 @@ export function activityId(prefix: string, ...parts: (string | null | undefined)
 }
 
 export async function generateUniqueId(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  db: any,
+  db: any, // eslint-disable-line @typescript-eslint/no-explicit-any
   table: PgTableWithColumns<any>,
   idColumn: Column,
   base: string,
