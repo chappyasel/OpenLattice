@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { activityId, slugify } from "@/lib/utils";
@@ -12,17 +12,29 @@ import { activity, edges, topics } from "@/server/db/schema";
 
 export const graphRouter = createTRPCRouter({
   getFullGraph: publicProcedure.query(async ({ ctx }) => {
-    const nodes = await ctx.db.query.topics.findMany({
-      where: eq(topics.status, "published"),
-    });
+    const nodes = await ctx.db
+      .select({
+        id: topics.id,
+        title: topics.title,
+        iconHue: topics.iconHue,
+      })
+      .from(topics)
+      .where(eq(topics.status, "published"));
 
-    const allEdges = await ctx.db.query.edges.findMany();
+    const publishedTopicIds = ctx.db
+      .select({ id: topics.id })
+      .from(topics)
+      .where(eq(topics.status, "published"));
 
-    const publishedIds = new Set(nodes.map((n) => n.id));
-    const filteredEdges = allEdges.filter(
-      (e) =>
-        publishedIds.has(e.sourceTopicId) && publishedIds.has(e.targetTopicId),
-    );
+    const filteredEdges = await ctx.db
+      .select()
+      .from(edges)
+      .where(
+        and(
+          inArray(edges.sourceTopicId, publishedTopicIds),
+          inArray(edges.targetTopicId, publishedTopicIds),
+        ),
+      );
 
     return { nodes, edges: filteredEdges };
   }),

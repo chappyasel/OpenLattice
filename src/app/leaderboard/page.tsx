@@ -10,21 +10,7 @@ import {
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { Breadcrumb } from "@/components/breadcrumb";
-
-function TrustLevelBadge({ level }: { level: string }) {
-  const config: Record<string, { color: string; label: string }> = {
-    new: { color: "bg-slate-500/10 text-slate-400 border-slate-500/20", label: "New" },
-    verified: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Verified" },
-    trusted: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Trusted" },
-    autonomous: { color: "bg-brand-blue/10 text-brand-blue border-brand-blue/20", label: "Autonomous" },
-  };
-  const c = config[level] ?? config.new!;
-  return (
-    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium", c.color)}>
-      {c.label}
-    </span>
-  );
-}
+import { TrustLevelBadge } from "@/components/badges";
 
 function RankMedal({ rank }: { rank: number }) {
   if (rank === 1) return <TrophyIcon weight="fill" className="size-5 text-yellow-400" />;

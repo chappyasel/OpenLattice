@@ -23,6 +23,8 @@ export interface EvaluatorConfig {
   maxSubmissions?: number;
   /** Run gap analysis this cycle? */
   runGapAnalysis?: boolean;
+  /** Signal to abort the cycle early */
+  signal?: AbortSignal;
 }
 
 export type Logger = (message: string) => void;
@@ -191,9 +193,10 @@ async function reviewPendingSubmissions(
   }
 
   const allTopics = await trpc.query<
-    Array<{ id: string; title: string; summary: string | null }>
+    Array<{ id: string; title: string; summary: string | null; iconHue: number | null }>
   >("topics.list", { status: "published" });
-  const existingTopicIds = allTopics?.map((t) => t.id) ?? [];
+  const existingTopics = (allTopics ?? []).map((t) => ({ id: t.id, title: t.title, summary: t.summary }));
+  const topicHues = (allTopics ?? []).map((t) => t.iconHue).filter((h): h is number => h != null);
 
   const allTags = await trpc.query<Array<{ name: string }>>("tags.list", {});
   const existingTagNames = allTags?.map((t) => t.name) ?? [];
@@ -220,7 +223,7 @@ async function reviewPendingSubmissions(
 
       // 1. Content review
       const { result, durationMs, model } = await reviewExpansion(expansion, {
-        existingTopicIds,
+        existingTopics,
         contributorName: contributor?.name ?? "unknown",
         contributorTrustLevel: contributor?.trustLevel ?? "new",
         contributorAcceptanceRate: acceptanceRate,
@@ -240,24 +243,67 @@ async function reviewPendingSubmissions(
         log(`  [review] Override: approve→revise (${wordCount} words < 800 minimum)`);
       }
 
-      if (result.verdict === "approve" && resourceCount < 3) {
+      if (result.verdict === "approve" && resourceCount < 5) {
         result.verdict = "revise";
-        result.reasoning = `Only ${resourceCount} resource(s) provided. Minimum is 3 high-quality resources from web research. ${result.reasoning}`;
+        result.reasoning = `Only ${resourceCount} resource(s) provided. Minimum is 5 high-quality resources from web research. ${result.reasoning}`;
         result.improvementSuggestions = [
-          `Add at least ${3 - resourceCount} more resources with real URLs from web research.`,
+          `Add at least ${5 - resourceCount} more resources with real URLs from web research.`,
           ...result.improvementSuggestions,
         ];
-        log(`  [review] Override: approve→revise (${resourceCount} resources < 3 minimum)`);
+        log(`  [review] Override: approve→revise (${resourceCount} resources < 5 minimum)`);
       }
 
-      if (result.verdict === "approve" && result.overallScore < 70) {
+      if (result.verdict === "approve" && result.overallScore < 75) {
         result.verdict = "revise";
-        result.reasoning = `Score ${result.overallScore}/100 is below the 70-point approval threshold. ${result.reasoning}`;
+        result.reasoning = `Score ${result.overallScore}/100 is below the 75-point approval threshold. ${result.reasoning}`;
         result.improvementSuggestions = [
-          "Improve overall quality to meet the 70/100 approval threshold.",
+          "Improve overall quality to meet the 75/100 approval threshold.",
           ...result.improvementSuggestions,
         ];
-        log(`  [review] Override: approve→revise (score ${result.overallScore} < 70 threshold)`);
+        log(`  [review] Override: approve→revise (score ${result.overallScore} < 75 threshold)`);
+      }
+
+      // 1c. Research evidence hard gate
+      if (result.verdict === "approve" && result.resourceAssessment.researchEvidence < 6) {
+        result.verdict = "revise";
+        result.reasoning = `Research evidence score ${result.resourceAssessment.researchEvidence}/10 is too low — resources may be fabricated or lack verifiable details. ${result.reasoning}`;
+        result.improvementSuggestions = [
+          "Replace suspected fabricated resources with real, verifiable URLs from authoritative sources. Include specific details (author names, publication dates, unique findings) in resource summaries.",
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (researchEvidence ${result.resourceAssessment.researchEvidence} < 6 minimum)`);
+      }
+
+      // 1d. URL pattern validation — flag future/current year dates in resource URLs
+      const currentYear = new Date().getFullYear();
+      const suspiciousUrlResources = (expansion.resources ?? []).filter((r: any) => {
+        if (!r.url) return false;
+        // Check for current or future year in URL path (not domain)
+        const yearPattern = new RegExp(`/(${currentYear}|${currentYear + 1}|${currentYear + 2})/`);
+        return yearPattern.test(r.url);
+      });
+      if (result.verdict === "approve" && suspiciousUrlResources.length >= 2) {
+        result.verdict = "revise";
+        result.reasoning = `${suspiciousUrlResources.length} resource URLs contain current/future year dates (${currentYear}+), suggesting fabricated URLs. ${result.reasoning}`;
+        result.improvementSuggestions = [
+          `${suspiciousUrlResources.length} resource URLs contain dates from ${currentYear} or later, which are likely hallucinated. Replace with real, verifiable URLs.`,
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (${suspiciousUrlResources.length} URLs with suspicious year patterns)`);
+      }
+
+      // 1e. Resource description quality gate — flag thin summaries
+      const thinSummaryResources = (expansion.resources ?? []).filter((r: any) =>
+        !r.summary || r.summary.length < 80
+      );
+      if (result.verdict === "approve" && thinSummaryResources.length >= 2) {
+        result.verdict = "revise";
+        result.reasoning = `${thinSummaryResources.length} resources have summaries under 80 characters, indicating low-effort or template-generated descriptions. ${result.reasoning}`;
+        result.improvementSuggestions = [
+          "Expand resource summaries to include specific details: what the resource covers, key findings, why it's authoritative.",
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (${thinSummaryResources.length} resources with thin summaries)`);
       }
 
       // 2. Edge suggestion + diff
@@ -408,7 +454,7 @@ async function reviewPendingSubmissions(
             await suggestIcon({
               title: expansion.topic.title,
               summary: expansion.topic.summary,
-            });
+            }, topicHues);
           iconResult = iconSuggestion;
           log(
             `  [review] Icon: ${iconSuggestion.icon} (hue: ${iconSuggestion.iconHue}) [${iconDurationMs}ms]`,
@@ -641,29 +687,55 @@ async function doGapAnalysis(
         id: string;
         title: string;
         content: string;
+        parentTopicId: string | null;
         topicResources: Array<unknown>;
-        childTopics: Array<unknown>;
+        childTopics: Array<{ id: string }>;
       }>
     >("topics.list", { status: "published" });
 
     if (!topics?.length || topics.length < 5) return 0;
 
-    const topicStats = topics.map((t) => ({
+    // Deduplicate topics by title before analysis (keep canonical with most children)
+    const titleGroups = new Map<string, typeof topics>();
+    for (const t of topics) {
+      const key = t.title.toLowerCase();
+      const group = titleGroups.get(key) ?? [];
+      group.push(t);
+      titleGroups.set(key, group);
+    }
+    const deduped = Array.from(titleGroups.values()).map((group) => {
+      group.sort((a, b) => {
+        const diff = (b.childTopics?.length ?? 0) - (a.childTopics?.length ?? 0);
+        return diff !== 0 ? diff : (b.content?.length ?? 0) - (a.content?.length ?? 0);
+      });
+      return group[0]!;
+    });
+
+    if (deduped.length < topics.length) {
+      log(`  [gaps] Deduped ${topics.length} topics → ${deduped.length} unique`);
+    }
+
+    const topicStats = deduped.map((t) => ({
       id: t.id,
       title: t.title,
       resourceCount: t.topicResources?.length ?? 0,
       hasSubtopics: (t.childTopics?.length ?? 0) > 0,
+      childCount: t.childTopics?.length ?? 0,
       contentLength: t.content?.length ?? 0,
+      isRoot: !t.parentTopicId,
+      parentTopicId: t.parentTopicId,
     }));
 
-    const openBounties = await trpc.query<Bounty[]>("bounties.list", {
-      status: "open",
-    });
+    // Use listOpen which expires stale claims, instead of list(status: "open")
+    const openBounties = await trpc.query<Bounty[]>("bounties.listOpen", {});
     const openCount = openBounties?.length ?? 0;
     const existingBounties = (openBounties ?? []).map((b) => ({
       title: b.title,
       topicSlug: b.topic?.id,
     }));
+
+    // Build set of existing topic titles for post-generation filtering
+    const existingTopicTitles = new Set(deduped.map((t) => t.title.toLowerCase()));
 
     if (openCount >= MIN_OPEN_BOUNTIES) {
       log(
@@ -678,7 +750,7 @@ async function doGapAnalysis(
     );
 
     log(
-      `  [gaps] Analyzing ${topicStats.length} topics for gaps (${openCount} open bounties, targeting ${targetBountyCount} new)...`,
+      `  [gaps] Analyzing ${topicStats.length} unique topics for gaps (${openCount} open bounties, targeting ${targetBountyCount} new)...`,
     );
 
     const { result, durationMs } = await analyzeGaps(
@@ -689,6 +761,19 @@ async function doGapAnalysis(
 
     let posted = 0;
     for (const gap of result.gaps) {
+      // Skip bounties for topics that already exist (title match)
+      if (gap.suggestedBounty.type === "topic") {
+        const titleLower = gap.suggestedBounty.title
+          .replace(/^Create (root topic|subtopic): /i, "")
+          .toLowerCase();
+        if (existingTopicTitles.has(titleLower)) {
+          log(
+            `  [gaps] Skipped bounty "${gap.suggestedBounty.title}" — topic already exists`,
+          );
+          continue;
+        }
+      }
+
       try {
         await trpc.mutation("evaluator.postBounty", {
           title: gap.suggestedBounty.title,
@@ -741,48 +826,59 @@ export async function runEvaluationCycle(
     `\n${"=".repeat(60)}\n[Arbiter] Cycle — ${new Date().toISOString()}\n${"=".repeat(60)}`,
   );
 
+  const signal = config.signal;
   let reviewed = 0,
     resourcesReviewed = 0,
     scored = 0,
     bountiesPosted = 0;
 
   try {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     reviewed = await reviewPendingSubmissions(
       trpc,
       log,
       config.maxSubmissions,
     );
   } catch (err: any) {
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
     log(`[Arbiter] reviewPendingSubmissions failed: ${err.message}`);
   }
 
   try {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     resourcesReviewed = await reviewPendingResources(
       trpc,
       log,
       config.maxSubmissions,
     );
   } catch (err: any) {
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
     log(`[Arbiter] reviewPendingResources failed: ${err.message}`);
   }
 
   try {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     scored = await scoreUnscoredResources(trpc, log);
   } catch (err: any) {
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
     log(`[Arbiter] scoreUnscoredResources failed: ${err.message}`);
   }
 
   if (config.runGapAnalysis) {
     try {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       bountiesPosted = await doGapAnalysis(trpc, log);
     } catch (err: any) {
+      if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
       log(`[Arbiter] runGapAnalysis failed: ${err.message}`);
     }
   }
 
   try {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     await recalculateReputation(trpc, log);
   } catch (err: any) {
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
     log(`[Arbiter] recalculateReputation failed: ${err.message}`);
   }
 

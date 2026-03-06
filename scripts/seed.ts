@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import dotenv from "dotenv";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -11,10 +10,6 @@ dotenv.config({ path: "./.env" });
 
 const pgClient = postgres(process.env.DATABASE_URL as string);
 const db = drizzle(pgClient, { schema });
-
-function hashApiKey(key: string): string {
-  return crypto.createHash("sha256").update(key).digest("hex");
-}
 
 async function seed() {
   console.log("Seeding OpenLattice database...\n");
@@ -575,9 +570,6 @@ async function seed() {
 
   console.log("Inserting evaluator agent account...");
 
-  const evaluatorKey = crypto.randomBytes(32).toString("hex");
-  const evaluatorHash = hashApiKey(evaluatorKey);
-
   const [evaluator] = await db
     .insert(schema.contributors)
     .values({
@@ -587,7 +579,6 @@ async function seed() {
       isAgent: true,
       agentModel: "claude-opus-4-6",
       trustLevel: "autonomous" as const,
-      apiKey: evaluatorHash,
       karma: 500,
     })
     .onConflictDoUpdate({
@@ -598,16 +589,12 @@ async function seed() {
         isAgent: true,
         agentModel: "claude-opus-4-6",
         trustLevel: "autonomous" as const,
-        apiKey: evaluatorHash,
         karma: 500,
       },
     })
     .returning();
 
-  console.log(`  Inserted evaluator: ${evaluator!.name}`);
-  console.log("\n  === EVALUATOR API KEY (save this — shown only once) ===");
-  console.log(`  Arbiter: ${evaluatorKey}`);
-  console.log("  ======================================================\n");
+  console.log(`  Inserted evaluator: ${evaluator!.name} (API key auto-generated at runtime)`);
 
   // ─── Tags ───────────────────────────────────────────────────────────────
 
@@ -626,6 +613,13 @@ async function seed() {
     { name: "Tooling", icon: "ph:Hammer", iconHue: 45 },
     { name: "Society & Culture", icon: "ph:UsersThree", iconHue: 310 },
     { name: "Getting Started", icon: "ph:Compass", iconHue: 120 },
+    { name: "AI Agents", icon: "ph:Robot", iconHue: 180 },
+    { name: "Computer Vision", icon: "ph:Eye", iconHue: 60 },
+    { name: "Generative Models", icon: "ph:PaintBrush", iconHue: 290 },
+    { name: "LLM Training", icon: "ph:Brain", iconHue: 330 },
+    { name: "Evaluation & Benchmarking", icon: "ph:ChartBar", iconHue: 80 },
+    { name: "Education", icon: "ph:GraduationCap", iconHue: 100 },
+    { name: "History", icon: "ph:ClockCounterClockwise", iconHue: 40 },
   ];
 
   const insertedTags = await db

@@ -1,5 +1,13 @@
 import { auth, isAdmin } from "@/lib/auth";
 import { runEvaluationCycle } from "@/lib/evaluator/cycle";
+import { getEvaluatorApiKey } from "@/lib/evaluator/get-api-key";
+import {
+  startRun,
+  getActiveRun,
+  createRunLogger,
+  finishRun,
+  subscribe,
+} from "@/lib/evaluator/run-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -11,18 +19,27 @@ export async function GET() {
   }
 
   const baseUrl = process.env.OPENLATTICE_URL ?? process.env.NEXT_PUBLIC_URL;
-  const apiKey = process.env.EVALUATOR_API_KEY;
-
-  if (!baseUrl || !apiKey) {
-    return new Response("Missing OPENLATTICE_URL or EVALUATOR_API_KEY", {
+  if (!baseUrl) {
+    return new Response("Missing OPENLATTICE_URL or NEXT_PUBLIC_URL", {
       status: 500,
     });
   }
 
+  let apiKey: string;
+  try {
+    apiKey = await getEvaluatorApiKey();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return new Response(msg, { status: 500 });
+  }
+
   const encoder = new TextEncoder();
 
+  // Check for an existing active run to reconnect to
+  const existingRun = getActiveRun("standard");
+
   const stream = new ReadableStream({
-    async start(controller) {
+    start(controller) {
       function send(line: string) {
         try {
           controller.enqueue(
@@ -33,21 +50,50 @@ export async function GET() {
         }
       }
 
-      try {
-        await runEvaluationCycle(
-          { baseUrl, apiKey, runGapAnalysis: true },
-          send,
-        );
-        controller.enqueue(encoder.encode("event: done\ndata: ok\n\n"));
-      } catch (err: any) {
-        send(`[Fatal] ${err.message}`);
-        controller.enqueue(encoder.encode("event: done\ndata: error\n\n"));
+      function sendDone(status: string) {
+        try {
+          controller.enqueue(
+            encoder.encode(
+              `event: done\ndata: ${status === "done" ? "ok" : status}\n\n`,
+            ),
+          );
+          controller.close();
+        } catch {
+          // already closed
+        }
       }
 
-      try {
-        controller.close();
-      } catch {
-        // already closed
+      if (existingRun && existingRun.status === "running") {
+        // Reconnect: replay logs and subscribe for new ones
+        send("[Reconnected to active run]");
+        subscribe(existingRun, send, (status) => sendDone(status));
+      } else {
+        // Start a new run
+        const run = startRun("standard");
+        const log = createRunLogger(run);
+
+        // Subscribe this client to the run
+        subscribe(run, send, (status) => sendDone(status));
+
+        // Run the cycle in the background (don't await in start())
+        void (async () => {
+          try {
+            await runEvaluationCycle(
+              {
+                baseUrl,
+                apiKey,
+                runGapAnalysis: true,
+                signal: run.abortController.signal,
+              },
+              log,
+            );
+            finishRun("standard", "done");
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            log(`[Fatal] ${msg}`);
+            finishRun("standard", "error");
+          }
+        })();
       }
     },
   });

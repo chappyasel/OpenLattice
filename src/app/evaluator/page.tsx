@@ -5,8 +5,6 @@ import {
   RobotIcon,
   ClipboardIcon,
   BookOpenIcon,
-  CheckCircleIcon,
-  XCircleIcon,
   StarIcon,
   ChartBarIcon,
   ClockIcon,
@@ -15,12 +13,12 @@ import {
   SpinnerIcon,
   BrainIcon,
   LightningIcon,
-  SealCheckIcon,
   PlayIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { SubmissionStatusBadge, EvalTypeBadge } from "@/components/badges";
 
 // ─── Score Bar ─────────────────────────────────────────────────────────────────
 
@@ -44,46 +42,6 @@ function ScoreBar({ label, value, max = 10 }: { label: string; value: number; ma
         {typeof value === "number" ? value.toFixed(value % 1 === 0 ? 0 : 1) : value}
       </span>
     </div>
-  );
-}
-
-// ─── Verdict Badge ─────────────────────────────────────────────────────────────
-
-function VerdictBadge({ verdict }: { verdict: string }) {
-  const configs: Record<string, { label: string; color: string; icon: React.ComponentType<any> }> = {
-    approve: { label: "Approved", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", icon: CheckCircleIcon },
-    approved: { label: "Approved", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", icon: CheckCircleIcon },
-    reject: { label: "Rejected", color: "bg-red-500/10 text-red-400 border-red-500/20", icon: XCircleIcon },
-    rejected: { label: "Rejected", color: "bg-red-500/10 text-red-400 border-red-500/20", icon: XCircleIcon },
-    revise: { label: "Revision Requested", color: "bg-amber-500/10 text-amber-400 border-amber-500/20", icon: ClipboardIcon },
-    revision_requested: { label: "Revision Requested", color: "bg-amber-500/10 text-amber-400 border-amber-500/20", icon: ClipboardIcon },
-    scored: { label: "Scored", color: "bg-blue-500/10 text-blue-400 border-blue-500/20", icon: StarIcon },
-    resolved: { label: "Resolved", color: "bg-brand-blue/10 text-brand-blue border-teal-500/20", icon: SealCheckIcon },
-  };
-
-  const c = configs[verdict] ?? configs.scored!;
-  const Icon = c.icon;
-
-  return (
-    <span className={cn("inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", c.color)}>
-      <Icon weight="bold" className="size-3" />
-      {c.label}
-    </span>
-  );
-}
-
-// ─── Type Badge ────────────────────────────────────────────────────────────────
-
-function TypeBadge({ type }: { type: string }) {
-  const configs: Record<string, { label: string; color: string }> = {
-    expansion_review: { label: "Expansion Review", color: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" },
-    resource_score: { label: "Resource Score", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  };
-  const c = configs[type] ?? { label: type, color: "bg-muted text-muted-foreground border-border" };
-  return (
-    <span className={cn("inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-xs font-medium", c.color)}>
-      {c.label}
-    </span>
   );
 }
 
@@ -310,8 +268,8 @@ function EvalCard({ item, expanded, onToggle }: {
 
         {/* Badges */}
         <div className="flex shrink-0 items-center gap-2">
-          <TypeBadge type={evalType} />
-          <VerdictBadge verdict={verdict} />
+          <EvalTypeBadge type={evalType} />
+          <SubmissionStatusBadge status={verdict} />
           {durationMs !== undefined && (
             <span className="hidden items-center gap-1 rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-xs text-muted-foreground sm:inline-flex">
               <ClockIcon weight="bold" className="size-3" />
@@ -447,7 +405,7 @@ export default function EvaluatorPage() {
                 <div className="flex items-center gap-2">
                   <h1 className="text-3xl font-bold tracking-tight">Arbiter</h1>
                   <span className="rounded-full border border-border bg-card px-2 py-0.5 font-mono text-xs text-muted-foreground">
-                    claude-haiku-4-5
+                    claude-sonnet-4
                   </span>
                   <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-xs font-medium text-emerald-400">
                     <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />

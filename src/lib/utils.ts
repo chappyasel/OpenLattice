@@ -8,6 +8,18 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function getBadgeColors(hue: number, saturation?: number) {
+  const s =
+    saturation !== undefined
+      ? `${saturation}%`
+      : "var(--badge-bg-saturation)";
+  return {
+    bg: `hsl(${hue},${s},var(--badge-bg-lightness))`,
+    fg: `hsl(${hue},${s},var(--badge-fg-lightness))`,
+    border: `hsla(${hue},${s},var(--badge-fg-lightness),0.3)`,
+  };
+}
+
 export function slugify(text: string): string {
   return text
     .toLowerCase()

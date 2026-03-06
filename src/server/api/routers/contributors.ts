@@ -76,6 +76,20 @@ export const contributorsRouter = createTRPCRouter({
       });
     }),
 
+  getTopDomains: publicProcedure
+    .input(z.object({ contributorId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.db.query.contributorReputation.findMany({
+        where: eq(contributorReputation.contributorId, input.contributorId),
+        with: { topic: { columns: { id: true, title: true } } },
+        orderBy: (r, { desc }) => [desc(r.score)],
+        limit: 3,
+      });
+      return rows
+        .filter((r) => r.topic !== null)
+        .map((r) => ({ title: r.topic!.title, score: r.score }));
+    }),
+
   listByTrustLevel: publicProcedure
     .input(z.object({ trustLevel: z.enum(["new", "verified", "trusted", "autonomous"]) }))
     .query(async ({ ctx, input }) => {

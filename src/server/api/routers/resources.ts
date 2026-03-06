@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -16,9 +16,19 @@ const resourceTypeValues = [
   "tool", "model", "library", "repository", "prompt", "workflow",
   "benchmark", "report", "discussion", "community", "event",
   "organization", "person", "concept", "comparison", "curated_list",
+  "newsletter", "social_media", "tutorial", "documentation",
 ] as const;
 
 export const resourcesRouter = createTRPCRouter({
+  listByType: publicProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .select({ type: resources.type, count: sql<number>`count(*)::int` })
+      .from(resources)
+      .where(eq(resources.visibility, "public"))
+      .groupBy(resources.type)
+      .orderBy(desc(sql`count(*)`));
+  }),
+
   list: publicProcedure
     .input(
       z

@@ -1,3 +1,4 @@
+export * from "./enums";
 export * from "./topics";
 export * from "./resources";
 export * from "./edges";
@@ -9,3 +10,4 @@ export * from "./bounties";
 export * from "./kudos";
 export * from "./contributorReputation";
 export * from "./activity";
+export * from "./topicRevisions";

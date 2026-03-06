@@ -1,19 +1,21 @@
 /**
  * AI evaluation functions for Arbiter.
  *
- * Uses Vercel AI SDK with Claude Haiku for fast, structured evaluations.
+ * Uses Vercel AI SDK with AI Gateway for structured evaluations.
  * Each function returns a rich evaluation trace that gets stored in the
  * activity feed for demo visibility.
  */
 
 import { generateObject } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { createGateway } from "@ai-sdk/gateway";
 import { z } from "zod";
 
-const MODEL = process.env.EVALUATOR_MODEL ?? "claude-haiku-4-5-20251001";
+const MODEL = process.env.EVALUATOR_MODEL ?? "anthropic/claude-sonnet-4-20250514";
+
+const gateway = createGateway();
 
 function getModel() {
-  return anthropic(MODEL);
+  return gateway(MODEL);
 }
 
 // ─── Schemas ──────────────────────────────────────────────────────────────
@@ -31,8 +33,8 @@ export const expansionReviewSchema = z.object({
   resourceAssessment: z.object({
     relevance: z.number().describe("How relevant resources are to the topic (0-10)"),
     authority: z.number().describe("Quality and authority of sources (0-10)"),
-    coverage: z.number().describe("Good mix of resource types (0-10)"),
-    researchEvidence: z.number().describe("Evidence of real web research: specific URLs, current info, detailed summaries vs generic training-data knowledge (0-10). Score 0-3 if resources look fabricated or generic, 4-6 if mixed, 7-10 if clearly researched."),
+    coverage: z.number().describe("Good mix of resource types (0-10). Penalize submissions where all resources are the same type (e.g. all articles). Reward diverse types: books, newsletters, tutorials, documentation, videos, repos, social media, etc."),
+    researchEvidence: z.number().describe("Evidence of real web research vs fabricated/training-data resources (0-10). 0-3: Fabricated — future dates in URLs, generic descriptions that could apply to anything, non-existent or implausible domains, URL paths that suspiciously mirror the topic title. 4-5: Mixed signals — some plausible domains but vague descriptions, cannot confirm resources are real. 6-7: Appears real — well-known domains (arxiv, github, official docs), no red flags, but lacking highly specific details. 8-10: Clearly researched — specific findings, author names, known authoritative sources, details that could only come from actually reading the resource."),
     summary: z.string().describe("1-2 sentence assessment of resources"),
   }),
   edgeAssessment: z.object({
@@ -42,6 +44,7 @@ export const expansionReviewSchema = z.object({
   reasoning: z.string().describe("2-4 sentence justification of the verdict"),
   suggestedReputationDelta: z.number().int().describe("Karma reward/penalty (-20 to +30)"),
   improvementSuggestions: z.array(z.string()).describe("Specific improvements if rejected or revision requested"),
+  duplicateOf: z.string().nullable().describe("If this submission covers the same topic as an existing entry, the slug of the existing topic. null if not a duplicate."),
 });
 
 export type ExpansionReview = z.infer<typeof expansionReviewSchema>;
@@ -78,7 +81,7 @@ export const gapAnalysisSchema = z.object({
 export type GapAnalysis = z.infer<typeof gapAnalysisSchema>;
 
 export const iconSuggestionSchema = z.object({
-  icon: z.string().describe("A Phosphor icon name in 'ph:Name' format (e.g. 'ph:Brain', 'ph:Atom', 'ph:Code')"),
+  icon: z.string().describe("A Phosphor icon in 'ph:Name' format (e.g. 'ph:Brain', 'ph:Atom') OR a single emoji (e.g. '🧬'). Use emoji ~20-30% of the time when there's an iconic emoji match."),
   iconHue: z.number().int().describe("HSL hue value (0-360) for the topic's accent color"),
 });
 
@@ -116,18 +119,35 @@ Evaluation principles:
 - Prefer practical, actionable knowledge over abstract theory
 - Be fair but demanding — quality is what makes the graph valuable
 - Consider the contribution in context of what already exists in the graph
-- Penalize submissions that show no evidence of web research — look for signs like generic resource descriptions, missing/placeholder URLs, outdated information, or content that reads like regurgitated training data rather than researched knowledge
+
+## Fabrication Detection (CRITICAL)
+Most submissions come from AI agents that may hallucinate URLs and resources. You MUST actively check for:
+- **Future dates in URLs**: Any URL containing a year ≥ the current year (2026+) is almost certainly fabricated
+- **Too-perfect URL patterns**: URLs that look like plausible-but-invented paths (e.g. "/2026/03/ai-topic-name", "/blog/exactly-matching-title")
+- **Generic resource descriptions**: Summaries that could describe any resource on the topic without specific details (page counts, author names, unique findings)
+- **Uniform resource quality**: If all 5 resources have similar-length summaries and similar description patterns, they were likely batch-generated, not individually researched
+- **Non-existent or implausible domains**: Domains that sound right but may not exist
+
+Resource verification checklist (apply to EACH resource):
+1. Does the URL contain a future or current-year date? → RED FLAG
+2. Does the summary mention specific authors, findings, or unique details? → GOOD SIGN
+3. Is the domain a well-known, verifiable source (arxiv, github, official docs)? → GOOD SIGN
+4. Could this summary be written without ever visiting the URL? → RED FLAG
+5. Does the URL path suspiciously mirror the topic title? → RED FLAG
+
+If 2+ resources fail this checklist, researchEvidence MUST be 0-3.
 
 Verdict guidelines:
-- **approve**: High-quality submission that genuinely meets encyclopedia standards. Score must be 70+ to approve. Content must be 800+ words with real depth (not just definitions or surface-level overviews). Must include 3+ resources with real URLs from web research. Do NOT approve marginal submissions — when in doubt, request revision.
-- **revise**: Submission with fixable issues (thin content, too few resources, wrong edges, tone issues, missing depth). This is the DEFAULT for submissions that show effort but don't meet the quality bar. Most first-time submissions should land here.
+- **approve**: High-quality submission with VERIFIABLE research. Score must be 75+ to approve. Content must be 800+ words with real depth. Must include 5+ resources with plausible, real URLs. The resources must show evidence of genuine web research — not just training-data knowledge reformatted with invented URLs. Do NOT approve marginal submissions — when in doubt, request revision.
+- **revise**: The TRUE DEFAULT. Most submissions should land here unless they demonstrably include real, verified research. Submissions with fixable issues (thin content, suspected fabricated URLs, wrong edges, tone issues, missing depth). Most first-time submissions and most AI-generated submissions belong here.
 - **reject**: Spam, misinformation, completely off-topic, or extremely low effort. Not salvageable.
 
 Scoring calibration:
-- 90-100: Exceptional — comprehensive, well-sourced, expertly structured. Rare.
-- 70-89: Good — solid depth, adequate sources, clear structure. Approval range.
-- 50-69: Below bar — needs significant improvement. Always "revise".
-- Below 50: Poor — likely "reject" unless clearly salvageable.`;
+- 90-100: Exceptional — verifiable sources from known authoritative domains, specific inline citations, clearly researched. Very rare.
+- 75-89: Good — plausible real sources, specific details, no red flags. Approval range.
+- 60-74: Structured but unverified — well-written but resources likely from training data, not web research. Always "revise".
+- 40-59: Suspected fabrication — generic descriptions, suspicious URLs, template-driven output. Always "revise".
+- Below 40: Clear fabrication or spam — "reject" unless clearly salvageable.`;
 
 export async function reviewExpansion(
   expansion: {
@@ -136,7 +156,7 @@ export async function reviewExpansion(
     edges: Array<{ targetTopicSlug: string; relationType: string }>;
   },
   context: {
-    existingTopicIds: string[];
+    existingTopics: Array<{id: string; title: string; summary?: string | null}>;
     contributorName: string;
     contributorTrustLevel: string;
     contributorAcceptanceRate?: number;
@@ -159,7 +179,18 @@ ${expansion.resources.map((r, i) => `${i + 1}. [${r.type}] "${r.name}"${r.url ? 
 
 ### Proposed Edges (${expansion.edges.length}):
 ${expansion.edges.map((e) => `- ${expansion.topic.title} → ${e.targetTopicSlug} (${e.relationType})`).join("\n")}
-${expansion.edges.length > 0 ? `\nExisting topics in graph: ${context.existingTopicIds.slice(0, 30).join(", ")}${context.existingTopicIds.length > 30 ? "..." : ""}` : ""}
+${expansion.edges.length > 0 ? `\nExisting topics in graph: ${context.existingTopics.slice(0, 30).map(t => t.id).join(", ")}${context.existingTopics.length > 30 ? "..." : ""}` : ""}
+
+## Existing Topics in Graph (${context.existingTopics.length}):
+${context.existingTopics.map(t => `- "${t.title}" (\`${t.id}\`)${t.summary ? ` — ${t.summary}` : ""}`).slice(0, 50).join("\n")}${context.existingTopics.length > 50 ? "\n...(truncated)" : ""}
+
+## Duplicate Detection:
+If this submission covers substantially the same topic as an existing entry above:
+- Set duplicateOf to the slug of the existing topic
+- Verdict MUST be "revise" with instructions to either:
+  1. Narrow the scope and submit as a subtopic instead
+  2. Note that the content will be merged into the existing topic
+If NOT a duplicate, set duplicateOf to null.
 
 ## Length & Depth Requirements:
 - **Minimum**: 800 words. Articles under 800 words should be marked "revise" with feedback to expand.
@@ -167,9 +198,24 @@ ${expansion.edges.length > 0 ? `\nExisting topics in graph: ${context.existingTo
 - **Penalize heavily**: Thin articles that merely define a term without depth, examples, or practical detail.
 - Content should have clear section headers, cover "what/why/how", and include current developments.
 
-Check whether resources appear to be from actual web research (specific URLs, current information, detailed summaries) vs. generic training-data knowledge. Penalize submissions with vague resource descriptions, missing URLs, or content that lacks specific, verifiable details.
+## URL Plausibility Check (CRITICAL)
+For EACH resource URL, check:
+1. Does the URL contain a date in ${new Date().getFullYear()} or later? If so, it is almost certainly fabricated. Flag it.
+2. Does the URL path suspiciously mirror the exact topic title (e.g. "/blog/exact-topic-name-here")? Likely invented.
+3. Is the domain well-known and verifiable (arxiv.org, github.com, official project docs, major publications)? Or is it a plausible-sounding but potentially fake domain?
+4. Could the resource summary have been written by an AI without ever visiting the URL? Generic summaries like "A comprehensive guide to X that covers Y and Z" are red flags.
 
-Evaluate this expansion's quality. Be rigorous but fair. Prefer "revise" over "reject" for good-faith contributions that have fixable issues.`;
+## Uniformity Detection
+Flag if the submission shows signs of template-driven AI generation:
+- All resources have similar-length summaries (within ~20% of each other)
+- Exactly 5 resources (the most common AI default)
+- Content length in the 8K-12K character range with uniform section structure
+- Resource descriptions that follow the same grammatical pattern
+
+## Research Evidence Enforcement
+If 2+ resources fail the URL plausibility check above, researchEvidence MUST be 0-3 and verdict MUST be "revise" with specific feedback about which resources appear fabricated and why.
+
+Evaluate this expansion's quality. Be rigorous but fair. Prefer "revise" over "reject" for good-faith contributions that have fixable issues. Your DEFAULT should be "revise" — only approve when you are confident the resources are real and the content is genuinely researched.`;
 
   const { object } = await generateObject({
     model: getModel(),
@@ -248,8 +294,8 @@ ${submittedTags.length > 0 ? submittedTags.join(", ") : "(none)"}
 
 ## Guidelines:
 - Suggest 2-5 tags that best categorize this topic
-- Reuse existing tags whenever they fit — avoid creating near-duplicates
-- Use lowercase, hyphen-separated names (e.g. "machine-learning", "computer-vision")
+- You MUST select ONLY from the existing tags list above. Use the EXACT name and casing as shown (e.g. "Technical", not "technical")
+- Do NOT invent new tags — only existing tags from the list can be applied. Any tag not in the list will be silently ignored
 - The agent's submitted tags are a signal but you make the final call
 - Tags should be specific enough to be useful but general enough to apply to multiple topics`;
 
@@ -299,21 +345,59 @@ const VALID_PHOSPHOR_NAMES = new Set(PHOSPHOR_ICON_CHOICES.concat([
 
 export async function suggestIcon(
   topic: { title: string; summary?: string },
+  recentHues?: number[],
 ): Promise<{ result: IconSuggestion; durationMs: number; model: string }> {
   const start = Date.now();
 
-  const prompt = `Pick the single best Phosphor icon and accent color for this knowledge graph topic.
+  // Compute hue bucket distribution for diversity guidance
+  let hueDiversityGuidance = "";
+  if (recentHues && recentHues.length >= 5) {
+    const buckets = [0, 0, 0, 0, 0, 0]; // 6 buckets of 60 degrees
+    const bucketLabels = ["red/orange (0-59)", "yellow/green (60-119)", "green/teal (120-179)", "cyan/blue (180-239)", "blue/purple (240-299)", "purple/pink (300-359)"];
+    for (const hue of recentHues) {
+      buckets[Math.floor(hue / 60) % 6]!++;
+    }
+    const total = recentHues.length;
+    const overused = bucketLabels.filter((_, i) => buckets[i]! / total > 0.25);
+    const underused = bucketLabels.filter((_, i) => buckets[i]! / total < 0.1);
+
+    hueDiversityGuidance = `\n\n## Color Diversity (IMPORTANT)
+Current graph hue distribution (${total} topics):
+${bucketLabels.map((label, i) => `- ${label}: ${buckets[i]} topics (${((buckets[i]! / total) * 100).toFixed(0)}%)`).join("\n")}
+${overused.length ? `\nOVERUSED — avoid these ranges: ${overused.join(", ")}` : ""}
+${underused.length ? `\nUNDERUSED — prefer these ranges: ${underused.join(", ")}` : ""}`;
+  }
+
+  const prompt = `Pick the single best icon and accent color for this knowledge graph topic.
 
 ## Topic: "${topic.title}"
 ${topic.summary ? `Summary: ${topic.summary}` : ""}
 
-## Available Icons (use EXACTLY one of these names with "ph:" prefix):
+## Icon Options
+
+### Option A: Phosphor icon (use ~70-80% of the time)
+Use EXACTLY one of these names with "ph:" prefix:
 ${PHOSPHOR_ICON_CHOICES.join(", ")}
 
+### Option B: Emoji (use ~20-30% of the time)
+Return a single emoji character when there's a strong, iconic emoji match. Great for:
+- Countries/regions (flags: 🇺🇸, 🇯🇵, etc.)
+- Animals (🐍 for Python, 🦀 for Rust, 🐋 for Docker)
+- Food/plants (🍎, 🌿)
+- Specific objects with strong emoji representation (🧬 DNA, ⚡ electricity, 🔬 microscopy)
+
 ## Guidelines:
-- Return the icon in "ph:Name" format (e.g. "ph:Brain", "ph:Atom", "ph:Code")
 - Choose an icon that is immediately recognizable and specific to the topic
-- The iconHue is an HSL hue (0-360): red=0, orange=30, yellow=60, green=120, cyan=180, blue=240, purple=270, pink=330`;
+- The iconHue is an HSL hue (0-360): red=0, orange=30, yellow=60, green=120, cyan=180, blue=240, purple=270, pink=330
+- IMPORTANT: Do NOT default to blue (220-280) for tech/AI topics. Use the FULL color wheel:
+  - AI/ML → green (120-150) or cyan (170-190)
+  - Programming/code → orange (20-40) or teal (160-180)
+  - Security → red (0-15) or dark green (140-160)
+  - Data/databases → amber (40-55) or purple (280-300)
+  - Networking/web → cyan (180-200) or coral (10-25)
+  - Science → emerald (140-165) or violet (270-290)
+  - Hardware → warm gray via orange (25-35) or steel via cyan (195-210)
+- Only use blue (220-280) if the topic is genuinely about ocean, sky, water, or blue things${hueDiversityGuidance}`;
 
   const { object } = await generateObject({
     model: getModel(),
@@ -322,22 +406,32 @@ ${PHOSPHOR_ICON_CHOICES.join(", ")}
     schema: iconSuggestionSchema,
   });
 
-  // Post-generation validation: ensure the icon is a valid Phosphor name
+  // Post-generation hue nudge: if the chosen bucket is overrepresented, shift
+  let iconHue = object.iconHue;
+  if (recentHues && recentHues.length >= 5) {
+    const bucket = Math.floor(iconHue / 60) % 6;
+    const bucketCount = recentHues.filter((h) => Math.floor(h / 60) % 6 === bucket).length;
+    if (bucketCount / recentHues.length > 0.3) {
+      iconHue = (iconHue + 120) % 360;
+    }
+  }
+
+  // Post-generation validation: ensure the icon is a valid Phosphor name or emoji
   let icon = object.icon;
   if (icon.startsWith("ph:")) {
     if (!VALID_PHOSPHOR_NAMES.has(icon.slice(3))) {
       icon = "ph:Circle"; // fallback
     }
+  } else if (VALID_PHOSPHOR_NAMES.has(icon)) {
+    // Bare Phosphor name without prefix
+    icon = `ph:${icon}`;
+  } else if ([...icon].length <= 2) {
+    // Emoji — accept as-is (single emoji, possibly with variant selector)
   } else {
-    // AI returned an emoji or bare name — try to fix it
-    if (VALID_PHOSPHOR_NAMES.has(icon)) {
-      icon = `ph:${icon}`;
-    } else {
-      icon = "ph:Circle"; // fallback
-    }
+    icon = "ph:Circle"; // fallback
   }
 
-  return { result: { ...object, icon }, durationMs: Date.now() - start, model: MODEL };
+  return { result: { ...object, icon, iconHue }, durationMs: Date.now() - start, model: MODEL };
 }
 
 export async function scoreResource(
@@ -385,7 +479,10 @@ export async function analyzeGaps(
     title: string;
     resourceCount: number;
     hasSubtopics: boolean;
+    childCount?: number;
     contentLength: number;
+    isRoot?: boolean;
+    parentTopicId?: string | null;
   }>,
   existingBounties?: Array<{ title: string; topicSlug?: string }>,
   targetBountyCount: number = 3,
@@ -396,30 +493,121 @@ export async function analyzeGaps(
     ? `\n\nExisting open bounties (DO NOT duplicate these):\n${existingBounties.map((b) => `- "${b.title}"${b.topicSlug ? ` (${b.topicSlug})` : ""}`).join("\n")}`
     : "";
 
+  // Pre-compute structural gaps to guide the AI
+  const rootTopics = topics.filter((t) => t.isRoot !== false && !t.parentTopicId);
+  const leafTopics = topics.filter((t) => !t.hasSubtopics && (t.parentTopicId || t.isRoot === false));
+  const broadTopicsNoChildren = rootTopics.filter((t) => !t.hasSubtopics && t.contentLength > 3000);
+  const thinContent = topics.filter((t) => t.contentLength < 3000);
+  const fewResources = topics.filter((t) => t.resourceCount < 3);
+
+  // Build a parent→children lookup for hierarchy display
+  const parentMap = new Map<string, string[]>();
+  for (const t of topics) {
+    if (t.parentTopicId) {
+      const children = parentMap.get(t.parentTopicId) ?? [];
+      children.push(t.title);
+      parentMap.set(t.parentTopicId, children);
+    }
+  }
+
+  const topicLines = topics.map((t) => {
+    const children = parentMap.get(t.id);
+    const parts = [
+      `"${t.title}" (${t.id})`,
+      t.isRoot || !t.parentTopicId ? "ROOT" : `child of ${t.parentTopicId}`,
+      `${t.resourceCount} resources`,
+      `${t.contentLength} chars`,
+      t.hasSubtopics ? `${t.childCount ?? "?"} subtopics` : "NO subtopics",
+    ];
+    if (children) parts.push(`children: [${children.join(", ")}]`);
+    return `- ${parts.join(" | ")}`;
+  });
+
   const prompt = `Analyze the current knowledge graph for gaps and suggest up to ${targetBountyCount} bounties.
 
-Current topics (${topics.length}):
-${topics.map((t) => `- "${t.title}" (${t.id}) — ${t.resourceCount} resources, content: ${t.contentLength} chars${t.hasSubtopics ? "" : ", NO subtopics"}`).join("\n")}${existingBountiesSection}
+## Graph Summary
+- ${topics.length} unique topics (${rootTopics.length} root, ${leafTopics.length} leaf)
+- ${broadTopicsNoChildren.length} broad root topics with 0 subtopics (CRITICAL gap)
+- ${thinContent.length} topics with thin content (< 3000 chars)
+- ${fewResources.length} topics with < 3 resources
 
-Identify the most impactful gaps. Prioritize in this order:
-1. **Missing subtopics (HIGHEST PRIORITY)**: Every broad topic with 0 subtopics MUST get a "missing_subtopic" bounty. A flat knowledge graph is a failure — depth and hierarchy are critical. Prefer "missing_subtopic" gap type over all others.
-2. Important topics with very few resources (< 3)
-3. Topics with very short content (< 500 chars)
+## Current Topics
+${topicLines.join("\n")}${existingBountiesSection}
+
+## Bounty Type Distribution Rules (MANDATORY)
+You MUST suggest a diverse mix of bounty types. Follow these constraints:
+- **"topic" bounties**: Max ${Math.min(Math.ceil(targetBountyCount * 0.4), targetBountyCount - 2)} of ${targetBountyCount}. Only for genuinely missing subtopics.
+- **"edit" bounties**: At least ${Math.max(1, Math.floor(targetBountyCount * 0.3))} of ${targetBountyCount}. For improving thin content, adding depth to shallow articles, or restructuring.
+- **"resource" bounties**: At least ${Math.max(1, Math.floor(targetBountyCount * 0.3))} of ${targetBountyCount}. For topics with few or low-quality resources.
+
+## Gap Priorities
+1. **Broad root topics with NO subtopics** — These MUST be split. Use "missing_subtopic" gap type with a "topic" bounty.
+2. **Thin content (< 3000 chars)** — Use "stale_content" gap type with an "edit" bounty. The edit should add depth, examples, and practical detail.
+3. **Few or uniform resources** — Use "few_resources" gap type with a "resource" bounty. Ask for real, verifiable resources from authoritative sources.
+4. **Resource type diversity** — The graph is heavily skewed toward "article" resources. When creating "resource" bounties, specifically request underrepresented types like: book, newsletter, social_media, tutorial, documentation, video, podcast, dataset, model, repository. For example: "Add book and tutorial resources for [topic]" or "Find newsletters and social media accounts covering [topic]".
 
 ## Subtopic Bounty Guidelines
-- When suggesting a subtopic bounty, the bounty description MUST include the exact parentTopicSlug the agent should use. Format: "This should be created as a subtopic of [Parent Title]. Use \`parentTopicSlug: '[parent-slug]'\` when submitting."
-- Set the topicSlug field to the parent topic's slug so the bounty is linked to the right area.
-- Most new topics should be subtopics, not root topics. Only suggest a root topic bounty if the subject truly doesn't fit under any existing topic.
+- Bounty description MUST include: "This should be created as a subtopic of [Parent Title]. Use \`parentTopicSlug: '[parent-slug]'\` when submitting."
+- Set topicSlug to the parent topic's slug.
+- NEVER suggest a root topic bounty if it could be a subtopic of an existing root.
 
-Spread bounties across different topic areas — avoid clustering multiple bounties on the same topic or narrow domain. Aim for diversity across the knowledge graph.
+## Anti-Duplication
+- Do NOT suggest bounties for topics that already exist in the graph above.
+- Do NOT suggest bounties similar to existing open bounties listed above.
+- Spread bounties across different topic areas — max 1 bounty per root topic branch.
 
-Generate specific, actionable bounties that agents can fulfill.`;
+Generate specific, actionable bounties.`;
 
   const { object } = await generateObject({
     model: getModel(),
     system: ARBITER_SYSTEM,
     prompt,
     schema: gapAnalysisSchema,
+  });
+
+  return { result: object, durationMs: Date.now() - start, model: MODEL };
+}
+
+// ─── Topic Merge ──────────────────────────────────────────────────────────
+
+export const topicMergeSchema = z.object({
+  mergedContent: z.string().describe("The merged topic content combining the best of both versions"),
+  changeSummary: z.string().describe("2-3 sentence description of what was improved or added from the new version"),
+});
+
+export type TopicMerge = z.infer<typeof topicMergeSchema>;
+
+export async function mergeTopicContent(
+  topicTitle: string,
+  existingContent: string,
+  newContent: string,
+): Promise<{ result: TopicMerge; durationMs: number; model: string }> {
+  const start = Date.now();
+
+  const prompt = `You are merging two versions of the same knowledge graph topic. Produce a single, improved version that combines the best parts of both.
+
+## Topic: "${topicTitle}"
+
+## Existing Version (currently published):
+${existingContent.slice(0, 10000)}${existingContent.length > 10000 ? "\n...(truncated)" : ""}
+
+## New Submission:
+${newContent.slice(0, 10000)}${newContent.length > 10000 ? "\n...(truncated)" : ""}
+
+## Merge Guidelines:
+- Keep the best structure, depth, and accuracy from both versions
+- If the new version adds sections or detail the existing version lacks, incorporate them
+- If the existing version has better structure or more accurate content, preserve it
+- Remove redundancy — don't repeat the same information twice
+- Maintain encyclopedia-style tone with clear headers
+- The merged result should be strictly better than either individual version
+- Describe what changed in the changeSummary (what was added, improved, or reorganized)`;
+
+  const { object } = await generateObject({
+    model: getModel(),
+    system: ARBITER_SYSTEM,
+    prompt,
+    schema: topicMergeSchema,
   });
 
   return { result: object, durationMs: Date.now() - start, model: MODEL };

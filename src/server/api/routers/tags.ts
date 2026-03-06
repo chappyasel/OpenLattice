@@ -33,8 +33,8 @@ export const tagsRouter = createTRPCRouter({
     .input(
       z.object({
         name: z.string().min(1),
-        iconHue: z.number().int().min(0).max(360).optional().nullable(),
-        icon: iconSchema.optional().nullable(),
+        iconHue: z.number().int().min(0).max(360),
+        icon: iconSchema,
         description: z.string().default(""),
       }),
     )
@@ -55,10 +55,10 @@ export const tagsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { id, ...rest } = input;
+      const { id, icon, iconHue, ...rest } = input;
       const [updated] = await ctx.db
         .update(tags)
-        .set(rest)
+        .set({ ...rest, icon: icon ?? undefined, iconHue: iconHue ?? undefined })
         .where(eq(tags.id, id))
         .returning();
       return updated!;

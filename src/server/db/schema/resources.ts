@@ -37,6 +37,10 @@ export const resourceTypeEnum = pgEnum("resource_type", [
   "concept",
   "comparison",
   "curated_list",
+  "newsletter",
+  "social_media",
+  "tutorial",
+  "documentation",
 ]);
 
 export const resourceVisibilityEnum = pgEnum("resource_visibility", [

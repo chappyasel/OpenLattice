@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -16,10 +16,11 @@ import {
   activity,
   tags,
   topicTags,
+  topicRevisions,
   resourceTypeEnum,
 } from "@/server/db/schema";
 import { activityId, generateUniqueId, slugify } from "@/lib/utils";
-import { suggestIcon } from "@/lib/evaluator/ai";
+import { suggestIcon, mergeTopicContent } from "@/lib/evaluator/ai";
 import { publicContributorColumns } from "./contributors";
 
 const VALID_RESOURCE_TYPES = new Set(resourceTypeEnum.enumValues);
@@ -163,65 +164,188 @@ export async function applyExpansion(
     parentTopicId = parent?.id;
   }
 
-  // 2. Resolve icon — use override if provided, otherwise suggest via AI (best-effort)
-  let icon: string | undefined;
-  let iconHue: number | undefined;
-  if (iconOverride) {
-    icon = iconOverride.icon;
-    iconHue = iconOverride.iconHue;
-  } else {
-    try {
-      const { result } = await suggestIcon({ title: data.topic.title, summary: data.topic.summary });
-      icon = result.icon;
-      iconHue = result.iconHue;
-    } catch {
-      // AI unavailable — topic will be created without an icon
-    }
-  }
+  // 2. Check for existing topic with same title (case-insensitive)
+  // Find ALL matches and pick the canonical one (most children, then shortest slug)
+  const existingMatches = await db.query.topics.findMany({
+    where: sql`LOWER(${topics.title}) = ${data.topic.title.toLowerCase()}`,
+    with: { childTopics: { columns: { id: true } } },
+  });
+  // Prefer the one with the most children (the "real" canonical), then shortest id (no -N suffix)
+  const existingTopic = existingMatches.length > 0
+    ? existingMatches.sort((a: any, b: any) => {
+        const diff = (b.childTopics?.length ?? 0) - (a.childTopics?.length ?? 0);
+        return diff !== 0 ? diff : a.id.length - b.id.length;
+      })[0]
+    : null;
 
-  // 3. Create topic with a unique slug (generateUniqueId adds suffix if slug exists)
-  const topicId = await generateUniqueId(db, topics, topics.id, data.topic.title);
-  const [topic] = await db
-    .insert(topics)
-    .values({
-      id: topicId,
+  let topic: any;
+
+  if (existingTopic) {
+    // ── Merge into existing topic ──────────────────────────────────────
+    topic = existingTopic;
+
+    // Count existing revisions to determine next revision number
+    const existingRevisions = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(topicRevisions)
+      .where(eq(topicRevisions.topicId, existingTopic.id));
+    const nextRevisionNumber = (existingRevisions[0]?.count ?? 0) + 1;
+
+    // If this is the first merge and no revisions exist, save revision 1 (original content)
+    if (nextRevisionNumber === 1) {
+      await db.insert(topicRevisions).values({
+        id: `${existingTopic.id}--rev-1`,
+        topicId: existingTopic.id,
+        revisionNumber: 1,
+        title: existingTopic.title,
+        content: existingTopic.content,
+        summary: existingTopic.summary,
+        difficulty: existingTopic.difficulty,
+        changeSummary: "Original content",
+        contributorId: existingTopic.createdById,
+        submissionId: null,
+        createdAt: existingTopic.createdAt,
+      });
+    }
+
+    // AI merge: combine existing + new content
+    let mergedContent = data.topic.content;
+    let changeSummary = "Content replaced (merge unavailable)";
+    try {
+      const { result: mergeResult } = await mergeTopicContent(
+        data.topic.title,
+        existingTopic.content,
+        data.topic.content,
+      );
+      mergedContent = mergeResult.mergedContent;
+      changeSummary = mergeResult.changeSummary;
+    } catch {
+      // AI unavailable — use new content as-is
+    }
+
+    // Save new revision
+    const revNum = nextRevisionNumber === 1 ? 2 : nextRevisionNumber;
+    await db.insert(topicRevisions).values({
+      id: `${existingTopic.id}--rev-${revNum}`,
+      topicId: existingTopic.id,
+      revisionNumber: revNum,
+      title: data.topic.title,
+      content: mergedContent,
+      summary: data.topic.summary ?? existingTopic.summary,
+      difficulty: data.topic.difficulty ?? existingTopic.difficulty,
+      changeSummary,
+      contributorId,
+      submissionId,
+    });
+
+    // Update the topic with merged content
+    await db
+      .update(topics)
+      .set({
+        content: mergedContent,
+        summary: data.topic.summary ?? existingTopic.summary,
+        difficulty: data.topic.difficulty ?? existingTopic.difficulty,
+      })
+      .where(eq(topics.id, existingTopic.id));
+
+    await db.insert(activity).values({
+      id: activityId("topic-updated", contributorId ?? "system"),
+      type: "topic_created",
+      contributorId,
+      topicId: existingTopic.id,
+      submissionId,
+      description: `Topic improved: "${data.topic.title}" (merged, rev ${revNum})`,
+    });
+  } else {
+    // ── Create new topic ───────────────────────────────────────────────
+
+    // Resolve icon
+    let icon: string | undefined;
+    let iconHue: number | undefined;
+    if (iconOverride) {
+      icon = iconOverride.icon;
+      iconHue = iconOverride.iconHue;
+    } else {
+      try {
+        const { result } = await suggestIcon({ title: data.topic.title, summary: data.topic.summary });
+        icon = result.icon;
+        iconHue = result.iconHue;
+      } catch {
+        // AI unavailable
+      }
+    }
+
+    const topicId = await generateUniqueId(db, topics, topics.id, data.topic.title);
+    [topic] = await db
+      .insert(topics)
+      .values({
+        id: topicId,
+        title: data.topic.title,
+        content: data.topic.content,
+        summary: data.topic.summary,
+        difficulty: data.topic.difficulty,
+        status: "published",
+        parentTopicId,
+        createdById: contributorId,
+        icon,
+        iconHue,
+      })
+      .returning();
+
+    // Save revision 1
+    await db.insert(topicRevisions).values({
+      id: `${topic.id}--rev-1`,
+      topicId: topic.id,
+      revisionNumber: 1,
       title: data.topic.title,
       content: data.topic.content,
       summary: data.topic.summary,
       difficulty: data.topic.difficulty,
-      status: "published",
-      parentTopicId,
-      createdById: contributorId,
-      icon,
-      iconHue,
-    })
-    .returning();
+      changeSummary: "Initial creation",
+      contributorId,
+      submissionId,
+    });
 
-  await db.insert(activity).values({
-    id: activityId("topic-created", contributorId ?? "system"),
-    type: "topic_created",
-    contributorId,
-    topicId: topic.id,
-    submissionId,
-    description: `Topic created: "${data.topic.title}"`,
-  });
+    await db.insert(activity).values({
+      id: activityId("topic-created", contributorId ?? "system"),
+      type: "topic_created",
+      contributorId,
+      topicId: topic.id,
+      submissionId,
+      description: `Topic created: "${data.topic.title}"`,
+    });
+  }
 
-  // 3. Create resources and link them
+  // 3. Create resources and link them (dedup by URL)
   for (const res of data.resources) {
     const resType = VALID_RESOURCE_TYPES.has(res.type as typeof resourceTypeEnum.enumValues[number]) ? (res.type as typeof resourceTypeEnum.enumValues[number]) : "article" as const;
-    const resId = await generateUniqueId(db, resources, resources.id, res.name);
-    const [resource] = await db
-      .insert(resources)
-      .values({
-        id: resId,
-        name: res.name,
-        url: res.url,
-        type: resType as any,
-        summary: res.summary,
-        visibility: "public",
-        submittedById: contributorId,
-      })
-      .returning();
+
+    // Check if a resource with the same URL already exists
+    let resource: any = null;
+    if (res.url) {
+      const existingResource = await db.query.resources.findFirst({
+        where: eq(resources.url, res.url),
+      });
+      if (existingResource) {
+        resource = existingResource;
+      }
+    }
+
+    if (!resource) {
+      const resId = await generateUniqueId(db, resources, resources.id, res.name);
+      [resource] = await db
+        .insert(resources)
+        .values({
+          id: resId,
+          name: res.name,
+          url: res.url,
+          type: resType as any,
+          summary: res.summary,
+          visibility: "public",
+          submittedById: contributorId,
+        })
+        .returning();
+    }
 
     if (resource) {
       await db
@@ -235,7 +359,7 @@ export async function applyExpansion(
         .onConflictDoNothing();
 
       await db.insert(activity).values({
-        id: activityId("resource-submitted", resId),
+        id: activityId("resource-submitted", resource.id),
         type: "resource_submitted",
         contributorId,
         topicId: topic.id,
@@ -274,38 +398,20 @@ export async function applyExpansion(
 
   // 5. Apply tags (use evaluator-resolved tags if provided, otherwise agent-submitted tags)
   const tagNames = resolvedTags ?? data.tags;
-  const isEvaluatorResolved = !!resolvedTags;
   if (tagNames.length > 0) {
     for (const tagName of tagNames) {
       const normalized = tagName.trim().toLowerCase();
       if (!normalized) continue;
 
       const existing = await db.query.tags.findFirst({
-        where: eq(tags.name, normalized),
+        where: sql`LOWER(${tags.name}) = ${normalized}`,
       });
 
       let tagId: string;
       if (existing) {
         tagId = existing.id;
-      } else if (isEvaluatorResolved) {
-        // Only the evaluator can create new tags
-        const [created] = await db
-          .insert(tags)
-          .values({ id: slugify(normalized), name: normalized })
-          .onConflictDoNothing()
-          .returning();
-        if (!created) {
-          // Race condition — re-fetch
-          const refetched = await db.query.tags.findFirst({
-            where: eq(tags.name, normalized),
-          });
-          if (!refetched) continue;
-          tagId = refetched.id;
-        } else {
-          tagId = created.id;
-        }
       } else {
-        // Agent-submitted tag doesn't exist — skip it
+        // Only admins can create new tags — skip unknown tags
         continue;
       }
 

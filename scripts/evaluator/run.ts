@@ -4,12 +4,14 @@
  * Thin CLI entry point that imports the shared cycle logic.
  *
  * Environment variables:
- *   EVALUATOR_API_KEY    — Arbiter's API key (from seed script)
  *   OPENLATTICE_URL      — Platform URL (default: http://localhost:3000)
- *   ANTHROPIC_API_KEY    — For AI evaluation calls
- *   EVALUATOR_MODEL      — Model to use (default: claude-haiku-4-5-20251001)
+ *   AI_GATEWAY_API_KEY   — Vercel AI Gateway API key for evaluation calls
+ *   EVALUATOR_MODEL      — Model to use (default: anthropic/claude-sonnet-4-20250514)
  *   POLL_INTERVAL        — Seconds between cycles (default: 60)
  *   GAP_ANALYSIS_EVERY   — Run gap analysis every N cycles (default: 3)
+ *
+ * The evaluator API key is resolved automatically from the database
+ * by finding the autonomous contributor.
  *
  * Run with: npx tsx scripts/evaluator/run.ts
  * Single cycle: npx tsx scripts/evaluator/run.ts --once
@@ -19,22 +21,17 @@ import dotenv from "dotenv";
 dotenv.config({ path: "./.env" });
 
 import { runEvaluationCycle } from "../../src/lib/evaluator/cycle";
+import { getEvaluatorApiKey } from "../../src/lib/evaluator/get-api-key";
 
 const BASE_URL = process.env.OPENLATTICE_URL ?? "http://localhost:3000";
-const API_KEY = process.env.EVALUATOR_API_KEY;
 const POLL_INTERVAL_MS =
   (parseInt(process.env.POLL_INTERVAL ?? "60") || 60) * 1000;
 const GAP_ANALYSIS_EVERY =
   parseInt(process.env.GAP_ANALYSIS_EVERY ?? "3") || 3;
 const ONCE = process.argv.includes("--once");
 
-if (!API_KEY) {
-  console.error("Missing EVALUATOR_API_KEY. Run the seed script first.");
-  process.exit(1);
-}
-
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error("Missing ANTHROPIC_API_KEY. Needed for AI evaluation.");
+if (!process.env.AI_GATEWAY_API_KEY) {
+  console.error("Missing AI_GATEWAY_API_KEY. Needed for AI evaluation via Vercel AI Gateway.");
   process.exit(1);
 }
 
@@ -50,15 +47,17 @@ async function main(): Promise<void> {
   Arbiter — OpenLattice Evaluator Agent
 ====================================================
   URL:      ${BASE_URL}
-  Model:    ${process.env.EVALUATOR_MODEL ?? "claude-haiku-4-5-20251001"}
+  Model:    ${process.env.EVALUATOR_MODEL ?? "anthropic/claude-sonnet-4-20250514"}
   Mode:     ${ONCE ? "single cycle" : `polling (${POLL_INTERVAL_MS / 1000}s)`}
 ====================================================
 `);
 
+  const apiKey = await getEvaluatorApiKey();
+
   cycleCount++;
   await runEvaluationCycle({
     baseUrl: BASE_URL,
-    apiKey: API_KEY,
+    apiKey,
     runGapAnalysis: cycleCount % GAP_ANALYSIS_EVERY === 0,
   });
 
@@ -70,10 +69,12 @@ async function main(): Promise<void> {
   while (true) {
     await sleep(POLL_INTERVAL_MS);
     try {
+      // Refresh key each cycle in case the contributor was updated
+      const freshKey = await getEvaluatorApiKey();
       cycleCount++;
       await runEvaluationCycle({
         baseUrl: BASE_URL,
-        apiKey: API_KEY,
+        apiKey: freshKey,
         runGapAnalysis: cycleCount % GAP_ANALYSIS_EVERY === 0,
       });
     } catch (err) {

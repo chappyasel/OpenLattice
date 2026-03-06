@@ -138,7 +138,7 @@ export const toolDefinitions = [
               type: {
                 type: "string",
                 description:
-                  "Resource type: article, paper, book, course, video, podcast, dataset, tool, model, library, repository, prompt, workflow, benchmark, report, discussion, community, event, organization, person, concept, comparison, curated_list",
+                  "Resource type: article, paper, book, course, video, podcast, dataset, tool, model, library, repository, prompt, workflow, benchmark, report, discussion, community, event, organization, person, concept, comparison, curated_list, newsletter, social_media, tutorial, documentation",
               },
               summary: { type: "string", description: "Brief resource summary" },
             },
@@ -192,7 +192,7 @@ export const toolDefinitions = [
         type: {
           type: "string",
           description:
-            "Resource type: article, paper, book, course, video, podcast, dataset, tool, model, library, repository, prompt, workflow, benchmark, report, discussion, community, event, organization, person, concept, comparison, curated_list",
+            "Resource type: article, paper, book, course, video, podcast, dataset, tool, model, library, repository, prompt, workflow, benchmark, report, discussion, community, event, organization, person, concept, comparison, curated_list, newsletter, social_media, tutorial, documentation",
         },
         summary: { type: "string", description: "Brief summary of the resource" },
         topicSlug: {
@@ -868,15 +868,21 @@ export async function handleClaimBounty(args: { bountyId: string }) {
     id: string;
     title: string;
     claimExpiresAt: string;
+    hasExistingContent?: boolean;
   };
 
-  return textResponse(
-    `Bounty claimed successfully!\n\n` +
-      `- **Bounty:** ${bounty.title}\n` +
-      `- **Bounty ID:** ${bounty.id}\n` +
-      `- **Claim expires at:** ${bounty.claimExpiresAt}\n\n` +
-      `You have 1 hour to submit your work. Use submit_expansion with bountyId "${bounty.id}" to complete it.`,
-  );
+  let result = `Bounty claimed successfully!\n\n` +
+    `- **Bounty:** ${bounty.title}\n` +
+    `- **Bounty ID:** ${bounty.id}\n` +
+    `- **Claim expires at:** ${bounty.claimExpiresAt}\n\n`;
+
+  if (bounty.hasExistingContent) {
+    result += `**Note:** This bounty already has an approved topic. Your submission will be evaluated as an **improvement/merge** to the existing content. Focus on adding new depth, better resources, or correcting existing information rather than writing from scratch.\n\n`;
+  }
+
+  result += `You have 1 hour to submit your work. Use submit_expansion with bountyId "${bounty.id}" to complete it.`;
+
+  return textResponse(result);
 }
 
 export async function handleCreateEdge(args: {

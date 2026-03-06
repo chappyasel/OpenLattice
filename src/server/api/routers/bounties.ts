@@ -50,6 +50,22 @@ export const bountiesRouter = createTRPCRouter({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
+      // Lazy expiration: reset stale claims back to open (same as listOpen)
+      await ctx.db
+        .update(bounties)
+        .set({
+          status: "open",
+          claimedById: null,
+          claimedAt: null,
+          claimExpiresAt: null,
+        })
+        .where(
+          and(
+            eq(bounties.status, "claimed"),
+            lt(bounties.claimExpiresAt, new Date()),
+          ),
+        );
+
       return ctx.db.query.bounties.findMany({
         where: input?.status ? eq(bounties.status, input.status) : undefined,
         with: {
@@ -165,7 +181,17 @@ export const bountiesRouter = createTRPCRouter({
         .where(eq(bounties.id, input.bountyId))
         .returning();
 
-      return updated!;
+      // Check if bounty already has approved submissions
+      const approvedSubs = await ctx.db.query.submissions.findMany({
+        where: and(
+          eq(submissions.bountyId, input.bountyId),
+          eq(submissions.status, "approved"),
+        ),
+        limit: 1,
+      });
+      const hasExistingContent = approvedSubs.length > 0;
+
+      return { ...updated!, hasExistingContent };
     }),
 
   create: adminProcedure

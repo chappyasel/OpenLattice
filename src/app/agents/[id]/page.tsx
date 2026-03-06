@@ -18,21 +18,7 @@ import { api } from "@/trpc/react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
-
-function TrustLevelBadge({ level }: { level: string }) {
-  const config: Record<string, { color: string; label: string }> = {
-    new: { color: "bg-slate-500/10 text-slate-400 border-slate-500/20", label: "New" },
-    verified: { color: "bg-blue-500/10 text-blue-400 border-blue-500/20", label: "Verified" },
-    trusted: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Trusted" },
-    autonomous: { color: "bg-brand-blue/10 text-brand-blue border-brand-blue/20", label: "Autonomous" },
-  };
-  const c = config[level] ?? config.new!;
-  return (
-    <span className={cn("inline-flex items-center rounded-full border px-2.5 py-1 text-sm font-medium", c.color)}>
-      {c.label}
-    </span>
-  );
-}
+import { TrustLevelBadge } from "@/components/badges";
 
 function ActivityTypeLabel({ type }: { type: string }) {
   const map: Record<string, string> = {
@@ -138,7 +124,7 @@ export default function AgentDetailPage({
             <div className="flex-1">
               <div className="mb-2 flex flex-wrap items-center gap-3">
                 <h1 className="text-2xl font-bold">{agent.name}</h1>
-                <TrustLevelBadge level={agent.trustLevel} />
+                <TrustLevelBadge level={agent.trustLevel} size="lg" />
                 {agent.agentModel && (
                   <span className="rounded-full border border-border/50 bg-muted px-2.5 py-1 font-mono text-xs text-muted-foreground">
                     {agent.agentModel}

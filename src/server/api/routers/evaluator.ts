@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { iconSchema } from "@/lib/phosphor-icons";
@@ -29,7 +29,7 @@ async function completeBountyForSubmission(db: any, updated: any) {
   const bounty = await db.query.bounties.findFirst({
     where: and(
       eq(bounties.id, updated.bountyId),
-      eq(bounties.status, "open"),
+      inArray(bounties.status, ["open", "claimed"]),
     ),
   });
 
@@ -42,7 +42,7 @@ async function completeBountyForSubmission(db: any, updated: any) {
       completedById: updated.contributorId,
     })
     .where(
-      and(eq(bounties.id, bounty.id), eq(bounties.status, "open")),
+      and(eq(bounties.id, bounty.id), inArray(bounties.status, ["open", "claimed"])),
     );
 
   await db
@@ -160,7 +160,7 @@ export const evaluatorRouter = createTRPCRouter({
         description: `Submission ${verdictLabel}: ${input.reasoning.slice(0, 100)}`,
         data: input.evaluationTrace
           ? (input.evaluationTrace as Record<string, unknown>)
-          : undefined,
+          : null,
       });
 
       // Materialize expansion into graph if approved
@@ -399,17 +399,39 @@ export const evaluatorRouter = createTRPCRouter({
         topicId = topic?.id;
       }
 
-      // Dedup: check for existing open bounty with same topicId + type
+      // Dedup: check for existing open/claimed bounty with same topicId + type
       if (topicId) {
         const existing = await ctx.db.query.bounties.findFirst({
           where: and(
             eq(bounties.topicId, topicId),
             eq(bounties.type, input.type),
-            eq(bounties.status, "open"),
+            inArray(bounties.status, ["open", "claimed"]),
           ),
         });
         if (existing) return existing;
       }
+
+      // Dedup: for "topic" bounties, check if a topic with this title already exists
+      if (input.type === "topic") {
+        // Strip common bounty title prefixes to get the actual topic name
+        const topicName = input.title
+          .replace(/^Create (root topic|subtopic): /i, "")
+          .replace(/^Expand: /i, "")
+          .trim();
+        const existingTopic = await ctx.db.query.topics.findFirst({
+          where: sql`LOWER(${topics.title}) = ${topicName.toLowerCase()}`,
+        });
+        if (existingTopic) return null; // Topic already exists, skip
+      }
+
+      // Dedup: check for existing open/claimed bounty with similar title
+      const existingByTitle = await ctx.db.query.bounties.findFirst({
+        where: and(
+          sql`LOWER(${bounties.title}) = ${input.title.toLowerCase()}`,
+          inArray(bounties.status, ["open", "claimed"]),
+        ),
+      });
+      if (existingByTitle) return existingByTitle;
 
       const id = await generateUniqueId(ctx.db, bounties, bounties.id, input.title);
       const [bounty] = await ctx.db
@@ -488,7 +510,7 @@ export const evaluatorRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
         .update(topics)
-        .set({ icon: input.icon, iconHue: input.iconHue })
+        .set({ icon: input.icon ?? undefined, iconHue: input.iconHue ?? undefined })
         .where(eq(topics.id, input.topicId))
         .returning();
       return updated!;
@@ -505,7 +527,7 @@ export const evaluatorRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const [updated] = await ctx.db
         .update(tags)
-        .set({ icon: input.icon, iconHue: input.iconHue })
+        .set({ icon: input.icon ?? undefined, iconHue: input.iconHue ?? undefined })
         .where(eq(tags.id, input.tagId))
         .returning();
       return updated!;

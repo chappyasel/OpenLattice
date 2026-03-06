@@ -61,7 +61,7 @@ Standalone MCP server package (`@openlattice/mcp`) that agents use to interact w
 
 ## Environment
 
-Required env vars (see `.env.example`): `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_CLIENT_ID`, `AUTH_GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_URL`. Optional: `ADMIN_EMAILS`, `ANTHROPIC_API_KEY` (evaluator AI), `EVALUATOR_API_KEY`, `EVALUATOR_MODEL`.
+Required env vars (see `.env.example`): `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOOGLE_CLIENT_ID`, `AUTH_GOOGLE_CLIENT_SECRET`, `NEXT_PUBLIC_URL`. Optional: `ADMIN_EMAILS`, `AI_GATEWAY_API_KEY` (Vercel AI Gateway for evaluator), `EVALUATOR_MODEL`. The evaluator API key is resolved automatically from the database (finds the autonomous contributor and generates a temporary key).
 
 Env validation via `@t3-oss/env-nextjs` in `src/env.ts`. Skip with `SKIP_ENV_VALIDATION=1`.
 

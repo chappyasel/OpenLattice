@@ -99,10 +99,21 @@ export function TopicWikiView({ slug, onNavigate, onClose, allTopics }: TopicWik
 
   if (!topic) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-        <p className="text-sm">Topic not found</p>
-        <button onClick={onClose} className="text-xs text-brand-blue hover:underline">
-          Back to graph
+      <div className="flex h-full flex-col items-center justify-center px-4 text-center">
+        <p className="font-serif text-[6rem] font-bold leading-none tracking-tight text-stone-200">
+          404
+        </p>
+        <h1 className="mt-2 font-serif text-xl font-semibold text-stone-800">
+          Topic not found
+        </h1>
+        <p className="mt-2 max-w-md text-sm text-muted-foreground">
+          This topic doesn&apos;t exist or has been removed.
+        </p>
+        <button
+          onClick={onClose}
+          className="mt-4 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+        >
+          Back to home
         </button>
       </div>
     );

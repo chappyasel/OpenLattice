@@ -1,19 +1,21 @@
 /**
  * AI evaluation functions for Arbiter.
  *
- * Uses Vercel AI SDK with Claude Haiku for fast, structured evaluations.
+ * Uses Vercel AI SDK with AI Gateway for structured evaluations.
  * Each function returns a rich evaluation trace that gets stored in the
  * activity feed for demo visibility.
  */
 
 import { generateObject } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import { createGateway } from "@ai-sdk/gateway";
 import { z } from "zod";
 
-const MODEL = process.env.EVALUATOR_MODEL ?? "claude-haiku-4-5-20251001";
+const MODEL = process.env.EVALUATOR_MODEL ?? "anthropic/claude-sonnet-4-20250514";
+
+const gateway = createGateway();
 
 function getModel() {
-  return anthropic(MODEL);
+  return gateway(MODEL);
 }
 
 // ─── Schemas ──────────────────────────────────────────────────────────────
@@ -77,7 +79,7 @@ export const gapAnalysisSchema = z.object({
 export type GapAnalysis = z.infer<typeof gapAnalysisSchema>;
 
 export const iconSuggestionSchema = z.object({
-  icon: z.string().describe("A Phosphor icon name in 'ph:Name' format (e.g. 'ph:Brain', 'ph:Atom', 'ph:Code')"),
+  icon: z.string().describe("A Phosphor icon in 'ph:Name' format (e.g. 'ph:Brain', 'ph:Atom') OR a single emoji (e.g. '🧬'). Use emoji ~20-30% of the time when there's an iconic emoji match."),
   iconHue: z.number().int().describe("HSL hue value (0-360) for the topic's accent color"),
 });
 
@@ -283,21 +285,59 @@ const VALID_PHOSPHOR_NAMES = new Set(PHOSPHOR_ICON_CHOICES.concat([
 
 export async function suggestIcon(
   topic: { title: string; summary?: string },
+  recentHues?: number[],
 ): Promise<{ result: IconSuggestion; durationMs: number; model: string }> {
   const start = Date.now();
 
-  const prompt = `Pick the single best Phosphor icon and accent color for this knowledge graph topic.
+  // Compute hue bucket distribution for diversity guidance
+  let hueDiversityGuidance = "";
+  if (recentHues && recentHues.length >= 5) {
+    const buckets = [0, 0, 0, 0, 0, 0]; // 6 buckets of 60 degrees
+    const bucketLabels = ["red/orange (0-59)", "yellow/green (60-119)", "green/teal (120-179)", "cyan/blue (180-239)", "blue/purple (240-299)", "purple/pink (300-359)"];
+    for (const hue of recentHues) {
+      buckets[Math.floor(hue / 60) % 6]!++;
+    }
+    const total = recentHues.length;
+    const overused = bucketLabels.filter((_, i) => buckets[i]! / total > 0.25);
+    const underused = bucketLabels.filter((_, i) => buckets[i]! / total < 0.1);
+
+    hueDiversityGuidance = `\n\n## Color Diversity (IMPORTANT)
+Current graph hue distribution (${total} topics):
+${bucketLabels.map((label, i) => `- ${label}: ${buckets[i]} topics (${((buckets[i]! / total) * 100).toFixed(0)}%)`).join("\n")}
+${overused.length ? `\nOVERUSED — avoid these ranges: ${overused.join(", ")}` : ""}
+${underused.length ? `\nUNDERUSED — prefer these ranges: ${underused.join(", ")}` : ""}`;
+  }
+
+  const prompt = `Pick the single best icon and accent color for this knowledge graph topic.
 
 ## Topic: "${topic.title}"
 ${topic.summary ? `Summary: ${topic.summary}` : ""}
 
-## Available Icons (use EXACTLY one of these names with "ph:" prefix):
+## Icon Options
+
+### Option A: Phosphor icon (use ~70-80% of the time)
+Use EXACTLY one of these names with "ph:" prefix:
 ${PHOSPHOR_ICON_CHOICES.join(", ")}
 
+### Option B: Emoji (use ~20-30% of the time)
+Return a single emoji character when there's a strong, iconic emoji match. Great for:
+- Countries/regions (flags: 🇺🇸, 🇯🇵, etc.)
+- Animals (🐍 for Python, 🦀 for Rust, 🐋 for Docker)
+- Food/plants (🍎, 🌿)
+- Specific objects with strong emoji representation (🧬 DNA, ⚡ electricity, 🔬 microscopy)
+
 ## Guidelines:
-- Return the icon in "ph:Name" format (e.g. "ph:Brain", "ph:Atom", "ph:Code")
 - Choose an icon that is immediately recognizable and specific to the topic
-- The iconHue is an HSL hue (0-360): red=0, orange=30, yellow=60, green=120, cyan=180, blue=240, purple=270, pink=330`;
+- The iconHue is an HSL hue (0-360): red=0, orange=30, yellow=60, green=120, cyan=180, blue=240, purple=270, pink=330
+- IMPORTANT: Do NOT default to blue (220-280) for tech/AI topics. Use the FULL color wheel:
+  - AI/ML → green (120-150) or cyan (170-190)
+  - Programming/code → orange (20-40) or teal (160-180)
+  - Security → red (0-15) or dark green (140-160)
+  - Data/databases → amber (40-55) or purple (280-300)
+  - Networking/web → cyan (180-200) or coral (10-25)
+  - Science → emerald (140-165) or violet (270-290)
+  - Hardware → warm gray via orange (25-35) or steel via cyan (195-210)
+- Only use blue (220-280) if the topic is genuinely about ocean, sky, water, or blue things${hueDiversityGuidance}`;
 
   const { object } = await generateObject({
     model: getModel(),
@@ -306,22 +346,32 @@ ${PHOSPHOR_ICON_CHOICES.join(", ")}
     schema: iconSuggestionSchema,
   });
 
-  // Post-generation validation: ensure the icon is a valid Phosphor name
+  // Post-generation hue nudge: if the chosen bucket is overrepresented, shift
+  let iconHue = object.iconHue;
+  if (recentHues && recentHues.length >= 5) {
+    const bucket = Math.floor(iconHue / 60) % 6;
+    const bucketCount = recentHues.filter((h) => Math.floor(h / 60) % 6 === bucket).length;
+    if (bucketCount / recentHues.length > 0.3) {
+      iconHue = (iconHue + 120) % 360;
+    }
+  }
+
+  // Post-generation validation: ensure the icon is a valid Phosphor name or emoji
   let icon = object.icon;
   if (icon.startsWith("ph:")) {
     if (!VALID_PHOSPHOR_NAMES.has(icon.slice(3))) {
       icon = "ph:Circle"; // fallback
     }
+  } else if (VALID_PHOSPHOR_NAMES.has(icon)) {
+    // Bare Phosphor name without prefix
+    icon = `ph:${icon}`;
+  } else if ([...icon].length <= 2) {
+    // Emoji — accept as-is (single emoji, possibly with variant selector)
   } else {
-    // AI returned an emoji or bare name — try to fix it
-    if (VALID_PHOSPHOR_NAMES.has(icon)) {
-      icon = `ph:${icon}`;
-    } else {
-      icon = "ph:Circle"; // fallback
-    }
+    icon = "ph:Circle"; // fallback
   }
 
-  return { result: { ...object, icon }, durationMs: Date.now() - start, model: MODEL };
+  return { result: { ...object, icon, iconHue }, durationMs: Date.now() - start, model: MODEL };
 }
 
 export async function scoreResource(
@@ -367,9 +417,13 @@ export async function analyzeGaps(
     title: string;
     resourceCount: number;
     hasSubtopics: boolean;
+    childCount?: number;
     contentLength: number;
+    isRoot?: boolean;
+    parentTopicId?: string | null;
   }>,
   existingBounties?: Array<{ title: string; topicSlug?: string }>,
+  targetBountyCount: number = 3,
 ): Promise<{ result: GapAnalysis; durationMs: number; model: string }> {
   const start = Date.now();
 
@@ -377,17 +431,48 @@ export async function analyzeGaps(
     ? `\n\nExisting open bounties (DO NOT duplicate these):\n${existingBounties.map((b) => `- "${b.title}"${b.topicSlug ? ` (${b.topicSlug})` : ""}`).join("\n")}`
     : "";
 
-  const prompt = `Analyze the current knowledge graph for gaps and suggest up to 3 bounties.
+  const rootTopics = topics.filter((t) => t.isRoot !== false && !t.parentTopicId);
+  const broadNoChildren = rootTopics.filter((t) => !t.hasSubtopics && t.contentLength > 3000);
+  const thinContent = topics.filter((t) => t.contentLength < 3000);
 
-Current topics (${topics.length}):
-${topics.map((t) => `- "${t.title}" (${t.id}) — ${t.resourceCount} resources, content: ${t.contentLength} chars${t.hasSubtopics ? "" : ", NO subtopics"}`).join("\n")}${existingBountiesSection}
+  const topicLines = topics.map((t) => {
+    const parts = [
+      `"${t.title}" (${t.id})`,
+      t.isRoot || !t.parentTopicId ? "ROOT" : `child of ${t.parentTopicId}`,
+      `${t.resourceCount} resources`,
+      `${t.contentLength} chars`,
+      t.hasSubtopics ? `${t.childCount ?? "?"} subtopics` : "NO subtopics",
+    ];
+    return `- ${parts.join(" | ")}`;
+  });
 
-Identify the most impactful gaps. Prioritize:
-1. Important topics with very few resources (< 3)
-2. Topics that should have subtopics but don't
-3. Topics with very short content (< 500 chars)
+  const prompt = `Analyze the current knowledge graph for gaps and suggest up to ${targetBountyCount} bounties.
 
-Generate specific, actionable bounties that agents can fulfill.`;
+## Graph Summary
+- ${topics.length} unique topics (${rootTopics.length} root, ${topics.length - rootTopics.length} subtopics)
+- ${broadNoChildren.length} broad root topics with 0 subtopics
+- ${thinContent.length} topics with thin content (< 3000 chars)
+
+## Current Topics
+${topicLines.join("\n")}${existingBountiesSection}
+
+## Bounty Type Rules
+Suggest a diverse mix:
+- **"topic"** bounties: Max ${Math.min(Math.ceil(targetBountyCount * 0.4), targetBountyCount - 1)} — only for missing subtopics
+- **"edit"** bounties: At least 1 — for improving thin content
+- **"resource"** bounties: At least 1 — for topics needing better resources
+
+## Priorities
+1. Broad root topics with NO subtopics → "topic" bounty (subtopic creation)
+2. Thin content (< 3000 chars) → "edit" bounty
+3. Few resources → "resource" bounty
+
+## Subtopic Guidelines
+- Description MUST include: "Use \`parentTopicSlug: '[slug]'\` when submitting."
+- Set topicSlug to the parent's slug
+- NEVER suggest root topics if a parent exists
+
+Spread bounties across different areas. Generate specific, actionable bounties.`;
 
   const { object } = await generateObject({
     model: getModel(),

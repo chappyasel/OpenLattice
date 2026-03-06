@@ -10,7 +10,12 @@ export async function trpcQuery(path: string, input: Record<string, unknown>) {
   const url = new URL(`/api/trpc/${path}`, baseUrl);
   url.searchParams.set("input", JSON.stringify({ json: input }));
 
-  const res = await fetch(url.toString());
+  const headers: Record<string, string> = {};
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  }
+
+  const res = await fetch(url.toString(), { headers });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`tRPC query ${path} failed (${res.status}): ${text}`);

@@ -2,7 +2,6 @@ import { relations } from "drizzle-orm";
 import {
   index,
   integer,
-  pgEnum,
   pgTable,
   text,
   timestamp,
@@ -10,20 +9,12 @@ import {
 
 import { contributors } from "./contributors";
 import { edges } from "./edges";
+import { difficultyEnum, topicStatusEnum } from "./enums";
 import { topicResources } from "./topicResources";
 import { topicTags } from "./tags";
+import { topicRevisions } from "./topicRevisions";
 
-export const difficultyEnum = pgEnum("difficulty", [
-  "beginner",
-  "intermediate",
-  "advanced",
-]);
-
-export const topicStatusEnum = pgEnum("topic_status", [
-  "draft",
-  "published",
-  "archived",
-]);
+export { difficultyEnum, topicStatusEnum };
 
 export const topics = pgTable(
   "topics",
@@ -70,6 +61,7 @@ export const topicsRelations = relations(topics, ({ one, many }) => ({
   targetEdges: many(edges, { relationName: "edgeTarget" }),
   topicResources: many(topicResources),
   topicTags: many(topicTags),
+  revisions: many(topicRevisions),
 }));
 
 export type Topic = typeof topics.$inferSelect;

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql, count } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -11,6 +11,45 @@ import { generateUniqueId, slugify } from "@/lib/utils";
 import { publicContributorColumns } from "./contributors";
 
 export const topicsRouter = createTRPCRouter({
+  listTree: publicProcedure
+    .input(
+      z
+        .object({ parentTopicId: z.string().nullable() })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const conditions = [eq(topics.status, "published")];
+      if (input?.parentTopicId === null || !input) {
+        conditions.push(isNull(topics.parentTopicId));
+      } else if (input?.parentTopicId) {
+        conditions.push(eq(topics.parentTopicId, input.parentTopicId));
+      }
+
+      return ctx.db
+        .select({
+          id: topics.id,
+          title: topics.title,
+          parentTopicId: topics.parentTopicId,
+          icon: topics.icon,
+          iconHue: topics.iconHue,
+          childCount: sql<number>`(SELECT count(*)::integer FROM topics c WHERE c.parent_topic_id = "topics"."id" AND c.status = 'published')`,
+        })
+        .from(topics)
+        .where(and(...conditions))
+        .orderBy(topics.sortOrder, topics.title);
+    }),
+
+  listBreadcrumbs: publicProcedure.query(async ({ ctx }) => {
+    return ctx.db
+      .select({
+        id: topics.id,
+        title: topics.title,
+        parentTopicId: topics.parentTopicId,
+      })
+      .from(topics)
+      .where(eq(topics.status, "published"));
+  }),
+
   list: publicProcedure
     .input(
       z
@@ -52,6 +91,33 @@ export const topicsRouter = createTRPCRouter({
       });
     }),
 
+  suggested: publicProcedure.query(async ({ ctx }) => {
+    // Score topics by a mix of content richness, recency, and randomness
+    const results = await ctx.db
+      .select({
+        id: topics.id,
+        title: topics.title,
+        summary: topics.summary,
+        iconHue: topics.iconHue,
+        updatedAt: topics.updatedAt,
+        resourceCount: count(topicResources.id),
+      })
+      .from(topics)
+      .leftJoin(topicResources, eq(topicResources.topicId, topics.id))
+      .where(eq(topics.status, "published"))
+      .groupBy(topics.id)
+      .orderBy(
+        sql`(
+          ${count(topicResources.id)} * 2
+          + EXTRACT(EPOCH FROM ${topics.updatedAt}) / 86400
+          + random() * 5
+        ) DESC`,
+      )
+      .limit(3);
+
+    return results;
+  }),
+
   getBySlug: publicProcedure
     .input(z.object({ slug: z.string() }))
     .query(async ({ ctx, input }) => {
@@ -73,6 +139,10 @@ export const topicsRouter = createTRPCRouter({
             orderBy: (tr, { desc }) => [desc(tr.relevanceScore)],
           },
           childTopics: true,
+          revisions: {
+            with: { contributor: { columns: publicContributorColumns } },
+            orderBy: (tr, { desc }) => [desc(tr.revisionNumber)],
+          },
         },
       });
       return topic ?? null;
@@ -83,11 +153,11 @@ export const topicsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const sourceEdges = await ctx.db.query.edges.findMany({
         where: eq(edges.sourceTopicId, input.topicId),
-        with: { targetTopic: true },
+        with: { targetTopic: { columns: { id: true, title: true } } },
       });
       const targetEdges = await ctx.db.query.edges.findMany({
         where: eq(edges.targetTopicId, input.topicId),
-        with: { sourceTopic: true },
+        with: { sourceTopic: { columns: { id: true, title: true } } },
       });
       return { sourceEdges, targetEdges };
     }),

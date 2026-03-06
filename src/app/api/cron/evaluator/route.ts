@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 
 import { runEvaluationCycle } from "@/lib/evaluator/cycle";
+import { getEvaluatorApiKey } from "@/lib/evaluator/get-api-key";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 minutes (Vercel Pro)
@@ -15,13 +16,19 @@ export async function GET(request: NextRequest) {
   }
 
   const baseUrl = process.env.OPENLATTICE_URL ?? process.env.NEXT_PUBLIC_URL;
-  const apiKey = process.env.EVALUATOR_API_KEY;
-
-  if (!baseUrl || !apiKey) {
+  if (!baseUrl) {
     return Response.json(
-      { error: "Missing OPENLATTICE_URL or EVALUATOR_API_KEY" },
+      { error: "Missing OPENLATTICE_URL or NEXT_PUBLIC_URL" },
       { status: 500 },
     );
+  }
+
+  let apiKey: string;
+  try {
+    apiKey = await getEvaluatorApiKey();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return Response.json({ error: msg }, { status: 500 });
   }
 
   const logs: string[] = [];

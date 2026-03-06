@@ -97,6 +97,7 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
+    void api.topics.listTree.prefetch();
     void api.topics.list.prefetch({ status: "published" });
     void api.tags.list.prefetch();
 

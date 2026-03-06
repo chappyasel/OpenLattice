@@ -11,7 +11,6 @@ import {
   ClipboardIcon,
   CheckCircleIcon,
   XCircleIcon,
-  ClockIcon,
   ArrowRightIcon,
   PlayIcon,
   SpinnerIcon,
@@ -23,10 +22,12 @@ import {
   CopyIcon,
   UserIcon,
   UsersIcon,
+  StopCircleIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
+import { TrustLevelBadge, SubmissionStatusBadge } from "@/components/badges";
 
 function StatCard({
   label,
@@ -58,23 +59,6 @@ function StatCard({
 
   if (href) return <Link href={href}>{content}</Link>;
   return content;
-}
-
-function SubmissionStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { color: string; label: string; icon: React.ComponentType<any> }> = {
-    pending: { color: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20", label: "Pending", icon: ClockIcon },
-    approved: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", label: "Approved", icon: CheckCircleIcon },
-    rejected: { color: "bg-red-500/10 text-red-400 border-red-500/20", label: "Rejected", icon: XCircleIcon },
-    needs_review: { color: "bg-orange-500/10 text-orange-400 border-orange-500/20", label: "Needs Review", icon: ClipboardIcon },
-  };
-  const c = config[status] ?? config.pending!;
-  const Icon = c.icon;
-  return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium", c.color)}>
-      <Icon weight="bold" className="size-3" />
-      {c.label}
-    </span>
-  );
 }
 
 export default function AdminPage() {
@@ -136,7 +120,7 @@ export default function AdminPage() {
         {/* Actions Row */}
         <div className="mb-8 space-y-4">
           <RunEvaluatorButton />
-          <DeduplicateButton />
+          <RunScoutButton />
         </div>
 
         {/* Pending Submissions */}
@@ -148,6 +132,11 @@ export default function AdminPage() {
         {/* Contributor Manager */}
         <ContributorManager />
 
+        {/* Deduplicate */}
+        <div className="mb-8">
+          <DeduplicateButton />
+        </div>
+
         {/* System Info */}
         <div className="rounded-2xl border border-border/50 bg-card p-6">
           <h2 className="mb-4 text-base font-semibold">System Information</h2>
@@ -155,7 +144,7 @@ export default function AdminPage() {
             {[
               { label: "Platform", value: "OpenLattice v0.1.0" },
               { label: "Architecture", value: "Next.js 15 + tRPC + PostgreSQL" },
-              { label: "Agent Protocol", value: "MCP (Model Context Protocol)" },
+              { label: "MCP Package", value: "@open-lattice/mcp v0.3.1" },
               { label: "Trust Model", value: "Stake-weighted consensus" },
               { label: "Karma System", value: "Contribution rewards" },
               { label: "API Access", value: "API key required for agent writes" },
@@ -184,21 +173,42 @@ const activityTypeConfig: Record<
   reputation_changed: { label: "Reputation", icon: StarIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
 };
 
-function RunEvaluatorButton() {
+function EvaluatorButton({
+  title,
+  description,
+  streamUrl,
+  cancelType,
+  icon: Icon,
+}: {
+  title: string;
+  description: string;
+  streamUrl: string;
+  cancelType: "standard" | "scout";
+  icon: React.ComponentType<any>;
+}) {
   const utils = api.useUtils();
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+  const [reconnected, setReconnected] = useState(false);
   const outputRef = useRef<HTMLPreElement>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
-  const startEvaluator = () => {
-    setLines([]);
+  const connect = (isManualStart: boolean) => {
+    if (isManualStart) {
+      setLines([]);
+      setReconnected(false);
+    }
     setRunning(true);
 
-    const eventSource = new EventSource("/api/evaluator/stream");
+    const eventSource = new EventSource(streamUrl);
+    eventSourceRef.current = eventSource;
 
     eventSource.onmessage = (event) => {
       try {
         const line = JSON.parse(event.data) as string;
+        if (line === "[Reconnected to active run]") {
+          setReconnected(true);
+        }
         setLines((prev) => [...prev, line]);
       } catch {
         setLines((prev) => [...prev, event.data]);
@@ -207,6 +217,7 @@ function RunEvaluatorButton() {
 
     eventSource.addEventListener("done", () => {
       eventSource.close();
+      eventSourceRef.current = null;
       setRunning(false);
       void utils.admin.listPendingSubmissions.invalidate();
       void utils.admin.getStats.invalidate();
@@ -215,9 +226,43 @@ function RunEvaluatorButton() {
 
     eventSource.onerror = () => {
       eventSource.close();
+      eventSourceRef.current = null;
       setRunning(false);
       setLines((prev) => [...prev, "[Connection lost]"]);
     };
+  };
+
+  // Auto-reconnect on mount: check if there's an active run via status endpoint
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/evaluator/status");
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as Record<string, { status: string } | null>;
+        const runInfo = data[cancelType];
+        if (runInfo && runInfo.status === "running") {
+          connect(false);
+        }
+      } catch {
+        // Best-effort
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const cancelEvaluator = async () => {
+    try {
+      await fetch("/api/evaluator/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: cancelType }),
+      });
+    } catch {
+      // Best-effort
+    }
+    // The SSE stream will receive the cancel event and close
   };
 
   useEffect(() => {
@@ -230,31 +275,74 @@ function RunEvaluatorButton() {
     <div className="rounded-2xl border border-border/50 bg-card p-5">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="font-semibold">AI Evaluator</h3>
-          <p className="text-sm text-muted-foreground">Review pending submissions with AI</p>
+          <h3 className="font-semibold">{title}</h3>
+          <p className="text-sm text-muted-foreground">{description}</p>
         </div>
-        <button
-          onClick={startEvaluator}
-          disabled={running}
-          className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-blue/90 disabled:opacity-50"
-        >
-          {running ? (
-            <SpinnerIcon weight="bold" className="size-4 animate-spin" />
-          ) : (
-            <PlayIcon weight="bold" className="size-4" />
+        <div className="flex items-center gap-2">
+          {running && (
+            <button
+              onClick={() => void cancelEvaluator()}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
+            >
+              <StopCircleIcon weight="bold" className="size-4" />
+              Stop
+            </button>
           )}
-          {running ? "Running…" : "Run Evaluator"}
-        </button>
+          <button
+            onClick={() => connect(true)}
+            disabled={running}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-blue/90 disabled:opacity-50"
+          >
+            {running ? (
+              <SpinnerIcon weight="bold" className="size-4 animate-spin" />
+            ) : (
+              <Icon weight="bold" className="size-4" />
+            )}
+            {running ? "Running…" : `Run ${title}`}
+          </button>
+        </div>
       </div>
       {lines.length > 0 && (
-        <pre
-          ref={outputRef}
-          className="mt-4 max-h-64 overflow-auto rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono whitespace-pre-wrap"
-        >
-          {lines.join("\n")}
-        </pre>
+        <>
+          {reconnected && (
+            <div className="mt-3 flex items-center gap-1.5 text-xs text-yellow-400">
+              <SpinnerIcon weight="bold" className="size-3 animate-spin" />
+              Reconnected to in-progress run
+            </div>
+          )}
+          <pre
+            ref={outputRef}
+            className="mt-3 max-h-64 overflow-auto rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground font-mono whitespace-pre-wrap"
+          >
+            {lines.join("\n")}
+          </pre>
+        </>
       )}
     </div>
+  );
+}
+
+function RunEvaluatorButton() {
+  return (
+    <EvaluatorButton
+      title="AI Evaluator"
+      description="Review pending submissions with AI"
+      streamUrl="/api/evaluator/stream"
+      cancelType="standard"
+      icon={PlayIcon}
+    />
+  );
+}
+
+function RunScoutButton() {
+  return (
+    <EvaluatorButton
+      title="Scout"
+      description="Autonomous contributor agent — researches topics & submits expansions"
+      streamUrl="/api/scout/stream"
+      cancelType="scout"
+      icon={RobotIcon}
+    />
   );
 }
 
@@ -364,20 +452,6 @@ function ActivityLog() {
         </div>
       )}
     </div>
-  );
-}
-
-function TrustBadge({ level }: { level: string }) {
-  const config: Record<string, string> = {
-    new: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
-    verified: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-    trusted: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-    autonomous: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  };
-  return (
-    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium", config[level] ?? config.new)}>
-      {level}
-    </span>
   );
 }
 
@@ -557,7 +631,7 @@ function ContributorManager() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium truncate">{c.name}</span>
-                  <TrustBadge level={c.trustLevel} />
+                  <TrustLevelBadge level={c.trustLevel} />
                   {c.apiKey && (
                     <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
                       KEY

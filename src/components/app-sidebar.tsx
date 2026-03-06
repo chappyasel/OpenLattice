@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useCallback, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import {
+  ArrowsInSimpleIcon,
   CaretRightIcon,
-  CaretDownIcon,
   CircleIcon,
   MagnifyingGlassIcon,
   HouseIcon,
@@ -17,11 +18,12 @@ import {
 import { api } from "@/trpc/react";
 import { useTopicContext } from "@/components/topic-context";
 import { TopicIcon } from "@/components/topic-icon";
-import { TagBadge } from "@/components/badges";
+import { TagBadge, ResourceTypeBadge } from "@/components/badges";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
@@ -34,13 +36,13 @@ import {
 } from "@/components/ui/sidebar";
 import { AppSidebarFooter } from "@/components/app-sidebar-footer";
 
-interface TopicWithChildren {
+interface TreeTopic {
   id: string;
   title: string;
   parentTopicId: string | null;
   icon: string | null;
   iconHue: number | null;
-  children?: TopicWithChildren[];
+  childCount: number;
 }
 
 function TopicTreeNode({
@@ -49,30 +51,34 @@ function TopicTreeNode({
   pathname,
   onSelect,
   selectedSlug,
+  expandedIds,
+  onToggleExpand,
 }: {
-  topic: TopicWithChildren;
+  topic: TreeTopic;
   depth?: number;
   pathname: string;
   onSelect: (slug: string) => void;
   selectedSlug: string | null;
+  expandedIds: Set<string>;
+  onToggleExpand: (id: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(depth < 1);
-  const hasChildren = topic.children && topic.children.length > 0;
+  const expanded = expandedIds.has(topic.id);
+  const hasChildren = topic.childCount > 0;
   const isActive = selectedSlug === topic.id || pathname === `/topic/${topic.id}`;
 
-  if (!hasChildren) {
+  const { data: children } = api.topics.listTree.useQuery(
+    { parentTopicId: topic.id },
+    { enabled: expanded && hasChildren, staleTime: 5 * 60 * 1000, gcTime: Infinity },
+  );
+
+  // Leaf nodes nested inside a parent use SubItem styling
+  if (!hasChildren && depth > 0) {
     return (
       <SidebarMenuSubItem>
         <SidebarMenuSubButton
           asChild
           size="sm"
           isActive={isActive}
-          onClick={(e) => {
-            if (pathname === "/") {
-              e.preventDefault();
-              onSelect(topic.id);
-            }
-          }}
         >
           <Link href={`/topic/${topic.id}`}>
             {topic.icon ? (
@@ -87,53 +93,68 @@ function TopicTreeNode({
     );
   }
 
+  // Caret placeholder keeps icons aligned whether or not a caret is shown
+  const caretSlot = hasChildren ? (
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onToggleExpand(topic.id);
+      }}
+      className="-ml-2 flex w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground"
+    >
+      <motion.span
+        animate={{ rotate: expanded ? 90 : 0 }}
+        transition={{ duration: 0.15, ease: "easeInOut" }}
+        className="flex items-center justify-center"
+      >
+        <CaretRightIcon weight="bold" className="!size-3" />
+      </motion.span>
+    </button>
+  ) : (
+    <span className="-ml-2 w-4 shrink-0" />
+  );
+
   return (
     <SidebarMenuItem>
       <SidebarMenuButton
         size="sm"
         isActive={isActive}
         className="gap-1"
-        onClick={(e) => {
-          if (pathname === "/") {
-            e.preventDefault();
-            onSelect(topic.id);
-          }
-        }}
         asChild
       >
         <Link href={`/topic/${topic.id}`}>
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setExpanded((p) => !p);
-            }}
-            className="shrink-0"
-          >
-            {expanded ? (
-              <CaretDownIcon weight="bold" className="!size-3" />
-            ) : (
-              <CaretRightIcon weight="bold" className="!size-3" />
-            )}
-          </button>
+          {caretSlot}
           <TopicIcon icon={topic.icon} hue={topic.iconHue} size="sm" />
           <span className="truncate">{topic.title}</span>
         </Link>
       </SidebarMenuButton>
-      {expanded && (
-        <SidebarMenuSub>
-          {topic.children!.map((child) => (
-            <TopicTreeNode
-              key={child.id}
-              topic={child}
-              depth={depth + 1}
-              pathname={pathname}
-              onSelect={onSelect}
-              selectedSlug={selectedSlug}
-            />
-          ))}
-        </SidebarMenuSub>
-      )}
+      <AnimatePresence initial={false}>
+        {expanded && children && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <SidebarMenuSub className="gap-0">
+              {children.map((child) => (
+                <TopicTreeNode
+                  key={child.id}
+                  topic={child}
+                  depth={depth + 1}
+                  pathname={pathname}
+                  onSelect={onSelect}
+                  selectedSlug={selectedSlug}
+                  expandedIds={expandedIds}
+                  onToggleExpand={onToggleExpand}
+                />
+              ))}
+            </SidebarMenuSub>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </SidebarMenuItem>
   );
 }
@@ -141,11 +162,25 @@ function TopicTreeNode({
 export function AppSidebar() {
   const pathname = usePathname();
   const { selectedSlug, setSelectedSlug } = useTopicContext();
-  const { data: allTopics } = api.topics.list.useQuery(
-    { status: "published" },
-    { staleTime: 5 * 60 * 1000, gcTime: Infinity },
-  );
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const onToggleExpand = useCallback((id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const { data: rootTopics } = api.topics.listTree.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+    gcTime: Infinity,
+  });
   const { data: allTags } = api.tags.list.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+    gcTime: Infinity,
+  });
+  const { data: resourceTypes } = api.resources.listByType.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
     gcTime: Infinity,
   });
@@ -156,30 +191,6 @@ export function AppSidebar() {
     { href: "/bounties", label: "Bounties", icon: TreasureChestIcon },
     { href: "/leaderboard", label: "Leaderboard", icon: TrophyIcon },
   ];
-
-  const topicTree = useMemo<TopicWithChildren[]>(() => {
-    if (!allTopics) return [];
-    const topicMap = new Map<string, TopicWithChildren>(
-      allTopics
-        .map((t) => ({
-          id: t.id,
-          title: t.title,
-          parentTopicId: t.parentTopicId,
-          icon: t.icon ?? null,
-          iconHue: t.iconHue ?? null,
-        }))
-        .map((t) => [t.id, { ...t, children: [] } as TopicWithChildren]),
-    );
-    const roots: TopicWithChildren[] = [];
-    for (const topic of topicMap.values()) {
-      if (topic.parentTopicId && topicMap.has(topic.parentTopicId)) {
-        topicMap.get(topic.parentTopicId)!.children!.push(topic);
-      } else {
-        roots.push(topic);
-      }
-    }
-    return roots;
-  }, [allTopics]);
 
   return (
     <Sidebar collapsible="offcanvas">
@@ -265,14 +276,25 @@ export function AppSidebar() {
 
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           <SidebarGroupLabel>Topics</SidebarGroupLabel>
-          <SidebarMenu>
-            {topicTree.map((topic) => (
+          {expandedIds.size > 0 && (
+            <SidebarGroupAction
+              title="Collapse all"
+              className="text-muted-foreground/60 hover:text-foreground"
+              onClick={() => setExpandedIds(new Set())}
+            >
+              <ArrowsInSimpleIcon weight="bold" />
+            </SidebarGroupAction>
+          )}
+          <SidebarMenu className="gap-0">
+            {rootTopics?.map((topic) => (
               <TopicTreeNode
                 key={topic.id}
                 topic={topic}
                 pathname={pathname}
                 onSelect={setSelectedSlug}
                 selectedSlug={selectedSlug}
+                expandedIds={expandedIds}
+                onToggleExpand={onToggleExpand}
               />
             ))}
           </SidebarMenu>
@@ -282,10 +304,25 @@ export function AppSidebar() {
           {allTags && allTags.length > 0 && (
             <>
               <SidebarGroupLabel>Tags</SidebarGroupLabel>
-              <div className="flex flex-wrap gap-1.5 px-2">
+              <div className="flex flex-col gap-1 px-2">
                 {allTags.map((tag) => (
                   <Link key={tag.id} href={`/tags/${tag.id}`}>
                     <TagBadge tag={tag} size="sm" />
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
+        </SidebarGroup>
+
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+          {resourceTypes && resourceTypes.length > 0 && (
+            <>
+              <SidebarGroupLabel>Types</SidebarGroupLabel>
+              <div className="flex flex-col gap-1 px-2">
+                {resourceTypes.map(({ type }) => (
+                  <Link key={type} href={`/types/${type}`}>
+                    <ResourceTypeBadge type={type} size="sm" />
                   </Link>
                 ))}
               </div>

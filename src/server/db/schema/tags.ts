@@ -16,8 +16,8 @@ export const tags = pgTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    iconHue: integer("icon_hue"),
-    icon: text("icon"),
+    iconHue: integer("icon_hue").notNull(),
+    icon: text("icon").notNull(),
     description: text("description").notNull().default(""),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { useQueryState, parseAsBoolean } from "nuqs";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
@@ -11,6 +12,8 @@ import {
     PlugIcon,
     MagnifyingGlassIcon,
     TreasureChestIcon,
+    ArrowsOutIcon,
+    XIcon,
 } from "@phosphor-icons/react";
 import { McpSetupDialog } from "@/components/mcp-setup-dialog";
 import { GrainientBackground } from "@/components/ui/grainient-background";
@@ -37,16 +40,16 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export default function HomePage() {
     const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
+    const [graphExpanded, setGraphExpanded] = useQueryState("graph", parseAsBoolean.withDefault(false));
     const [searchQuery, setSearchQuery] = useState("");
     const [searchOpen, setSearchOpen] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
     const debouncedQuery = useDebounce(searchQuery, 300);
     const { selectedSlug, setSelectedSlug } = useTopicContext();
 
-    const { data: allTopics } = api.topics.list.useQuery(
-        { status: "published" },
-        { staleTime: 5 * 60 * 1000, gcTime: Infinity },
-    );
+    const { data: suggestedTopics } = api.topics.suggested.useQuery(undefined, {
+        staleTime: 60 * 1000,
+    });
     const { data: graphData } = api.graph.getFullGraph.useQuery();
     const { data: searchResults } = api.search.query.useQuery(
         { q: debouncedQuery },
@@ -77,17 +80,11 @@ export default function HomePage() {
         return () => document.removeEventListener("mousedown", handleClick);
     }, []);
 
-    const suggestedTopics = useMemo(() => (allTopics ?? []).slice(0, 3), [allTopics]);
-
-    const allTopicsFlat = useMemo(
-        () =>
-            allTopics?.map((t) => ({
-                id: t.id,
-                title: t.title,
-                parentTopicId: t.parentTopicId,
-            })) ?? [],
-        [allTopics],
-    );
+    const { data: allBreadcrumbs } = api.topics.listBreadcrumbs.useQuery(undefined, {
+        staleTime: 5 * 60 * 1000,
+        gcTime: Infinity,
+        enabled: !!selectedSlug,
+    });
 
     const graphNodes = useMemo(() => {
         if (!graphData) return [];
@@ -95,6 +92,7 @@ export default function HomePage() {
             id: node.id,
             title: node.title,
             type: "topic" as const,
+            iconHue: node.iconHue,
             connectionCount:
                 graphData.edges.filter(
                     (e) => e.sourceTopicId === node.id || e.targetTopicId === node.id,
@@ -120,7 +118,7 @@ export default function HomePage() {
                     slug={selectedSlug}
                     onNavigate={navigateToSlug}
                     onClose={closeWikiView}
-                    allTopics={allTopicsFlat}
+                    allTopics={allBreadcrumbs ?? []}
                 />
             ) : (
                 <div className="flex min-h-screen flex-col items-center justify-center pb-16">
@@ -219,53 +217,59 @@ export default function HomePage() {
 
                             {/* Action Buttons */}
                             <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-                                <button
+                                <motion.button
                                     onClick={() => setMcpDialogOpen(true)}
-                                    className="inline-flex items-center gap-2 rounded-xl bg-primary/80 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-lg hover:shadow-primary/20"
+                                    whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+                                    className="inline-flex items-center gap-2 rounded-xl bg-primary/80 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90"
                                 >
                                     <PlugIcon weight="bold" className="size-4" />
                                     Connect Your Agent
-                                </button>
-                                <Link
-                                    href="/leaderboard"
-                                    className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold transition-all hover:bg-card/80"
-                                >
-                                    <TrophyIcon weight="bold" className="size-4" />
-                                    View Leaderboard
-                                </Link>
-                                <Link
-                                    href="/bounties"
-                                    className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold transition-all hover:bg-card/80"
-                                >
-                                    <TreasureChestIcon weight="bold" className="size-4" />
-                                    View Bounties
-                                </Link>
+                                </motion.button>
+                                <motion.div whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }} className="rounded-xl">
+                                    <Link
+                                        href="/leaderboard"
+                                        className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold transition-all hover:bg-card/80"
+                                    >
+                                        <TrophyIcon weight="bold" className="size-4" />
+                                        View Leaderboard
+                                    </Link>
+                                </motion.div>
+                                <motion.div whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }} className="rounded-xl">
+                                    <Link
+                                        href="/bounties"
+                                        className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold transition-all hover:bg-card/80"
+                                    >
+                                        <TreasureChestIcon weight="bold" className="size-4" />
+                                        View Bounties
+                                    </Link>
+                                </motion.div>
                             </div>
                         </div>
                     </div>
 
                     {/* Suggested Topics */}
-                    {suggestedTopics.length > 0 && (
-                        <div className="mx-auto w-full max-w-3xl px-6 pb-8">
+                    {suggestedTopics && suggestedTopics.length > 0 && (
+                        <div className="mx-auto -mt-16 w-full max-w-3xl px-6 pb-8">
                             <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                                 Suggested Topics
                             </h2>
                             <div className="grid gap-4 sm:grid-cols-3">
                                 {suggestedTopics.map((topic) => (
-                                    <button
+                                    <motion.button
                                         key={topic.id}
                                         onClick={() => navigateToSlug(topic.id)}
-                                        className="flex flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 text-left transition-all hover:shadow-md hover:bg-card"
+                                        whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+                                        className="flex flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 text-left transition-all hover:bg-card"
                                     >
                                         <h3 className="text-sm font-semibold">{topic.title}</h3>
                                         <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                                            {topic.content}
+                                            {topic.summary}
                                         </p>
                                         <span className="mt-auto flex items-center gap-1 text-xs text-brand-blue">
                                             Read article
                                             <ArrowRightIcon weight="bold" className="size-3" />
                                         </span>
-                                    </button>
+                                    </motion.button>
                                 ))}
                             </div>
                         </div>
@@ -274,7 +278,10 @@ export default function HomePage() {
                     {/* Graph Preview */}
                     {graphNodes.length > 0 && (
                         <div className="mx-auto w-full max-w-4xl px-6 pb-8">
-                            <div className="h-[350px]">
+                            <div
+                                className="relative h-[350px] cursor-pointer"
+                                onClick={() => setGraphExpanded(true)}
+                            >
                                 <GraphViewer
                                     nodes={graphNodes}
                                     edges={graphEdges}
@@ -283,6 +290,15 @@ export default function HomePage() {
                                         if (node.id) navigateToSlug(node.id);
                                     }}
                                 />
+                                <button
+                                    className="absolute right-3 top-3 z-10 rounded-lg border border-border bg-card/80 backdrop-blur-sm p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setGraphExpanded(true);
+                                    }}
+                                >
+                                    <ArrowsOutIcon weight="bold" className="size-4" />
+                                </button>
                             </div>
                         </div>
                     )}
@@ -304,6 +320,34 @@ export default function HomePage() {
                     </div>
                 </div>
             )}
+
+            {/* Fullscreen Graph Overlay */}
+            <AnimatePresence>
+                {graphExpanded && graphNodes.length > 0 && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="fixed inset-0 z-50 bg-background"
+                    >
+                        <GraphViewer
+                            nodes={graphNodes}
+                            edges={graphEdges}
+                            height="100%"
+                            onNodeClick={(node) => {
+                                if (node.id) navigateToSlug(node.id);
+                            }}
+                        />
+                        <button
+                            className="absolute right-4 top-4 z-10 rounded-lg border border-border bg-card/80 backdrop-blur-sm p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                            onClick={() => setGraphExpanded(false)}
+                        >
+                            <XIcon weight="bold" className="size-5" />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <McpSetupDialog open={mcpDialogOpen} onOpenChange={setMcpDialogOpen} />
         </div>
