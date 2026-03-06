@@ -688,7 +688,7 @@ async function doGapAnalysis(
         title: string;
         content: string;
         parentTopicId: string | null;
-        topicResources: Array<unknown>;
+        topicResources: Array<{ resource: { type: string } }>;
         childTopics: Array<{ id: string }>;
       }>
     >("topics.list", { status: "published" });
@@ -715,16 +715,24 @@ async function doGapAnalysis(
       log(`  [gaps] Deduped ${topics.length} topics → ${deduped.length} unique`);
     }
 
-    const topicStats = deduped.map((t) => ({
-      id: t.id,
-      title: t.title,
-      resourceCount: t.topicResources?.length ?? 0,
-      hasSubtopics: (t.childTopics?.length ?? 0) > 0,
-      childCount: t.childTopics?.length ?? 0,
-      contentLength: t.content?.length ?? 0,
-      isRoot: !t.parentTopicId,
-      parentTopicId: t.parentTopicId,
-    }));
+    const topicStats = deduped.map((t) => {
+      const typeCounts: Record<string, number> = {};
+      for (const tr of t.topicResources ?? []) {
+        const type = tr.resource?.type;
+        if (type) typeCounts[type] = (typeCounts[type] ?? 0) + 1;
+      }
+      return {
+        id: t.id,
+        title: t.title,
+        resourceCount: t.topicResources?.length ?? 0,
+        resourceTypeCounts: typeCounts,
+        hasSubtopics: (t.childTopics?.length ?? 0) > 0,
+        childCount: t.childTopics?.length ?? 0,
+        contentLength: t.content?.length ?? 0,
+        isRoot: !t.parentTopicId,
+        parentTopicId: t.parentTopicId,
+      };
+    });
 
     // Use listOpen which expires stale claims, instead of list(status: "open")
     const openBounties = await trpc.query<Bounty[]>("bounties.listOpen", {});

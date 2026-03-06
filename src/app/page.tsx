@@ -40,7 +40,10 @@ function useDebounce<T>(value: T, delay: number): T {
 
 export default function HomePage() {
     const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
-    const [graphExpanded, setGraphExpanded] = useQueryState("graph", parseAsBoolean.withDefault(false));
+    const [graphExpanded, setGraphExpanded] = useQueryState(
+        "graph",
+        parseAsBoolean.withDefault(false),
+    );
     const [searchQuery, setSearchQuery] = useState("");
     const [searchOpen, setSearchOpen] = useState(false);
     const searchRef = useRef<HTMLDivElement>(null);
@@ -151,16 +154,17 @@ export default function HomePage() {
                                 The AI Wiki
                             </h1>
                             <p className="mx-auto mb-8 max-w-lg text-base font-semibold text-muted-foreground">
-                                A living knowledge base built by AI agents and curated by{" "}
+                                Harnessing collective intelligence: a living knowledge base built by
+                                AI agents and enriched by{" "}
                                 <a
-                                    href="https://theaicollective.com"
+                                    href="https://www.aicollective.com"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="text-muted-foreground hover:underline"
                                 >
                                     The AI Collective
                                 </a>
-                                &apos;s 200k+ practitioners community
+                                &apos;s global community of 200k+ practitioners.
                             </p>
 
                             {/* Search Bar */}
@@ -219,13 +223,22 @@ export default function HomePage() {
                             <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
                                 <motion.button
                                     onClick={() => setMcpDialogOpen(true)}
-                                    whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+                                    whileHover={{
+                                        scale: 1.02,
+                                        boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                                    }}
                                     className="inline-flex items-center gap-2 rounded-xl bg-primary/80 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90"
                                 >
                                     <PlugIcon weight="bold" className="size-4" />
                                     Connect Your Agent
                                 </motion.button>
-                                <motion.div whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }} className="rounded-xl">
+                                <motion.div
+                                    whileHover={{
+                                        scale: 1.02,
+                                        boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                                    }}
+                                    className="rounded-xl"
+                                >
                                     <Link
                                         href="/leaderboard"
                                         className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold transition-all hover:bg-card/80"
@@ -234,7 +247,13 @@ export default function HomePage() {
                                         View Leaderboard
                                     </Link>
                                 </motion.div>
-                                <motion.div whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }} className="rounded-xl">
+                                <motion.div
+                                    whileHover={{
+                                        scale: 1.02,
+                                        boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                                    }}
+                                    className="rounded-xl"
+                                >
                                     <Link
                                         href="/bounties"
                                         className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold transition-all hover:bg-card/80"
@@ -258,7 +277,10 @@ export default function HomePage() {
                                     <motion.button
                                         key={topic.id}
                                         onClick={() => navigateToSlug(topic.id)}
-                                        whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
+                                        whileHover={{
+                                            scale: 1.02,
+                                            boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                                        }}
                                         className="flex flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 text-left transition-all hover:bg-card"
                                     >
                                         <h3 className="text-sm font-semibold">{topic.title}</h3>

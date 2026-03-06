@@ -478,6 +478,7 @@ export async function analyzeGaps(
     id: string;
     title: string;
     resourceCount: number;
+    resourceTypeCounts?: Record<string, number>;
     hasSubtopics: boolean;
     childCount?: number;
     contentLength: number;
@@ -510,6 +511,17 @@ export async function analyzeGaps(
     }
   }
 
+  // Compute global resource type distribution for the prompt
+  const globalTypeCounts: Record<string, number> = {};
+  for (const t of topics) {
+    for (const [type, count] of Object.entries(t.resourceTypeCounts ?? {})) {
+      globalTypeCounts[type] = (globalTypeCounts[type] ?? 0) + count;
+    }
+  }
+  const allResourceTypes = ["article", "paper", "book", "course", "video", "podcast", "dataset", "tool", "model", "library", "repository", "prompt", "workflow", "benchmark", "report", "discussion", "community", "event", "organization", "person", "concept", "comparison", "curated_list", "newsletter", "social_media", "tutorial", "documentation"];
+  const missingTypes = allResourceTypes.filter((t) => !globalTypeCounts[t]);
+  const underrepresentedTypes = allResourceTypes.filter((t) => (globalTypeCounts[t] ?? 0) > 0 && (globalTypeCounts[t] ?? 0) <= 2);
+
   const topicLines = topics.map((t) => {
     const children = parentMap.get(t.id);
     const parts = [
@@ -519,6 +531,10 @@ export async function analyzeGaps(
       `${t.contentLength} chars`,
       t.hasSubtopics ? `${t.childCount ?? "?"} subtopics` : "NO subtopics",
     ];
+    if (t.resourceTypeCounts && Object.keys(t.resourceTypeCounts).length > 0) {
+      const types = Object.entries(t.resourceTypeCounts).map(([k, v]) => `${v} ${k}`).join(", ");
+      parts.push(`types: ${types}`);
+    }
     if (children) parts.push(`children: [${children.join(", ")}]`);
     return `- ${parts.join(" | ")}`;
   });
@@ -530,6 +546,9 @@ export async function analyzeGaps(
 - ${broadTopicsNoChildren.length} broad root topics with 0 subtopics (CRITICAL gap)
 - ${thinContent.length} topics with thin content (< 3000 chars)
 - ${fewResources.length} topics with < 3 resources
+
+## Resource Type Distribution (across all topics)
+${Object.entries(globalTypeCounts).sort((a, b) => b[1] - a[1]).map(([type, count]) => `- ${type}: ${count}`).join("\n")}${missingTypes.length > 0 ? `\n\n**Missing types (0 resources):** ${missingTypes.join(", ")}` : ""}${underrepresentedTypes.length > 0 ? `\n**Underrepresented types (1-2 resources):** ${underrepresentedTypes.join(", ")}` : ""}
 
 ## Current Topics
 ${topicLines.join("\n")}${existingBountiesSection}
@@ -544,7 +563,7 @@ You MUST suggest a diverse mix of bounty types. Follow these constraints:
 1. **Broad root topics with NO subtopics** — These MUST be split. Use "missing_subtopic" gap type with a "topic" bounty.
 2. **Thin content (< 3000 chars)** — Use "stale_content" gap type with an "edit" bounty. The edit should add depth, examples, and practical detail.
 3. **Few or uniform resources** — Use "few_resources" gap type with a "resource" bounty. Ask for real, verifiable resources from authoritative sources.
-4. **Resource type diversity** — The graph is heavily skewed toward "article" resources. When creating "resource" bounties, specifically request underrepresented types like: book, newsletter, social_media, tutorial, documentation, video, podcast, dataset, model, repository. For example: "Add book and tutorial resources for [topic]" or "Find newsletters and social media accounts covering [topic]".
+4. **Resource type diversity** — See the Resource Type Distribution above. When creating "resource" bounties, specifically request missing or underrepresented types. Mention the desired types by name in the bounty description. For example: "Find books and tutorials for [topic]" or "Add newsletters and podcast resources covering [topic]". Each topic line includes its current type breakdown — use this to target gaps per topic.
 
 ## Subtopic Bounty Guidelines
 - Bounty description MUST include: "This should be created as a subtopic of [Parent Title]. Use \`parentTopicSlug: '[parent-slug]'\` when submitting."

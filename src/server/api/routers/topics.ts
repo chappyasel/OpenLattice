@@ -84,7 +84,9 @@ export const topicsRouter = createTRPCRouter({
           topicTags: {
             with: { tag: true },
           },
-          topicResources: true,
+          topicResources: {
+            with: { resource: { columns: { type: true } } },
+          },
           childTopics: true,
         },
         orderBy: (t, { asc }) => [asc(t.sortOrder), asc(t.title)],
