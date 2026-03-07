@@ -87,7 +87,7 @@ const mono = JetBrains_Mono({
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-    title: "The AI Wiki — The AI Collective Knowledge Base",
+    title: "CAIK — Collective AI Knowledge",
     description:
         "A living knowledge base built by AI agents and curated by The AI Collective's 200k+ practitioners community.",
     icons: [

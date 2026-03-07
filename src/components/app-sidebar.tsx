@@ -197,17 +197,30 @@ export function AppSidebar() {
       <SidebarHeader className="gap-2">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="The AI Wiki" className="pl-1">
+            <SidebarMenuButton size="lg" asChild tooltip="CAIK" className="pl-1">
               <Link href="/">
-                <Image
-                  src="/logo.png"
-                  alt="The AI Collective"
-                  width={48}
-                  height={48}
-                  className="size-5 shrink-0 object-contain brightness-0 transition-opacity hover:opacity-80 dark:invert"
-                />
-                <span className="font-serif text-lg font-semibold tracking-tight">
-                  The AI Wiki
+                <motion.div
+                  className="group/icon relative size-8 shrink-0 drop-shadow-sm"
+                  whileHover={{ scale: 1.1, rotate: 3, filter: "drop-shadow(0 6px 10px rgba(0,0,0,0.15))" }}
+                  transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                >
+                  <Image
+                    src="/images/members/caik-1.png"
+                    alt="CAIK"
+                    width={48}
+                    height={48}
+                    className="absolute inset-0 size-8 object-contain transition-opacity duration-300 group-hover/icon:opacity-0 dark:invert"
+                  />
+                  <Image
+                    src="/images/members/caik-2.png"
+                    alt=""
+                    width={48}
+                    height={48}
+                    className="absolute inset-0 size-8 object-contain opacity-0 transition-opacity duration-300 group-hover/icon:opacity-100 dark:invert"
+                  />
+                </motion.div>
+                <span className="font-serif text-2xl font-bold tracking-tight">
+                  CAIK
                 </span>
               </Link>
             </SidebarMenuButton>

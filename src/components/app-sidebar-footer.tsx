@@ -196,7 +196,7 @@ export function AppSidebarFooter() {
             <DialogTitle>Sign out</DialogTitle>
           </DialogHeader>
           <DialogDescription>
-            Are you sure you want to sign out from The AI Wiki?
+            Are you sure you want to sign out from CAIK?
           </DialogDescription>
           <div className="flex justify-end gap-2">
             <Button

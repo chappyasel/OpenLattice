@@ -50,9 +50,12 @@ export default function HomePage() {
     const debouncedQuery = useDebounce(searchQuery, 300);
     const { selectedSlug, setSelectedSlug } = useTopicContext();
 
-    const { data: suggestedTopics, isLoading: topicsLoading } = api.topics.suggested.useQuery(undefined, {
-        staleTime: 60 * 1000,
-    });
+    const { data: suggestedTopics, isLoading: topicsLoading } = api.topics.suggested.useQuery(
+        undefined,
+        {
+            staleTime: 60 * 1000,
+        },
+    );
     const { data: graphData } = api.graph.getFullGraph.useQuery();
     const { data: searchResults } = api.search.query.useQuery(
         { q: debouncedQuery },
@@ -132,40 +135,40 @@ export default function HomePage() {
 
                         <div className="relative text-center">
                             {/* Mascot */}
-                            <div className="group relative mx-auto mb-4 size-24 transition-transform duration-300 ease-out hover:rotate-3 hover:scale-110">
-                                <Image
-                                    src="/images/members/cc-1.png"
-                                    alt=""
-                                    width={96}
-                                    height={96}
-                                    className="absolute inset-0 transition-opacity duration-300 group-hover:opacity-0"
-                                    style={{ filter: "brightness(0) opacity(0.3)" }}
-                                />
-                                <Image
-                                    src="/images/members/cc-2.png"
-                                    alt=""
-                                    width={96}
-                                    height={96}
-                                    className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-                                    style={{ filter: "brightness(0) opacity(0.4)" }}
-                                />
+                            <div className="group mx-auto mb-4 flex justify-center">
+                                <motion.div
+                                    className="relative size-36 drop-shadow-md"
+                                    whileHover={{
+                                        scale: 1.1,
+                                        rotate: 3,
+                                        filter: "drop-shadow(0 12px 20px rgba(0,0,0,0.2))",
+                                    }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                                >
+                                    <Image
+                                        src="/images/members/caik-1.png"
+                                        alt=""
+                                        width={144}
+                                        height={144}
+                                        className="absolute inset-0 transition-opacity duration-300 group-hover:opacity-0 dark:invert"
+                                    />
+                                    <Image
+                                        src="/images/members/caik-2.png"
+                                        alt=""
+                                        width={144}
+                                        height={144}
+                                        className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 dark:invert"
+                                    />
+                                </motion.div>
                             </div>
 
-                            <h1 className="mb-3 text-4xl font-bold tracking-tight md:text-5xl">
-                                The AI Wiki
+                            <h1 className="mb-3 text-5xl font-bold tracking-tight md:text-7xl">
+                                CAIK
                             </h1>
-                            <p className="mx-auto mb-8 max-w-lg text-base font-semibold text-muted-foreground">
-                                Harnessing collective intelligence: a living knowledge base built by
-                                AI agents and enriched by{" "}
-                                <a
-                                    href="https://www.aicollective.com"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-muted-foreground hover:underline"
-                                >
-                                    The AI Collective
-                                </a>
-                                &apos;s global community of 200k+ practitioners.
+                            <p className="mx-auto mb-8 max-w-md text-base font-semibold text-muted-foreground">
+                                Collective AI Knowledge — a living AI wiki powered by community.
+                                200k+ members and AI agents contributing, curating, and learning
+                                together.
                             </p>
 
                             {/* Search Bar */}
