@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import { readFileSync } from "fs";
-import { resolve } from "path";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { eq, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -26,8 +27,8 @@ interface TopicNode {
   children?: TopicNode[];
 }
 
-interface CollectionData {
-  collection: {
+interface BaseData {
+  base: {
     name: string;
     slug: string;
     description: string;
@@ -47,6 +48,9 @@ interface TagData {
 // LOAD JSON FILES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
 function loadJSON<T>(filename: string): T {
   const filepath = resolve(__dirname, "data", filename);
   return JSON.parse(readFileSync(filepath, "utf-8")) as T;
@@ -56,26 +60,26 @@ function loadJSON<T>(filename: string): T {
 // SEED FUNCTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-async function seedCollection(data: CollectionData, sortOrder: number) {
-  const { collection, topics } = data;
-  const collectionId = collection.slug;
+async function seedBase(data: BaseData, sortOrder: number) {
+  const { base, topics } = data;
+  const baseId = base.slug;
 
-  console.log(`\nSeeding collection: ${collection.name}`);
+  console.log(`\nSeeding base: ${base.name}`);
 
-  // ─── Insert collection ────────────────────────────────────────────────────
+  // ─── Insert base ────────────────────────────────────────────────────
   await db
-    .insert(schema.collections)
+    .insert(schema.bases)
     .values({
-      id: collectionId,
-      name: collection.name,
-      slug: collection.slug,
-      description: collection.description,
-      icon: collection.icon,
-      iconHue: collection.iconHue,
+      id: baseId,
+      name: base.name,
+      slug: base.slug,
+      description: base.description,
+      icon: base.icon,
+      iconHue: base.iconHue,
       sortOrder,
     })
     .onConflictDoUpdate({
-      target: schema.collections.id,
+      target: schema.bases.id,
       set: {
         name: sql`excluded.name`,
         description: sql`excluded.description`,
@@ -92,7 +96,7 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
 
   for (let i = 0; i < topics.length; i++) {
     const root = topics[i]!;
-    const rootSlug = `${collectionId}--${slugify(root.title)}`;
+    const rootSlug = `${baseId}--${slugify(root.title)}`;
 
     // Insert root topic
     await db
@@ -104,7 +108,7 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
         summary: root.summary,
         difficulty: "intermediate" as const,
         status: "published" as const,
-        collectionId,
+        baseId,
         materializedPath: rootSlug,
         depth: 0,
         icon: root.icon,
@@ -116,7 +120,7 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
         set: {
           title: sql`excluded.title`,
           summary: sql`excluded.summary`,
-          collectionId: sql`excluded.collection_id`,
+          baseId: sql`excluded.base_id`,
           materializedPath: sql`excluded.materialized_path`,
           depth: sql`excluded.depth`,
           icon: sql`excluded.icon`,
@@ -133,14 +137,14 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
       .values({
         id: `bounty--${rootSlug}`,
         title: root.title,
-        description: `Write a comprehensive overview of ${root.title}. ${root.summary} This is a root topic in the ${collection.name} collection.`,
+        description: `Write a comprehensive overview of ${root.title}. ${root.summary} This is a root topic in the ${base.name} base.`,
         type: "topic" as const,
         status: "open" as const,
         karmaReward: root.bountyReward,
         icon: root.icon,
         iconHue: root.iconHue,
         topicId: rootSlug,
-        collectionId,
+        baseId,
       })
       .onConflictDoUpdate({
         target: schema.bounties.id,
@@ -151,7 +155,7 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
           icon: sql`excluded.icon`,
           iconHue: sql`excluded.icon_hue`,
           topicId: sql`excluded.topic_id`,
-          collectionId: sql`excluded.collection_id`,
+          baseId: sql`excluded.base_id`,
         },
       });
     bountyCount++;
@@ -160,7 +164,7 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
     const children = root.children ?? [];
     for (let j = 0; j < children.length; j++) {
       const child = children[j]!;
-      const childSlug = `${collectionId}--${slugify(root.title)}-${slugify(child.title)}`;
+      const childSlug = `${baseId}--${slugify(root.title)}-${slugify(child.title)}`;
       const materializedPath = `${rootSlug}/${childSlug}`;
 
       await db
@@ -173,7 +177,7 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
           difficulty: "intermediate" as const,
           status: "draft" as const,
           parentTopicId: rootSlug,
-          collectionId,
+          baseId,
           materializedPath,
           depth: 1,
           icon: child.icon,
@@ -186,7 +190,7 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
             title: sql`excluded.title`,
             summary: sql`excluded.summary`,
             parentTopicId: sql`excluded.parent_topic_id`,
-            collectionId: sql`excluded.collection_id`,
+            baseId: sql`excluded.base_id`,
             materializedPath: sql`excluded.materialized_path`,
             depth: sql`excluded.depth`,
             icon: sql`excluded.icon`,
@@ -203,14 +207,14 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
         .values({
           id: `bounty--${childSlug}`,
           title: child.title,
-          description: `${child.summary} This is a subtopic of "${root.title}" in the ${collection.name} collection. Use \`collectionSlug: '${collection.slug}'\` and \`parentTopicSlug: '${rootSlug}'\` when submitting.`,
+          description: `${child.summary} This is a subtopic of "${root.title}" in the ${base.name} base. Use \`baseSlug: '${base.slug}'\` and \`parentTopicSlug: '${rootSlug}'\` when submitting.`,
           type: "topic" as const,
           status: "open" as const,
           karmaReward: child.bountyReward,
           icon: child.icon,
           iconHue: child.iconHue,
           topicId: childSlug,
-          collectionId,
+          baseId,
         })
         .onConflictDoUpdate({
           target: schema.bounties.id,
@@ -221,7 +225,7 @@ async function seedCollection(data: CollectionData, sortOrder: number) {
             icon: sql`excluded.icon`,
             iconHue: sql`excluded.icon_hue`,
             topicId: sql`excluded.topic_id`,
-            collectionId: sql`excluded.collection_id`,
+            baseId: sql`excluded.base_id`,
           },
         });
       bountyCount++;
@@ -270,13 +274,13 @@ async function seedTags(tags: TagData[]) {
 }
 
 async function assignOrphanTopics() {
-  // Any existing topics without a collection get assigned to building-with-ai
+  // Any existing topics without a base get assigned to building-with-ai
   // (since most existing agent-submitted content is practical/builder content)
   console.log("\nAssigning orphan topics...");
   const result = await db
     .update(schema.topics)
-    .set({ collectionId: "building-with-ai" })
-    .where(isNull(schema.topics.collectionId))
+    .set({ baseId: "building-with-ai" })
+    .where(isNull(schema.topics.baseId))
     .returning({ id: schema.topics.id });
   console.log(`  ${result.length} topics assigned to Building with AI`);
 }
@@ -334,23 +338,27 @@ async function seed() {
   console.log("  OpenLattice Seed");
   console.log("═══════════════════════════════════════════════");
 
+  // Clean wipe
+  console.log("\nTruncating all tables...");
+  await db.execute(sql`TRUNCATE bases, topics, bounties, resources, topic_resources, edges, tags, topic_tags, contributors, submissions, activity, contributor_reputation, karma_ledger, evaluations, evaluator_stats, kudos, topic_revisions, claims, claim_verifications, practitioner_notes CASCADE`);
+
   // Load data files
-  const buildingWithAI = loadJSON<CollectionData>("building-with-ai.json");
-  const aiFundamentals = loadJSON<CollectionData>("ai-fundamentals.json");
-  const saasPlaybook = loadJSON<CollectionData>("saas-playbook.json");
+  const buildingWithAI = loadJSON<BaseData>("building-with-ai.json");
+  const aiFundamentals = loadJSON<BaseData>("ai-fundamentals.json");
+  const saasPlaybook = loadJSON<BaseData>("saas-playbook.json");
   const tags = loadJSON<TagData[]>("tags.json");
 
   // Seed in order
-  await seedCollection(buildingWithAI, 0);
-  await seedCollection(aiFundamentals, 1);
-  await seedCollection(saasPlaybook, 2);
+  await seedBase(buildingWithAI, 0);
+  await seedBase(aiFundamentals, 1);
+  await seedBase(saasPlaybook, 2);
   await seedEvaluator();
   await seedTags(tags);
   await assignOrphanTopics();
   await computeMaterializedPaths();
 
   // Summary
-  const countTopics = (d: CollectionData) =>
+  const countTopics = (d: BaseData) =>
     d.topics.reduce((n, t) => n + 1 + (t.children?.length ?? 0), 0);
   const countBounties = countTopics; // 1:1 topic:bounty
 

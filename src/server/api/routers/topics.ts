@@ -8,7 +8,7 @@ import {
 } from "@/server/api/trpc";
 import { edges, topicTags, topicResources, topics } from "@/server/db/schema";
 import { generateUniqueId, slugify } from "@/lib/utils";
-import { resolveCollectionId } from "@/lib/resolve-collection";
+import { resolveBaseId } from "@/lib/resolve-base";
 import { publicContributorColumns } from "./contributors";
 
 export const topicsRouter = createTRPCRouter({
@@ -17,12 +17,12 @@ export const topicsRouter = createTRPCRouter({
       z
         .object({
           parentTopicId: z.string().nullable().optional(),
-          collectionSlug: z.string().optional(),
+          baseSlug: z.string().optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+      const baseId = await resolveBaseId(ctx.db, input?.baseSlug);
 
       const conditions = [eq(topics.status, "published")];
       if (input?.parentTopicId === null || !input?.parentTopicId) {
@@ -30,8 +30,8 @@ export const topicsRouter = createTRPCRouter({
       } else {
         conditions.push(eq(topics.parentTopicId, input.parentTopicId));
       }
-      if (collectionId) {
-        conditions.push(eq(topics.collectionId, collectionId));
+      if (baseId) {
+        conditions.push(eq(topics.baseId, baseId));
       }
 
       return ctx.db
@@ -39,7 +39,7 @@ export const topicsRouter = createTRPCRouter({
           id: topics.id,
           title: topics.title,
           parentTopicId: topics.parentTopicId,
-          collectionId: topics.collectionId,
+          baseId: topics.baseId,
           icon: topics.icon,
           iconHue: topics.iconHue,
           childCount: sql<number>`(SELECT count(*)::integer FROM topics c WHERE c.parent_topic_id = "topics"."id" AND c.status = 'published')`,
@@ -69,12 +69,12 @@ export const topicsRouter = createTRPCRouter({
             .enum(["beginner", "intermediate", "advanced"])
             .optional(),
           parentTopicId: z.string().optional().nullable(),
-          collectionSlug: z.string().optional(),
+          baseSlug: z.string().optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+      const baseId = await resolveBaseId(ctx.db, input?.baseSlug);
 
       const conditions = [];
       if (input?.status) {
@@ -90,8 +90,8 @@ export const topicsRouter = createTRPCRouter({
           conditions.push(eq(topics.parentTopicId, input.parentTopicId));
         }
       }
-      if (collectionId) {
-        conditions.push(eq(topics.collectionId, collectionId));
+      if (baseId) {
+        conditions.push(eq(topics.baseId, baseId));
       }
 
       return ctx.db.query.topics.findMany({
@@ -142,7 +142,7 @@ export const topicsRouter = createTRPCRouter({
       const topic = await ctx.db.query.topics.findFirst({
         where: eq(topics.id, input.slug),
         with: {
-          collection: true,
+          base: true,
           parentTopic: true,
           createdBy: { columns: publicContributorColumns },
           topicTags: {

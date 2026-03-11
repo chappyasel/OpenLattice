@@ -18,7 +18,7 @@ export default function DigestPage() {
   // Recent activity as newsletter content
   const { data: activity, isLoading: activityLoading } =
     api.activity.list.useQuery({ limit: 30 });
-  const { data: collections } = api.collections.list.useQuery();
+  const { data: bases } = api.bases.list.useQuery();
   const { data: leaderboard } = api.contributors.leaderboard.useQuery();
 
   if (activityLoading) {
@@ -60,18 +60,18 @@ export default function DigestPage() {
           </p>
         </div>
 
-        {/* Collections Overview */}
-        {collections && collections.length > 0 && (
+        {/* Bases Overview */}
+        {bases && bases.length > 0 && (
           <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6">
             <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold">
               <GraphIcon weight="bold" className="size-4 text-brand-blue" />
-              Collections
+              Bases
             </h2>
             <div className="grid gap-3 sm:grid-cols-2">
-              {collections.map((col) => (
+              {bases.map((col) => (
                 <Link
                   key={col.id}
-                  href={`/collection/${col.slug}`}
+                  href={`/base/${col.slug}`}
                   className="flex items-center gap-3 rounded-xl border border-border/50 p-4 transition-colors hover:bg-accent"
                 >
                   <div

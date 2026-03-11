@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { resources, tags, topics, topicResources, topicTags } from "@/server/db/schema";
-import { resolveCollectionId } from "@/lib/resolve-collection";
+import { resolveBaseId } from "@/lib/resolve-base";
 
 export const searchRouter = createTRPCRouter({
   query: publicProcedure
@@ -11,13 +11,13 @@ export const searchRouter = createTRPCRouter({
       z.object({
         q: z.string().min(1),
         limit: z.number().int().min(1).max(100).default(20),
-        collectionSlug: z.string().optional(),
+        baseSlug: z.string().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
       const { q, limit } = input;
       const pattern = `%${q}%`;
-      const collectionId = await resolveCollectionId(ctx.db, input.collectionSlug);
+      const baseId = await resolveBaseId(ctx.db, input.baseSlug);
 
       try {
         // pg_trgm fuzzy search with similarity scoring
@@ -38,8 +38,8 @@ export const searchRouter = createTRPCRouter({
             ilike(topics.content, pattern),
           ),
         ];
-        if (collectionId) {
-          topicConditions.push(eq(topics.collectionId, collectionId));
+        if (baseId) {
+          topicConditions.push(eq(topics.baseId, baseId));
         }
 
         // Build resource conditions
@@ -50,8 +50,8 @@ export const searchRouter = createTRPCRouter({
             ilike(resources.summary, pattern),
           ),
         ];
-        // Filter resources by collection via topicResources → topics
-        if (collectionId) {
+        // Filter resources by base via topicResources → topics
+        if (baseId) {
           resourceConditions.push(
             inArray(
               resources.id,
@@ -59,7 +59,7 @@ export const searchRouter = createTRPCRouter({
                 .select({ id: topicResources.resourceId })
                 .from(topicResources)
                 .innerJoin(topics, eq(topicResources.topicId, topics.id))
-                .where(eq(topics.collectionId, collectionId)),
+                .where(eq(topics.baseId, baseId)),
             ),
           );
         }
@@ -74,7 +74,7 @@ export const searchRouter = createTRPCRouter({
               difficulty: topics.difficulty,
               status: topics.status,
               parentTopicId: topics.parentTopicId,
-              collectionId: topics.collectionId,
+              baseId: topics.baseId,
               materializedPath: topics.materializedPath,
               depth: topics.depth,
               freshnessScore: topics.freshnessScore,
@@ -207,8 +207,8 @@ export const searchRouter = createTRPCRouter({
             ilike(topics.content, pattern),
           ),
         ];
-        if (collectionId) {
-          fallbackTopicConditions.push(eq(topics.collectionId, collectionId));
+        if (baseId) {
+          fallbackTopicConditions.push(eq(topics.baseId, baseId));
         }
 
         const fallbackResourceConditions = [
@@ -218,7 +218,7 @@ export const searchRouter = createTRPCRouter({
             ilike(resources.summary, pattern),
           ),
         ];
-        if (collectionId) {
+        if (baseId) {
           fallbackResourceConditions.push(
             inArray(
               resources.id,
@@ -226,7 +226,7 @@ export const searchRouter = createTRPCRouter({
                 .select({ id: topicResources.resourceId })
                 .from(topicResources)
                 .innerJoin(topics, eq(topicResources.topicId, topics.id))
-                .where(eq(topics.collectionId, collectionId)),
+                .where(eq(topics.baseId, baseId)),
             ),
           );
         }

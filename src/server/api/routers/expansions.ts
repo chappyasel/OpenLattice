@@ -18,7 +18,7 @@ import {
   topicTags,
   topicRevisions,
   resourceTypeEnum,
-  collections,
+  bases,
 } from "@/server/db/schema";
 import { activityId, generateUniqueId, slugify } from "@/lib/utils";
 import { suggestIcon, mergeTopicContent } from "@/lib/evaluator/ai";
@@ -56,7 +56,7 @@ const expansionSchema = z.object({
     .default([]),
   tags: z.array(z.string()).optional().default([]),
   bountyId: z.string().optional(),
-  collectionSlug: z.string().optional(),
+  baseSlug: z.string().optional(),
 });
 
 export const expansionsRouter = createTRPCRouter({
@@ -173,13 +173,13 @@ export async function applyExpansion(
   });
   if (alreadyApplied?.topicId) return { topicId: alreadyApplied.topicId };
 
-  // 0. Resolve collection if specified
-  let collectionId: string | null = null;
-  if (data.collectionSlug) {
-    const collection = await db.query.collections.findFirst({
-      where: eq(collections.slug, data.collectionSlug),
+  // 0. Resolve base if specified
+  let baseId: string | null = null;
+  if (data.baseSlug) {
+    const base = await db.query.bases.findFirst({
+      where: eq(bases.slug, data.baseSlug),
     });
-    collectionId = collection?.id ?? null;
+    baseId = base?.id ?? null;
   }
 
   // 1. Find parent topic if specified
@@ -194,9 +194,9 @@ export async function applyExpansion(
     if (parent) {
       parentPath = parent.materializedPath;
       parentDepth = parent.depth;
-      // Inherit collection from parent if not explicitly set
-      if (!collectionId && parent.collectionId) {
-        collectionId = parent.collectionId;
+      // Inherit base from parent if not explicitly set
+      if (!baseId && parent.baseId) {
+        baseId = parent.baseId;
       }
     }
   }
@@ -284,7 +284,7 @@ export async function applyExpansion(
         difficulty: data.topic.difficulty ?? existingTopic.difficulty,
         lastContributedAt: new Date(),
         contributorCount: sql`${topics.contributorCount} + 1`,
-        ...(collectionId && !existingTopic.collectionId ? { collectionId } : {}),
+        ...(baseId && !existingTopic.baseId ? { baseId } : {}),
       })
       .where(eq(topics.id, existingTopic.id));
 
@@ -294,7 +294,7 @@ export async function applyExpansion(
       contributorId,
       topicId: existingTopic.id,
       submissionId,
-      collectionId,
+      baseId,
       description: `Topic improved: "${data.topic.title}" (merged, rev ${revNum})`,
     });
   } else {
@@ -331,7 +331,7 @@ export async function applyExpansion(
         difficulty: data.topic.difficulty,
         status: "published",
         parentTopicId,
-        collectionId,
+        baseId,
         materializedPath,
         depth,
         lastContributedAt: new Date(),
@@ -362,7 +362,7 @@ export async function applyExpansion(
       contributorId,
       topicId: topic.id,
       submissionId,
-      collectionId,
+      baseId,
       description: `Topic created: "${data.topic.title}"`,
     });
   }
@@ -421,7 +421,7 @@ export async function applyExpansion(
         contributorId,
         topicId: topic.id,
         resourceId: resource.id,
-        collectionId,
+        baseId,
         description: `Resource added: "${res.name}"`,
       });
     }
@@ -434,8 +434,8 @@ export async function applyExpansion(
       where: eq(topics.id, edge.targetTopicSlug),
     });
     if (target) {
-      const isCrossCollection =
-        !!collectionId && !!target.collectionId && collectionId !== target.collectionId;
+      const isCrossBase =
+        !!baseId && !!target.baseId && baseId !== target.baseId;
       await db
         .insert(edges)
         .values({
@@ -443,7 +443,7 @@ export async function applyExpansion(
           sourceTopicId: topic.id,
           targetTopicId: target.id,
           relationType: edge.relationType,
-          isCrossCollection,
+          isCrossBase,
           createdById: contributorId,
         })
         .onConflictDoNothing();
@@ -453,7 +453,7 @@ export async function applyExpansion(
         type: "edge_created",
         contributorId,
         topicId: topic.id,
-        collectionId,
+        baseId,
         description: `Edge created: ${topic.title} → ${target.title} (${edge.relationType})`,
       });
     }

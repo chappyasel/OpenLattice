@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { activity } from "@/server/db/schema";
-import { resolveCollectionId } from "@/lib/resolve-collection";
+import { resolveBaseId } from "@/lib/resolve-base";
 import { publicContributorColumns } from "./contributors";
 
 export const activityRouter = createTRPCRouter({
@@ -27,14 +27,14 @@ export const activityRouter = createTRPCRouter({
             .optional(),
           contributorId: z.string().optional(),
           topicId: z.string().optional(),
-          collectionSlug: z.string().optional(),
+          baseSlug: z.string().optional(),
           limit: z.number().int().min(1).max(100).default(50),
           cursor: z.string().optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+      const baseId = await resolveBaseId(ctx.db, input?.baseSlug);
 
       const conditions = [];
       if (input?.type) conditions.push(eq(activity.type, input.type));
@@ -42,8 +42,8 @@ export const activityRouter = createTRPCRouter({
         conditions.push(eq(activity.contributorId, input.contributorId));
       if (input?.topicId)
         conditions.push(eq(activity.topicId, input.topicId));
-      if (collectionId)
-        conditions.push(eq(activity.collectionId, collectionId));
+      if (baseId)
+        conditions.push(eq(activity.baseId, baseId));
 
       const items = await ctx.db.query.activity.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
@@ -69,14 +69,14 @@ export const activityRouter = createTRPCRouter({
     .input(
       z.object({
         limit: z.number().int().min(1).max(50).default(10),
-        collectionSlug: z.string().optional(),
+        baseSlug: z.string().optional(),
       }).optional(),
     )
     .query(async ({ ctx, input }) => {
-      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+      const baseId = await resolveBaseId(ctx.db, input?.baseSlug);
 
       return ctx.db.query.activity.findMany({
-        where: collectionId ? eq(activity.collectionId, collectionId) : undefined,
+        where: baseId ? eq(activity.baseId, baseId) : undefined,
         with: {
           contributor: { columns: publicContributorColumns },
           topic: true,

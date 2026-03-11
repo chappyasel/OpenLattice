@@ -1,5 +1,5 @@
 {
-  "collection": {
+  "base": {
     "name": "AI Fundamentals",
     "slug": "ai-fundamentals",
     "description": "Understand modern AI — models, safety, governance, and societal impact. The foundational knowledge that informs everything you build.",

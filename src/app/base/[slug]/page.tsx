@@ -78,8 +78,8 @@ export default function CollectionPage({
 }) {
   const { slug } = use(params);
 
-  const { data, isLoading } = api.collections.getTree.useQuery({ slug });
-  const { data: stats } = api.collections.getStats.useQuery({ slug });
+  const { data, isLoading } = api.bases.getTree.useQuery({ slug });
+  const { data: stats } = api.bases.getStats.useQuery({ slug });
 
   if (isLoading) {
     return (
@@ -96,7 +96,7 @@ export default function CollectionPage({
           404
         </p>
         <h1 className="mt-2 font-serif text-2xl font-semibold text-stone-800">
-          Collection not found
+          Base not found
         </h1>
         <Link
           href="/"
@@ -108,7 +108,7 @@ export default function CollectionPage({
     );
   }
 
-  const { collection, topics } = data;
+  const { base, topics } = data;
 
   // Build tree
   const childrenMap = new Map<string | null, TreeTopic[]>();
@@ -129,18 +129,18 @@ export default function CollectionPage({
         <Breadcrumb
           segments={[
             { label: "Home", href: "/" },
-            { label: collection.name },
+            { label: base.name },
           ]}
         />
 
-        {/* Collection Header */}
+        {/* Base Header */}
         <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6 md:p-8">
           <div className="flex items-start gap-4">
             <div
               className="flex size-14 shrink-0 items-center justify-center rounded-2xl"
               style={{
-                backgroundColor: collection.iconHue
-                  ? `hsl(${collection.iconHue}, 60%, 95%)`
+                backgroundColor: base.iconHue
+                  ? `hsl(${base.iconHue}, 60%, 95%)`
                   : undefined,
               }}
             >
@@ -148,11 +148,11 @@ export default function CollectionPage({
             </div>
             <div className="flex-1">
               <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
-                {collection.name}
+                {base.name}
               </h1>
-              {collection.description && (
+              {base.description && (
                 <p className="mt-2 text-muted-foreground leading-relaxed">
-                  {collection.description}
+                  {base.description}
                 </p>
               )}
             </div>
@@ -201,7 +201,7 @@ export default function CollectionPage({
                   className="mb-3 size-12 text-muted-foreground/40"
                 />
                 <p className="text-sm text-muted-foreground">
-                  No topics in this collection yet
+                  No topics in this base yet
                 </p>
               </div>
             )}

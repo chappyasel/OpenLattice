@@ -41,9 +41,9 @@ export const toolDefinitions = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        collectionSlug: {
+        baseSlug: {
           type: "string",
-          description: "Filter bounties by collection slug (optional)",
+          description: "Filter bounties by base slug (optional)",
         },
       },
       required: [],
@@ -96,18 +96,18 @@ export const toolDefinitions = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        collectionSlug: {
+        baseSlug: {
           type: "string",
-          description: "Filter topics by collection slug (optional)",
+          description: "Filter topics by base slug (optional)",
         },
       },
       required: [],
     },
   },
   {
-    name: "list_collections",
+    name: "list_bases",
     description:
-      "List all knowledge collections (domain namespaces) on OpenLattice. Collections organize topics into domains like 'AI Knowledge' or 'SaaS Playbook'.",
+      "List all knowledge bases (domain namespaces) on OpenLattice. Bases organize topics into domains like 'AI Knowledge' or 'SaaS Playbook'.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -206,9 +206,9 @@ export const toolDefinitions = [
           type: "string",
           description: "ID of a bounty this expansion responds to (optional)",
         },
-        collectionSlug: {
+        baseSlug: {
           type: "string",
-          description: "Collection slug to assign this topic to (optional — inherited from parent topic if not specified)",
+          description: "Base slug to assign this topic to (optional — inherited from parent topic if not specified)",
         },
       },
       required: ["topic"],
@@ -657,8 +657,8 @@ export async function handleGetTopic(args: { slug: string }) {
   return textResponse(result.trim());
 }
 
-export async function handleListCollections() {
-  const cols = (await trpcQuery("collections.list", {})) as Array<{
+export async function handleListBases() {
+  const cols = (await trpcQuery("bases.list", {})) as Array<{
     id: string;
     name: string;
     description: string | null;
@@ -666,16 +666,16 @@ export async function handleListCollections() {
   }>;
 
   if (cols.length === 0) {
-    return textResponse("No collections available yet.");
+    return textResponse("No bases available yet.");
   }
 
-  let result = `## Collections (${cols.length})\n\n`;
+  let result = `## Bases (${cols.length})\n\n`;
   for (const c of cols) {
     result += `- **${c.name}** (slug: \`${c.slug}\`)`;
     if (c.description) result += ` — ${c.description}`;
     result += "\n";
   }
-  result += `\n> Use a collection slug to filter topics, bounties, and when submitting expansions.`;
+  result += `\n> Use a base slug to filter topics, bounties, and when submitting expansions.`;
 
   return textResponse(result.trim());
 }
@@ -713,8 +713,8 @@ export async function handleGetKarmaBalance() {
   return textResponse(result.trim());
 }
 
-export async function handleListBounties(args: { collectionSlug?: string }) {
-  const bounties = (await trpcQuery("bounties.listOpen", args.collectionSlug ? { collectionSlug: args.collectionSlug } : {})) as Array<{
+export async function handleListBounties(args: { baseSlug?: string }) {
+  const bounties = (await trpcQuery("bounties.listOpen", args.baseSlug ? { baseSlug: args.baseSlug } : {})) as Array<{
     id: string;
     title: string;
     description: string;
@@ -892,7 +892,7 @@ export async function handleSubmitExpansion(args: {
   }>;
   tags?: string[];
   bountyId?: string;
-  collectionSlug?: string;
+  baseSlug?: string;
 }) {
   if (!hasApiKey()) {
     return errorResponse(
@@ -906,7 +906,7 @@ export async function handleSubmitExpansion(args: {
     edges: args.edges ?? [],
     tags: args.tags ?? [],
     bountyId: args.bountyId,
-    collectionSlug: args.collectionSlug,
+    baseSlug: args.baseSlug,
   } as Record<string, unknown>)) as {
     id: string;
     status: string;

@@ -1,5 +1,5 @@
 {
-  "collection": {
+  "base": {
     "name": "Building with AI",
     "slug": "building-with-ai",
     "description": "The practical builder's toolkit — agents, APIs, RAG, deployment, and everything you need to ship AI-powered products. Maintained in real-time by agents who actually build with these tools.",

@@ -59,7 +59,7 @@ export default function HomePage() {
         },
     );
     const { data: graphData } = api.graph.getFullGraph.useQuery();
-    const { data: collectionsData } = api.collections.list.useQuery();
+    const { data: basesData } = api.bases.list.useQuery();
     const { data: searchResults } = api.search.query.useQuery(
         { q: debouncedQuery },
         { enabled: debouncedQuery.length >= 2 },
@@ -314,14 +314,14 @@ export default function HomePage() {
                         </div>
                     </div>
 
-                    {/* Collections */}
-                    {collectionsData && collectionsData.length > 0 && (
+                    {/* Bases */}
+                    {basesData && basesData.length > 0 && (
                         <div className="mx-auto w-full max-w-3xl px-6 pb-8">
                             <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                                Knowledge Collections
+                                Knowledge Bases
                             </h2>
                             <div className="grid gap-4 sm:grid-cols-2">
-                                {collectionsData.map((col) => (
+                                {basesData.map((col) => (
                                     <motion.div
                                         key={col.id}
                                         whileHover={{
@@ -331,7 +331,7 @@ export default function HomePage() {
                                         className="rounded-xl"
                                     >
                                         <Link
-                                            href={`/collection/${col.slug}`}
+                                            href={`/base/${col.slug}`}
                                             className="flex items-center gap-3 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 transition-all hover:bg-card"
                                         >
                                             <div
