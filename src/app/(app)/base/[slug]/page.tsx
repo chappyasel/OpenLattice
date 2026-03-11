@@ -71,7 +71,7 @@ function TopicTreeNode({
   );
 }
 
-export default function CollectionPage({
+export default function BasePage({
   params,
 }: {
   params: Promise<{ slug: string }>;
