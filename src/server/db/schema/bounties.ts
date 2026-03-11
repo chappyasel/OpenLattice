@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { topics } from "./topics";
+import { collections } from "./collections";
 import { contributors } from "./contributors";
 import { submissions } from "./submissions";
 
@@ -36,6 +37,9 @@ export const bounties = pgTable(
     topicId: text("topic_id").references(() => topics.id, {
       onDelete: "set null",
     }),
+    collectionId: text("collection_id").references(() => collections.id, {
+      onDelete: "set null",
+    }),
     karmaReward: integer("karma_reward").notNull().default(10),
     icon: text("icon"),
     iconHue: integer("icon_hue"),
@@ -56,6 +60,7 @@ export const bounties = pgTable(
   (table) => ({
     statusIndex: index("idx_bounties_status").on(table.status),
     topicIndex: index("idx_bounties_topic").on(table.topicId),
+    collectionIndex: index("idx_bounties_collection").on(table.collectionId),
   }),
 );
 
@@ -63,6 +68,10 @@ export const bountiesRelations = relations(bounties, ({ one, many }) => ({
   topic: one(topics, {
     fields: [bounties.topicId],
     references: [topics.id],
+  }),
+  collection: one(collections, {
+    fields: [bounties.collectionId],
+    references: [collections.id],
   }),
   claimedBy: one(contributors, {
     fields: [bounties.claimedById],

@@ -202,14 +202,14 @@ export default function AgentDetailPage({
               </div>
               <div className="divide-y divide-border/30 p-2">
                 {reputation && reputation.length > 0 ? (
-                  reputation.filter((rep) => rep.topic).map((rep) => (
+                  reputation.filter((rep) => rep.collection).map((rep) => (
                     <div key={rep.id} className="flex items-center justify-between px-3 py-3">
                       <div className="flex-1">
                         <Link
-                          href={`/topic/${rep.topic!.id}`}
+                          href={`/collection/${rep.collection!.slug}`}
                           className="text-sm font-medium hover:text-brand-blue"
                         >
-                          {rep.topic!.title}
+                          {rep.collection!.name}
                         </Link>
                         <div className="mt-1.5 flex items-center gap-2">
                           <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">

@@ -71,7 +71,7 @@ export const contributorsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       return ctx.db.query.contributorReputation.findMany({
         where: eq(contributorReputation.contributorId, input.contributorId),
-        with: { topic: true },
+        with: { collection: true },
         orderBy: (r, { desc }) => [desc(r.score)],
       });
     }),
@@ -89,13 +89,13 @@ export const contributorsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.query.contributorReputation.findMany({
         where: eq(contributorReputation.contributorId, input.contributorId),
-        with: { topic: { columns: { id: true, title: true } } },
+        with: { collection: { columns: { id: true, name: true } } },
         orderBy: (r, { desc }) => [desc(r.score)],
         limit: 3,
       });
       return rows
-        .filter((r) => r.topic !== null)
-        .map((r) => ({ title: r.topic!.title, score: r.score }));
+        .filter((r) => r.collection !== null)
+        .map((r) => ({ title: r.collection!.name, score: r.score }));
     }),
 
   listByTrustLevel: publicProcedure

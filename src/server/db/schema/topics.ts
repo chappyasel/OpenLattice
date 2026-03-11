@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   index,
   integer,
   pgTable,
@@ -7,12 +8,14 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
+import { collections } from "./collections";
 import { contributors } from "./contributors";
 import { edges } from "./edges";
 import { difficultyEnum, topicStatusEnum } from "./enums";
 import { topicResources } from "./topicResources";
 import { topicTags } from "./tags";
 import { topicRevisions } from "./topicRevisions";
+import { practitionerNotes } from "./practitionerNotes";
 
 export { difficultyEnum, topicStatusEnum };
 
@@ -28,6 +31,21 @@ export const topics = pgTable(
     parentTopicId: text("parent_topic_id").references((): any => topics.id, {
       onDelete: "set null",
     }),
+    // Collection membership
+    collectionId: text("collection_id").references(() => collections.id, {
+      onDelete: "set null",
+    }),
+    // Hierarchy: materialized path for O(1) subtree queries
+    materializedPath: text("materialized_path"),
+    depth: integer("depth").notNull().default(0),
+    // Freshness metadata
+    freshnessScore: integer("freshness_score").notNull().default(100),
+    lastContributedAt: timestamp("last_contributed_at"),
+    contributorCount: integer("contributor_count").notNull().default(0),
+    sourceCount: integer("source_count").notNull().default(0),
+    // Editorial
+    isFeatured: boolean("is_featured").notNull().default(false),
+    // Existing fields
     icon: text("icon"),
     iconHue: integer("icon_hue"),
     sortOrder: integer("sort_order").notNull().default(0),
@@ -43,6 +61,9 @@ export const topics = pgTable(
   (table) => ({
     statusIndex: index("idx_topics_status").on(table.status),
     parentIndex: index("idx_topics_parent").on(table.parentTopicId),
+    collectionIndex: index("idx_topics_collection").on(table.collectionId),
+    pathIndex: index("idx_topics_path").on(table.materializedPath),
+    freshnessIndex: index("idx_topics_freshness").on(table.freshnessScore),
   }),
 );
 
@@ -51,6 +72,10 @@ export const topicsRelations = relations(topics, ({ one, many }) => ({
     fields: [topics.parentTopicId],
     references: [topics.id],
     relationName: "topicParent",
+  }),
+  collection: one(collections, {
+    fields: [topics.collectionId],
+    references: [collections.id],
   }),
   createdBy: one(contributors, {
     fields: [topics.createdById],
@@ -62,6 +87,7 @@ export const topicsRelations = relations(topics, ({ one, many }) => ({
   topicResources: many(topicResources),
   topicTags: many(topicTags),
   revisions: many(topicRevisions),
+  practitionerNotes: many(practitionerNotes),
 }));
 
 export type Topic = typeof topics.$inferSelect;

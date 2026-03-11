@@ -9,7 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { contributors } from "./contributors";
-import { topics } from "./topics";
+import { collections } from "./collections";
 
 export const contributorReputation = pgTable(
   "contributor_reputation",
@@ -18,7 +18,8 @@ export const contributorReputation = pgTable(
     contributorId: text("contributor_id")
       .notNull()
       .references(() => contributors.id, { onDelete: "cascade" }),
-    topicId: text("topic_id").references(() => topics.id, {
+    // Scoped to collections instead of topics for domain-level reputation
+    collectionId: text("collection_id").references(() => collections.id, {
       onDelete: "cascade",
     }),
     score: integer("score").notNull().default(100),
@@ -36,10 +37,10 @@ export const contributorReputation = pgTable(
     contributorIndex: index("idx_reputation_contributor").on(
       table.contributorId,
     ),
-    topicIndex: index("idx_reputation_topic").on(table.topicId),
+    collectionIndex: index("idx_reputation_collection").on(table.collectionId),
     uniqueReputation: uniqueIndex("idx_reputation_unique").on(
       table.contributorId,
-      table.topicId,
+      table.collectionId,
     ),
   }),
 );
@@ -51,9 +52,9 @@ export const contributorReputationRelations = relations(
       fields: [contributorReputation.contributorId],
       references: [contributors.id],
     }),
-    topic: one(topics, {
-      fields: [contributorReputation.topicId],
-      references: [topics.id],
+    collection: one(collections, {
+      fields: [contributorReputation.collectionId],
+      references: [collections.id],
     }),
   }),
 );

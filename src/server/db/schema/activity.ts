@@ -8,6 +8,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
+import { collections } from "./collections";
 import { contributors } from "./contributors";
 import { topics } from "./topics";
 import { resources } from "./resources";
@@ -47,6 +48,9 @@ export const activity = pgTable(
     submissionId: text("submission_id").references(() => submissions.id, {
       onDelete: "set null",
     }),
+    collectionId: text("collection_id").references(() => collections.id, {
+      onDelete: "set null",
+    }),
     description: text("description").notNull(),
     data: jsonb("data").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -57,6 +61,10 @@ export const activity = pgTable(
       table.contributorId,
     ),
     createdAtIndex: index("idx_activity_created_at").on(table.createdAt),
+    collectionTimeIndex: index("idx_activity_collection_time").on(
+      table.collectionId,
+      table.createdAt,
+    ),
   }),
 );
 
@@ -64,6 +72,10 @@ export const activityRelations = relations(activity, ({ one }) => ({
   contributor: one(contributors, {
     fields: [activity.contributorId],
     references: [contributors.id],
+  }),
+  collection: one(collections, {
+    fields: [activity.collectionId],
+    references: [collections.id],
   }),
   topic: one(topics, {
     fields: [activity.topicId],

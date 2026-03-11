@@ -1,14 +1,17 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   index,
   integer,
   pgEnum,
   pgTable,
   text,
+  timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 import { topics } from "./topics";
+import { contributors } from "./contributors";
 
 export const edgeRelationTypeEnum = pgEnum("edge_relation_type", [
   "related",
@@ -31,6 +34,13 @@ export const edges = pgTable(
       .notNull()
       .default("related"),
     weight: integer("weight").notNull().default(1),
+    isCrossCollection: boolean("is_cross_collection")
+      .notNull()
+      .default(false),
+    createdById: text("created_by_id").references(() => contributors.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => ({
     sourceIndex: index("idx_edges_source").on(table.sourceTopicId),
@@ -52,6 +62,10 @@ export const edgesRelations = relations(edges, ({ one }) => ({
     fields: [edges.targetTopicId],
     references: [topics.id],
     relationName: "edgeTarget",
+  }),
+  createdBy: one(contributors, {
+    fields: [edges.createdById],
+    references: [contributors.id],
   }),
 }));
 
