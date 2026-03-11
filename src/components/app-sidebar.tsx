@@ -356,7 +356,7 @@ export function AppSidebar() {
   }, [rootTopics]);
 
   const baseMap = useMemo(() => {
-    if (!bases) return new Map<string, (typeof bases)[number]>();
+    if (!bases) return new Map<string, NonNullable<typeof bases>[number]>();
     return new Map(bases.map((b) => [b.id, b]));
   }, [bases]);
 
