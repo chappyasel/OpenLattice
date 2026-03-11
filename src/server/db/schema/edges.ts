@@ -34,7 +34,7 @@ export const edges = pgTable(
       .notNull()
       .default("related"),
     weight: integer("weight").notNull().default(1),
-    isCrossCollection: boolean("is_cross_collection")
+    isCrossBase: boolean("is_cross_base")
       .notNull()
       .default(false),
     createdById: text("created_by_id").references(() => contributors.id, {

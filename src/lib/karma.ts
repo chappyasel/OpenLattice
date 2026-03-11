@@ -22,7 +22,7 @@ interface RecordKarmaInput {
   submissionId?: string | null;
   bountyId?: string | null;
   topicId?: string | null;
-  collectionId?: string | null;
+  baseId?: string | null;
 }
 
 /**
@@ -56,7 +56,7 @@ export async function recordKarma(
       submissionId: input.submissionId ?? null,
       bountyId: input.bountyId ?? null,
       topicId: input.topicId ?? null,
-      collectionId: input.collectionId ?? null,
+      baseId: input.baseId ?? null,
     });
 
     return newBalance;

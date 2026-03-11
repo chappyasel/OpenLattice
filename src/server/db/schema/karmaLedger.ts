@@ -9,7 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { contributors } from "./contributors";
-import { collections } from "./collections";
+import { bases } from "./bases";
 
 export const karmaEventTypeEnum = pgEnum("karma_event_type", [
   "submission_approved",
@@ -38,7 +38,7 @@ export const karmaLedger = pgTable(
     submissionId: text("submission_id"),
     bountyId: text("bounty_id"),
     topicId: text("topic_id"),
-    collectionId: text("collection_id").references(() => collections.id, {
+    baseId: text("base_id").references(() => bases.id, {
       onDelete: "set null",
     }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -48,8 +48,8 @@ export const karmaLedger = pgTable(
       table.contributorId,
       table.createdAt,
     ),
-    collectionTimeIndex: index("idx_karma_collection_time").on(
-      table.collectionId,
+    baseTimeIndex: index("idx_karma_base_time").on(
+      table.baseId,
       table.createdAt,
     ),
     eventTypeIndex: index("idx_karma_event_type").on(table.eventType),
@@ -61,9 +61,9 @@ export const karmaLedgerRelations = relations(karmaLedger, ({ one }) => ({
     fields: [karmaLedger.contributorId],
     references: [contributors.id],
   }),
-  collection: one(collections, {
-    fields: [karmaLedger.collectionId],
-    references: [collections.id],
+  base: one(bases, {
+    fields: [karmaLedger.baseId],
+    references: [bases.id],
   }),
 }));
 

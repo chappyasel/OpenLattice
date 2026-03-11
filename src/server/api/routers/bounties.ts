@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { formatTimestamp, generateUniqueId, slugify } from "@/lib/utils";
 import { iconSchema } from "@/lib/phosphor-icons";
-import { resolveCollectionId } from "@/lib/resolve-collection";
+import { resolveBaseId } from "@/lib/resolve-base";
 import {
   adminProcedure,
   apiKeyProcedure,
@@ -17,10 +17,10 @@ import { publicContributorColumns } from "./contributors";
 export const bountiesRouter = createTRPCRouter({
   listOpen: publicProcedure
     .input(
-      z.object({ collectionSlug: z.string().optional() }).optional(),
+      z.object({ baseSlug: z.string().optional() }).optional(),
     )
     .query(async ({ ctx, input }) => {
-      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+      const baseId = await resolveBaseId(ctx.db, input?.baseSlug);
 
       // Lazy expiration: reset stale claims back to open
       await ctx.db
@@ -39,8 +39,8 @@ export const bountiesRouter = createTRPCRouter({
         );
 
       const conditions = [inArray(bounties.status, ["open", "claimed"])];
-      if (collectionId) {
-        conditions.push(eq(bounties.collectionId, collectionId));
+      if (baseId) {
+        conditions.push(eq(bounties.baseId, baseId));
       }
 
       return ctx.db.query.bounties.findMany({
@@ -58,12 +58,12 @@ export const bountiesRouter = createTRPCRouter({
       z
         .object({
           status: z.enum(["open", "claimed", "completed", "cancelled"]).optional(),
-          collectionSlug: z.string().optional(),
+          baseSlug: z.string().optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+      const baseId = await resolveBaseId(ctx.db, input?.baseSlug);
 
       // Lazy expiration: reset stale claims back to open (same as listOpen)
       await ctx.db
@@ -83,7 +83,7 @@ export const bountiesRouter = createTRPCRouter({
 
       const conditions = [];
       if (input?.status) conditions.push(eq(bounties.status, input.status));
-      if (collectionId) conditions.push(eq(bounties.collectionId, collectionId));
+      if (baseId) conditions.push(eq(bounties.baseId, baseId));
 
       return ctx.db.query.bounties.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,

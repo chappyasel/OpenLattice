@@ -13,7 +13,7 @@ import { expansionsRouter } from "./routers/expansions";
 import { evaluatorRouter } from "./routers/evaluator";
 import { adminRouter } from "./routers/admin";
 import { kudosRouter } from "./routers/kudos";
-import { collectionsRouter } from "./routers/collections";
+import { basesRouter } from "./routers/bases";
 import { claimsRouter } from "./routers/claims";
 
 export const appRouter = createTRPCRouter({
@@ -30,7 +30,7 @@ export const appRouter = createTRPCRouter({
   evaluator: evaluatorRouter,
   admin: adminRouter,
   kudos: kudosRouter,
-  collections: collectionsRouter,
+  bases: basesRouter,
   claims: claimsRouter,
 });
 

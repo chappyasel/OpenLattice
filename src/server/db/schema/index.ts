@@ -1,5 +1,5 @@
 export * from "./enums";
-export * from "./collections";
+export * from "./bases";
 export * from "./topics";
 export * from "./resources";
 export * from "./edges";

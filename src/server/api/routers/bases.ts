@@ -6,35 +6,35 @@ import {
   publicProcedure,
   adminProcedure,
 } from "@/server/api/trpc";
-import { collections, topics } from "@/server/db/schema";
+import { bases, topics } from "@/server/db/schema";
 
-export const collectionsRouter = createTRPCRouter({
+export const basesRouter = createTRPCRouter({
   list: publicProcedure.query(async ({ ctx }) => {
-    return ctx.db.query.collections.findMany({
-      where: eq(collections.isPublic, true),
-      orderBy: [collections.sortOrder, collections.name],
+    return ctx.db.query.bases.findMany({
+      where: eq(bases.isPublic, true),
+      orderBy: [bases.sortOrder, bases.name],
     });
   }),
 
   getBySlug: publicProcedure
     .input(z.object({ slug: z.string() }))
     .query(async ({ ctx, input }) => {
-      const collection = await ctx.db.query.collections.findFirst({
-        where: eq(collections.slug, input.slug),
+      const base = await ctx.db.query.bases.findFirst({
+        where: eq(bases.slug, input.slug),
       });
-      return collection ?? null;
+      return base ?? null;
     }),
 
   getTree: publicProcedure
     .input(z.object({ slug: z.string() }))
     .query(async ({ ctx, input }) => {
-      const collection = await ctx.db.query.collections.findFirst({
-        where: eq(collections.slug, input.slug),
+      const base = await ctx.db.query.bases.findFirst({
+        where: eq(bases.slug, input.slug),
       });
-      if (!collection) return null;
+      if (!base) return null;
 
-      const collectionTopics = await ctx.db.query.topics.findMany({
-        where: eq(topics.collectionId, collection.id),
+      const baseTopics = await ctx.db.query.topics.findMany({
+        where: eq(topics.baseId, base.id),
         columns: {
           id: true,
           title: true,
@@ -52,24 +52,24 @@ export const collectionsRouter = createTRPCRouter({
         orderBy: [topics.sortOrder, topics.title],
       });
 
-      return { collection, topics: collectionTopics };
+      return { base, topics: baseTopics };
     }),
 
   getStats: publicProcedure
     .input(z.object({ slug: z.string() }))
     .query(async ({ ctx, input }) => {
-      const collection = await ctx.db.query.collections.findFirst({
-        where: eq(collections.slug, input.slug),
+      const base = await ctx.db.query.bases.findFirst({
+        where: eq(bases.slug, input.slug),
       });
-      if (!collection) return null;
+      if (!base) return null;
 
       const [topicCount] = await ctx.db
         .select({ count: sql<number>`count(*)::int` })
         .from(topics)
-        .where(eq(topics.collectionId, collection.id));
+        .where(eq(topics.baseId, base.id));
 
       return {
-        collection,
+        base,
         topicCount: topicCount?.count ?? 0,
       };
     }),
@@ -89,7 +89,7 @@ export const collectionsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const id = input.slug;
       const [created] = await ctx.db
-        .insert(collections)
+        .insert(bases)
         .values({ id, ...input })
         .returning();
       return created!;
@@ -110,9 +110,9 @@ export const collectionsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const { id, ...data } = input;
       const [updated] = await ctx.db
-        .update(collections)
+        .update(bases)
         .set(data)
-        .where(eq(collections.id, id))
+        .where(eq(bases.id, id))
         .returning();
       return updated!;
     }),

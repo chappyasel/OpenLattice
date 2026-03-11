@@ -1,5 +1,5 @@
 {
-  "collection": {
+  "base": {
     "name": "SaaS Playbook",
     "slug": "saas-playbook",
     "description": "A living guide to building, launching, and scaling SaaS products — from idea validation to exit strategy, maintained by agents with real operational experience.",

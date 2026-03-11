@@ -22,7 +22,7 @@ import {
   handleCreateEdge,
   handleListTags,
   handleListTopics,
-  handleListCollections,
+  handleListBases,
   handleGetKarmaBalance,
   handleSubmitClaim,
   handleVerifyClaim,
@@ -50,7 +50,7 @@ const READ_ONLY_TOOLS = new Set([
   "list_recent_activity",
   "list_tags",
   "list_topics",
-  "list_collections",
+  "list_bases",
 ]);
 
 // Create MCP server
@@ -77,7 +77,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return handleGetTopic(args as { slug: string });
 
     case "list_bounties":
-      return handleListBounties(args as { collectionSlug?: string });
+      return handleListBounties(args as { baseSlug?: string });
 
     case "get_reputation":
       return handleGetReputation(args as { contributorId: string });
@@ -91,8 +91,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     case "list_topics":
       return handleListTopics();
 
-    case "list_collections":
-      return handleListCollections();
+    case "list_bases":
+      return handleListBases();
 
     case "get_karma_balance":
       return handleGetKarmaBalance();
@@ -119,7 +119,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }>;
           tags?: string[];
           bountyId?: string;
-          collectionSlug?: string;
+          baseSlug?: string;
         },
       );
 

@@ -22,12 +22,12 @@ function RankMedal({ rank }: { rank: number }) {
 
 export default function LeaderboardPage() {
   const router = useRouter();
-  const [collectionFilter, setCollectionFilter] = useQueryState("collection", {
+  const [baseFilter, setBaseFilter] = useQueryState("base", {
     shallow: true,
   });
-  const { data: collections } = api.collections.list.useQuery();
+  const { data: bases } = api.bases.list.useQuery();
   const { data: agents, isLoading } = api.contributors.leaderboard.useQuery(
-    collectionFilter ? { collectionSlug: collectionFilter } : undefined,
+    baseFilter ? { baseSlug: baseFilter } : undefined,
   );
 
   return (
@@ -46,27 +46,27 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
-        {/* Collection Filter */}
-        {collections && collections.length > 0 && (
+        {/* Base Filter */}
+        {bases && bases.length > 0 && (
           <div className="mb-6 flex flex-wrap gap-2">
             <button
-              onClick={() => setCollectionFilter(null)}
+              onClick={() => setBaseFilter(null)}
               className={cn(
                 "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                !collectionFilter
+                !baseFilter
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:text-foreground",
               )}
             >
               Global
             </button>
-            {collections.map((c) => (
+            {bases.map((c) => (
               <button
                 key={c.id}
-                onClick={() => setCollectionFilter(c.slug)}
+                onClick={() => setBaseFilter(c.slug)}
                 className={cn(
                   "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                  collectionFilter === c.slug
+                  baseFilter === c.slug
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground",
                 )}
@@ -87,7 +87,7 @@ export default function LeaderboardPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">Agent</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">Trust Level</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">
-                    {collectionFilter ? "Score" : "Karma"}
+                    {baseFilter ? "Score" : "Karma"}
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Submissions</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Accepted</th>
@@ -152,8 +152,8 @@ export default function LeaderboardPage() {
                             <div className="flex items-center justify-end gap-1">
                               <StarIcon weight="fill" className="size-3.5 text-yellow-400" />
                               <span className="font-semibold">
-                                {("collectionScore" in agent && agent.collectionScore != null
-                                  ? (agent.collectionScore as number)
+                                {("baseScore" in agent && agent.baseScore != null
+                                  ? (agent.baseScore as number)
                                   : agent.karma
                                 ).toLocaleString()}
                               </span>

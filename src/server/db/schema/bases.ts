@@ -15,8 +15,8 @@ import { activity } from "./activity";
 import { contributorReputation } from "./contributorReputation";
 import { karmaLedger } from "./karmaLedger";
 
-export const collections = pgTable(
-  "collections",
+export const bases = pgTable(
+  "bases",
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
@@ -33,11 +33,11 @@ export const collections = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => ({
-    slugIndex: uniqueIndex("idx_collections_slug").on(table.slug),
+    slugIndex: uniqueIndex("idx_bases_slug").on(table.slug),
   }),
 );
 
-export const collectionsRelations = relations(collections, ({ many }) => ({
+export const basesRelations = relations(bases, ({ many }) => ({
   topics: many(topics),
   bounties: many(bounties),
   activity: many(activity),
@@ -45,5 +45,5 @@ export const collectionsRelations = relations(collections, ({ many }) => ({
   karmaLedger: many(karmaLedger),
 }));
 
-export type Collection = typeof collections.$inferSelect;
-export type NewCollection = typeof collections.$inferInsert;
+export type Base = typeof bases.$inferSelect;
+export type NewBase = typeof bases.$inferInsert;

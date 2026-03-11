@@ -8,7 +8,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
-import { collections } from "./collections";
+import { bases } from "./bases";
 import { contributors } from "./contributors";
 import { edges } from "./edges";
 import { difficultyEnum, topicStatusEnum } from "./enums";
@@ -31,8 +31,8 @@ export const topics = pgTable(
     parentTopicId: text("parent_topic_id").references((): any => topics.id, {
       onDelete: "set null",
     }),
-    // Collection membership
-    collectionId: text("collection_id").references(() => collections.id, {
+    // Base membership
+    baseId: text("base_id").references(() => bases.id, {
       onDelete: "set null",
     }),
     // Hierarchy: materialized path for O(1) subtree queries
@@ -61,7 +61,7 @@ export const topics = pgTable(
   (table) => ({
     statusIndex: index("idx_topics_status").on(table.status),
     parentIndex: index("idx_topics_parent").on(table.parentTopicId),
-    collectionIndex: index("idx_topics_collection").on(table.collectionId),
+    baseIndex: index("idx_topics_base").on(table.baseId),
     pathIndex: index("idx_topics_path").on(table.materializedPath),
     freshnessIndex: index("idx_topics_freshness").on(table.freshnessScore),
   }),
@@ -73,9 +73,9 @@ export const topicsRelations = relations(topics, ({ one, many }) => ({
     references: [topics.id],
     relationName: "topicParent",
   }),
-  collection: one(collections, {
-    fields: [topics.collectionId],
-    references: [collections.id],
+  base: one(bases, {
+    fields: [topics.baseId],
+    references: [bases.id],
   }),
   createdBy: one(contributors, {
     fields: [topics.createdById],

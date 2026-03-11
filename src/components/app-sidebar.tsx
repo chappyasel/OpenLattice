@@ -41,7 +41,7 @@ interface TreeTopic {
   id: string;
   title: string;
   parentTopicId: string | null;
-  collectionId: string | null;
+  baseId: string | null;
   icon: string | null;
   iconHue: number | null;
   childCount: number;
@@ -178,7 +178,7 @@ export function AppSidebar() {
     staleTime: 5 * 60 * 1000,
     gcTime: Infinity,
   });
-  const { data: collections } = api.collections.list.useQuery(undefined, {
+  const { data: bases } = api.bases.list.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
     gcTime: Infinity,
   });
@@ -192,17 +192,17 @@ export function AppSidebar() {
   });
   const { data: isAdmin } = api.admin.isAdmin.useQuery();
 
-  // Group root topics by collection
+  // Group root topics by base
   const groupedTopics = useMemo(() => {
     if (!rootTopics) return null;
-    const byCollection = new Map<string | null, TreeTopic[]>();
+    const byBase = new Map<string | null, TreeTopic[]>();
     for (const topic of rootTopics) {
-      const key = topic.collectionId;
-      const arr = byCollection.get(key) ?? [];
+      const key = topic.baseId;
+      const arr = byBase.get(key) ?? [];
       arr.push(topic);
-      byCollection.set(key, arr);
+      byBase.set(key, arr);
     }
-    return byCollection;
+    return byBase;
   }, [rootTopics]);
 
   const navItems = [
@@ -307,16 +307,16 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
 
-        {groupedTopics && collections ? (
+        {groupedTopics && bases ? (
           <>
-            {collections.map((collection) => {
-              const topics = groupedTopics.get(collection.id);
+            {bases.map((base) => {
+              const topics = groupedTopics.get(base.id);
               if (!topics || topics.length === 0) return null;
               return (
-                <SidebarGroup key={collection.id} className="group-data-[collapsible=icon]:hidden">
+                <SidebarGroup key={base.id} className="group-data-[collapsible=icon]:hidden">
                   <SidebarGroupLabel asChild>
-                    <Link href={`/collection/${collection.slug}`} className="hover:text-foreground">
-                      {collection.name}
+                    <Link href={`/base/${base.slug}`} className="hover:text-foreground">
+                      {base.name}
                     </Link>
                   </SidebarGroupLabel>
                   {expandedIds.size > 0 && (

@@ -11,7 +11,7 @@ import {
 } from "@/server/api/trpc";
 import { contributors, contributorReputation, evaluatorStats } from "@/server/db/schema";
 import { recordKarma } from "@/lib/karma";
-import { resolveCollectionId } from "@/lib/resolve-collection";
+import { resolveBaseId } from "@/lib/resolve-base";
 
 /** Columns safe to expose in public (unauthenticated) API responses. Excludes email and apiKey. */
 export const publicContributorColumns = {
@@ -46,12 +46,12 @@ export const contributorsRouter = createTRPCRouter({
 
   leaderboard: publicProcedure
     .input(
-      z.object({ collectionSlug: z.string().optional() }).optional(),
+      z.object({ baseSlug: z.string().optional() }).optional(),
     )
     .query(async ({ ctx, input }) => {
-      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+      const baseId = await resolveBaseId(ctx.db, input?.baseSlug);
 
-      if (!collectionId) {
+      if (!baseId) {
         // Global leaderboard: order by global karma
         return ctx.db.query.contributors.findMany({
           columns: publicContributorColumns,
@@ -60,7 +60,7 @@ export const contributorsRouter = createTRPCRouter({
         });
       }
 
-      // Collection-scoped leaderboard: join contributorReputation, order by collection score
+      // Base-scoped leaderboard: join contributorReputation, order by base score
       const rows = await ctx.db
         .select({
           id: contributors.id,
@@ -81,11 +81,11 @@ export const contributorsRouter = createTRPCRouter({
           rejectedContributions: contributors.rejectedContributions,
           createdAt: contributors.createdAt,
           updatedAt: contributors.updatedAt,
-          collectionScore: contributorReputation.score,
+          baseScore: contributorReputation.score,
         })
         .from(contributorReputation)
         .innerJoin(contributors, eq(contributorReputation.contributorId, contributors.id))
-        .where(eq(contributorReputation.collectionId, collectionId))
+        .where(eq(contributorReputation.baseId, baseId))
         .orderBy(desc(contributorReputation.score))
         .limit(50);
 
@@ -113,7 +113,7 @@ export const contributorsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       return ctx.db.query.contributorReputation.findMany({
         where: eq(contributorReputation.contributorId, input.contributorId),
-        with: { collection: true },
+        with: { base: true },
         orderBy: (r, { desc }) => [desc(r.score)],
       });
     }),
@@ -131,13 +131,13 @@ export const contributorsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const rows = await ctx.db.query.contributorReputation.findMany({
         where: eq(contributorReputation.contributorId, input.contributorId),
-        with: { collection: { columns: { id: true, name: true } } },
+        with: { base: { columns: { id: true, name: true } } },
         orderBy: (r, { desc }) => [desc(r.score)],
         limit: 3,
       });
       return rows
-        .filter((r) => r.collection !== null)
-        .map((r) => ({ title: r.collection!.name, score: r.score }));
+        .filter((r) => r.base !== null)
+        .map((r) => ({ title: r.base!.name, score: r.score }));
     }),
 
   listByTrustLevel: publicProcedure

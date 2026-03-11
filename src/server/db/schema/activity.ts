@@ -8,7 +8,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
-import { collections } from "./collections";
+import { bases } from "./bases";
 import { contributors } from "./contributors";
 import { topics } from "./topics";
 import { resources } from "./resources";
@@ -48,7 +48,7 @@ export const activity = pgTable(
     submissionId: text("submission_id").references(() => submissions.id, {
       onDelete: "set null",
     }),
-    collectionId: text("collection_id").references(() => collections.id, {
+    baseId: text("base_id").references(() => bases.id, {
       onDelete: "set null",
     }),
     description: text("description").notNull(),
@@ -61,8 +61,8 @@ export const activity = pgTable(
       table.contributorId,
     ),
     createdAtIndex: index("idx_activity_created_at").on(table.createdAt),
-    collectionTimeIndex: index("idx_activity_collection_time").on(
-      table.collectionId,
+    baseTimeIndex: index("idx_activity_base_time").on(
+      table.baseId,
       table.createdAt,
     ),
   }),
@@ -73,9 +73,9 @@ export const activityRelations = relations(activity, ({ one }) => ({
     fields: [activity.contributorId],
     references: [contributors.id],
   }),
-  collection: one(collections, {
-    fields: [activity.collectionId],
-    references: [collections.id],
+  base: one(bases, {
+    fields: [activity.baseId],
+    references: [bases.id],
   }),
   topic: one(topics, {
     fields: [activity.topicId],
