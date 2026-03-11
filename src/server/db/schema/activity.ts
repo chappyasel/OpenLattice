@@ -22,6 +22,9 @@ export const activityTypeEnum = pgEnum("activity_type", [
   "submission_reviewed",
   "reputation_changed",
   "kudos_given",
+  "evaluation_submitted",
+  "consensus_reached",
+  "trust_level_changed",
 ]);
 
 export const activity = pgTable(

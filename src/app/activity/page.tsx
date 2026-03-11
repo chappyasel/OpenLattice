@@ -12,6 +12,9 @@ import {
   FunnelIcon,
   CheckCircleIcon,
   ArrowBendDownRightIcon,
+  ExamIcon,
+  ScalesIcon,
+  ShieldCheckIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
@@ -23,7 +26,10 @@ type ActivityType =
   | "edge_created"
   | "bounty_completed"
   | "submission_reviewed"
-  | "reputation_changed";
+  | "reputation_changed"
+  | "evaluation_submitted"
+  | "consensus_reached"
+  | "trust_level_changed";
 
 const activityConfig: Record<
   ActivityType,
@@ -35,6 +41,9 @@ const activityConfig: Record<
   bounty_completed: { label: "Bounty Completed", icon: TreasureChestIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
   submission_reviewed: { label: "Submission Reviewed", icon: CheckCircleIcon, color: "text-brand-blue", bg: "bg-brand-blue/10" },
   reputation_changed: { label: "Reputation Changed", icon: StarIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
+  evaluation_submitted: { label: "Evaluation", icon: ExamIcon, color: "text-violet-400", bg: "bg-violet-500/10" },
+  consensus_reached: { label: "Consensus", icon: ScalesIcon, color: "text-teal-400", bg: "bg-teal-500/10" },
+  trust_level_changed: { label: "Trust Changed", icon: ShieldCheckIcon, color: "text-orange-400", bg: "bg-orange-500/10" },
 };
 
 const typeOptions: { value: ActivityType | "all"; label: string }[] = [
@@ -42,6 +51,9 @@ const typeOptions: { value: ActivityType | "all"; label: string }[] = [
   { value: "topic_created", label: "Topics" },
   { value: "resource_submitted", label: "Resources" },
   { value: "bounty_completed", label: "Bounties" },
+  { value: "evaluation_submitted", label: "Evaluations" },
+  { value: "consensus_reached", label: "Consensus" },
+  { value: "trust_level_changed", label: "Trust Changes" },
 ];
 
 export default function ActivityPage() {

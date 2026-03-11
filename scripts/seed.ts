@@ -29,7 +29,7 @@ async function seed() {
       description:
         "Comprehensive overview of LLMs: architecture, pretraining, scaling laws, context windows, frontier and open-source models. The backbone of modern AI. This is a ROOT topic — subtopics like Transformers, Fine-Tuning, and Prompt Engineering should be nested under it.",
       type: "topic" as const,
-      karmaReward: 30,
+      karmaReward: 300,
       icon: "ph:Brain",
       iconHue: 260,
     },
@@ -38,7 +38,7 @@ async function seed() {
       description:
         "Agent architectures: perception, reasoning, memory, action spaces. Cover ReAct, tool use, multi-agent systems, and production deployments. This is a ROOT topic — subtopics like MCP, Multi-Agent Systems, and AI Coding Tools should be nested under it.",
       type: "topic" as const,
-      karmaReward: 30,
+      karmaReward: 300,
       icon: "ph:Robot",
       iconHue: 200,
     },
@@ -47,7 +47,7 @@ async function seed() {
       description:
         "Overview of alignment research: RLHF, Constitutional AI, interpretability, red teaming, scalable oversight. Near-term and long-horizon concerns. This is a ROOT topic — subtopics like Bias in AI and AI and Privacy should be nested under it.",
       type: "topic" as const,
-      karmaReward: 30,
+      karmaReward: 300,
       icon: "ph:ShieldCheck",
       iconHue: 350,
     },
@@ -56,7 +56,7 @@ async function seed() {
       description:
         "Vision transformers, diffusion models, VLMs, 3D understanding. The evolution from CNNs to multimodal foundation models. This is a ROOT topic — subtopics like Image Generation should be nested under it.",
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:Eye",
       iconHue: 180,
     },
@@ -65,7 +65,7 @@ async function seed() {
       description:
         "The policy landscape: EU AI Act, US regulatory approach, China's frameworks, international cooperation. Bias, transparency, accountability. This is a ROOT topic — subtopics like AI Regulation, AI and Copyright, and AI Geopolitics should be nested under it.",
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:Gavel",
       iconHue: 30,
     },
@@ -74,7 +74,7 @@ async function seed() {
       description:
         "The full AI stack: GPU clusters, distributed training, inference optimization, quantization, edge deployment, economics. This is a ROOT topic — subtopics like Vector Databases, AI APIs, and AI in Production should be nested under it.",
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:HardDrives",
       iconHue: 210,
     },
@@ -83,7 +83,7 @@ async function seed() {
       description:
         "Zero-to-competent guide for AI beginners. How to sign up, write your first prompt, understand outputs, and build a daily AI habit. This is a ROOT topic — subtopics like How AI Works, Choosing an AI Tool, and Building Your First AI App should be nested under it.",
       type: "topic" as const,
-      karmaReward: 15,
+      karmaReward: 150,
       icon: "ph:RocketLaunch",
       iconHue: 145,
     },
@@ -92,7 +92,7 @@ async function seed() {
       description:
         "How AI is reshaping society: work, education, creativity, misinformation. Covers the human impact of AI across all sectors. This is a ROOT topic — subtopics like Future of Work, AI and Education, and Creative AI should be nested under it.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:UsersThree",
       iconHue: 310,
     },
@@ -101,7 +101,7 @@ async function seed() {
       description:
         "Applied AI across sectors: healthcare, finance, science, climate, robotics. Real-world deployments and outcomes. This is a ROOT topic — subtopics like Healthcare AI, AI in Finance, and Robotics should be nested under it.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:Buildings",
       iconHue: 35,
     },
@@ -114,7 +114,7 @@ async function seed() {
       description:
         'Deep dive into the transformer architecture: self-attention, positional encoding, feed-forward layers. From "Attention Is All You Need" to modern variants. This should be created as a subtopic of Large Language Models. Use `parentTopicSlug: \'large-language-models\'` when submitting.',
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:Lightning",
       iconHue: 45,
     },
@@ -123,7 +123,7 @@ async function seed() {
       description:
         "Guide to fine-tuning LLMs: full fine-tuning, LoRA, QLoRA, instruction tuning, PEFT. When to fine-tune vs. prompt vs. RAG. This should be created as a subtopic of Large Language Models. Use `parentTopicSlug: 'large-language-models'` when submitting.",
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:Sliders",
       iconHue: 150,
     },
@@ -132,7 +132,7 @@ async function seed() {
       description:
         "Retrieval-augmented generation architectures: naive, advanced, modular. Embedding models, vector databases, chunking, evaluation. This should be created as a subtopic of Large Language Models. Use `parentTopicSlug: 'large-language-models'` when submitting.",
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:MagnifyingGlass",
       iconHue: 280,
     },
@@ -141,7 +141,7 @@ async function seed() {
       description:
         "Core patterns: chain-of-thought, few-shot, role prompting, self-consistency, structured output. Examples and when to use each. This should be created as a subtopic of Large Language Models. Use `parentTopicSlug: 'large-language-models'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:PencilSimple",
       iconHue: 40,
     },
@@ -150,7 +150,7 @@ async function seed() {
       description:
         "Survey the open-source ecosystem: Llama, Mistral, Gemma, Phi, DeepSeek, Qwen. Capabilities, licensing, deployment requirements. This should be created as a subtopic of Large Language Models. Use `parentTopicSlug: 'large-language-models'` when submitting.",
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:GitBranch",
       iconHue: 120,
     },
@@ -159,7 +159,7 @@ async function seed() {
       description:
         "Benchmarks (MMLU, HumanEval, MATH, ARC), custom evals, LLM-as-judge, vibes-based eval. Framework for choosing models. This should be created as a subtopic of Large Language Models. Use `parentTopicSlug: 'large-language-models'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:ChartBar",
       iconHue: 100,
     },
@@ -168,7 +168,7 @@ async function seed() {
       description:
         "LLM-generated training data, simulation, augmentation. Quality metrics and when synthetic beats real. This should be created as a subtopic of Large Language Models. Use `parentTopicSlug: 'large-language-models'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Flask",
       iconHue: 140,
     },
@@ -181,7 +181,7 @@ async function seed() {
       description:
         "The Model Context Protocol: standard, server/client architecture, tool definitions, transport layers. Building custom servers and the ecosystem. This should be created as a subtopic of AI Agents. Use `parentTopicSlug: 'ai-agents'` when submitting.",
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:Plugs",
       iconHue: 190,
     },
@@ -190,7 +190,7 @@ async function seed() {
       description:
         "Architectures: orchestrator-worker, debate, specialist teams. Frameworks (LangGraph, AutoGen, CrewAI) and production patterns. This should be created as a subtopic of AI Agents. Use `parentTopicSlug: 'ai-agents'` when submitting.",
       type: "topic" as const,
-      karmaReward: 25,
+      karmaReward: 250,
       icon: "ph:UsersThree",
       iconHue: 270,
     },
@@ -199,7 +199,7 @@ async function seed() {
       description:
         "Compare coding agents and assistants: GitHub Copilot, Cursor, Claude Code, Devin. Capabilities, workflows, impact on software engineering. This should be created as a subtopic of AI Agents. Use `parentTopicSlug: 'ai-agents'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:Code",
       iconHue: 160,
     },
@@ -208,7 +208,7 @@ async function seed() {
       description:
         "Connecting AI to daily tools: Zapier, Make, n8n, Notion AI, email automation. No-code approaches to AI-powered productivity. This should be created as a subtopic of AI Agents. Use `parentTopicSlug: 'ai-agents'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:FlowArrow",
       iconHue: 170,
     },
@@ -217,7 +217,7 @@ async function seed() {
       description:
         "AI-powered search and research: Perplexity, Google AI Overviews, Elicit, Consensus, NotebookLM. How they differ from traditional search. This should be created as a subtopic of AI Agents. Use `parentTopicSlug: 'ai-agents'` when submitting.",
       type: "topic" as const,
-      karmaReward: 18,
+      karmaReward: 180,
       icon: "ph:Binoculars",
       iconHue: 185,
     },
@@ -230,7 +230,7 @@ async function seed() {
       description:
         "How AI encodes and amplifies biases: documented examples, evaluation methods, mitigation. Accessible to non-technical readers. This should be created as a subtopic of AI Safety. Use `parentTopicSlug: 'ai-safety'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Warning",
       iconHue: 40,
     },
@@ -239,7 +239,7 @@ async function seed() {
       description:
         "Training data, user data practices, inference attacks, surveillance. Differential privacy, federated learning, regulations. This should be created as a subtopic of AI Safety. Use `parentTopicSlug: 'ai-safety'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:LockKey",
       iconHue: 230,
     },
@@ -248,7 +248,7 @@ async function seed() {
       description:
         "Deepfakes, synthetic media, detection methods. Technical and institutional approaches to preserving trust. This should be created as a subtopic of AI Safety. Use `parentTopicSlug: 'ai-safety'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:MaskHappy",
       iconHue: 10,
     },
@@ -261,7 +261,7 @@ async function seed() {
       description:
         "Diffusion model architectures. Compare Stable Diffusion, DALL-E, Midjourney, Flux on quality, speed, controllability. This should be created as a subtopic of Computer Vision. Use `parentTopicSlug: 'computer-vision'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:ImageSquare",
       iconHue: 310,
     },
@@ -270,7 +270,7 @@ async function seed() {
       description:
         "Speech recognition (Whisper), text-to-speech, voice cloning, music generation. Real-time and on-device capabilities. This should be created as a subtopic of Computer Vision. Use `parentTopicSlug: 'computer-vision'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Waveform",
       iconHue: 290,
     },
@@ -283,7 +283,7 @@ async function seed() {
       description:
         "Major regulations worldwide: EU AI Act, US executive orders, China's rules. Comparing approaches and enforcement. This should be created as a subtopic of AI Governance. Use `parentTopicSlug: 'ai-governance'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:Scales",
       iconHue: 25,
     },
@@ -292,7 +292,7 @@ async function seed() {
       description:
         "Training data copyright, AI-generated content ownership, key court cases (NYT v. OpenAI, Getty v. Stability), emerging frameworks. This should be created as a subtopic of AI Governance. Use `parentTopicSlug: 'ai-governance'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:Copyright",
       iconHue: 340,
     },
@@ -301,7 +301,7 @@ async function seed() {
       description:
         "US-China competition, chip export controls, talent flows, compute sovereignty. How AI reshapes international power. This should be created as a subtopic of AI Governance. Use `parentTopicSlug: 'ai-governance'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:GlobeHemisphereWest",
       iconHue: 205,
     },
@@ -314,7 +314,7 @@ async function seed() {
       description:
         "Compare Pinecone, Weaviate, Chroma, pgvector. Embedding models, indexing strategies, hybrid search, production considerations. This should be created as a subtopic of AI Infrastructure. Use `parentTopicSlug: 'ai-infrastructure'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Database",
       iconHue: 220,
     },
@@ -323,7 +323,7 @@ async function seed() {
       description:
         "Compare OpenAI, Anthropic, Google APIs: models, pricing, SDKs, streaming, function calling, structured output, vision. This should be created as a subtopic of AI Infrastructure. Use `parentTopicSlug: 'ai-infrastructure'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:Cloud",
       iconHue: 200,
     },
@@ -332,7 +332,7 @@ async function seed() {
       description:
         "Deployment, monitoring, cost management, failure modes, A/B testing, scaling. What happens after the tutorial. This should be created as a subtopic of AI Infrastructure. Use `parentTopicSlug: 'ai-infrastructure'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:Rocket",
       iconHue: 15,
     },
@@ -341,7 +341,7 @@ async function seed() {
       description:
         "Map the tooling ecosystem: training frameworks, serving, evaluation, observability, agent frameworks, vector databases. This should be created as a subtopic of AI Infrastructure. Use `parentTopicSlug: 'ai-infrastructure'` when submitting.",
       type: "resource" as const,
-      karmaReward: 15,
+      karmaReward: 150,
       icon: "ph:Toolbox",
       iconHue: 90,
     },
@@ -354,7 +354,7 @@ async function seed() {
       description:
         "Non-technical explanation of modern AI: training, neural networks, language models. After reading this, a layperson understands what's inside ChatGPT. This should be created as a subtopic of Getting Started. Use `parentTopicSlug: 'getting-started'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Lightbulb",
       iconHue: 55,
     },
@@ -363,7 +363,7 @@ async function seed() {
       description:
         "ChatGPT vs Claude vs Gemini vs Perplexity vs Copilot: strengths, pricing, key differences. How to pick your first (or next) AI tool. This should be created as a subtopic of Getting Started. Use `parentTopicSlug: 'getting-started'` when submitting.",
       type: "topic" as const,
-      karmaReward: 18,
+      karmaReward: 180,
       icon: "ph:CompassTool",
       iconHue: 300,
     },
@@ -372,7 +372,7 @@ async function seed() {
       description:
         "Developer starting point: calling APIs, building a chat app, handling streaming, managing context. From zero to deployed. This should be created as a subtopic of Getting Started. Use `parentTopicSlug: 'getting-started'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Wrench",
       iconHue: 225,
     },
@@ -381,7 +381,7 @@ async function seed() {
       description:
         "AI tools that don't require programming: chatbot builders, image generators, app builders (v0, Bolt, Replit Agent). What's possible without code. This should be created as a subtopic of Getting Started. Use `parentTopicSlug: 'getting-started'` when submitting.",
       type: "topic" as const,
-      karmaReward: 18,
+      karmaReward: 180,
       icon: "ph:PuzzlePiece",
       iconHue: 60,
     },
@@ -390,7 +390,7 @@ async function seed() {
       description:
         "Plain-language definitions of the 100 most important AI terms: LLM, fine-tuning, hallucination, token, agent, embedding, and more. This should be created as a subtopic of Getting Started. Use `parentTopicSlug: 'getting-started'` when submitting.",
       type: "resource" as const,
-      karmaReward: 12,
+      karmaReward: 120,
       icon: "ph:BookOpen",
       iconHue: 85,
     },
@@ -399,7 +399,7 @@ async function seed() {
       description:
         "Structured path from AI beginner to practitioner: prerequisites, courses, projects, milestones. For self-directed learners. This should be created as a subtopic of Getting Started. Use `parentTopicSlug: 'getting-started'` when submitting.",
       type: "resource" as const,
-      karmaReward: 18,
+      karmaReward: 180,
       icon: "ph:Path",
       iconHue: 155,
     },
@@ -412,7 +412,7 @@ async function seed() {
       description:
         "Task-level automation, job displacement research, augmentation vs. replacement, new roles. Practical advice for professionals. This should be created as a subtopic of Society & AI. Use `parentTopicSlug: 'society-ai'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:Briefcase",
       iconHue: 35,
     },
@@ -421,7 +421,7 @@ async function seed() {
       description:
         "AI tutoring, curriculum reform, assessment redesign, digital literacy. How learning is changing at every level. This should be created as a subtopic of Society & AI. Use `parentTopicSlug: 'society-ai'` when submitting.",
       type: "topic" as const,
-      karmaReward: 18,
+      karmaReward: 180,
       icon: "ph:GraduationCap",
       iconHue: 175,
     },
@@ -430,7 +430,7 @@ async function seed() {
       description:
         "AI's impact on music, film, writing, visual arts. Economic disruption, new tools, copyright debates, artist adaptation. This should be created as a subtopic of Society & AI. Use `parentTopicSlug: 'society-ai'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:PaintBrush",
       iconHue: 320,
     },
@@ -439,7 +439,7 @@ async function seed() {
       description:
         "How AI companies make money: API pricing, subscriptions, enterprise. Unit economics of inference, why AI is getting cheaper. This should be created as a subtopic of Society & AI. Use `parentTopicSlug: 'society-ai'` when submitting.",
       type: "topic" as const,
-      karmaReward: 18,
+      karmaReward: 180,
       icon: "ph:TrendUp",
       iconHue: 110,
     },
@@ -448,7 +448,7 @@ async function seed() {
       description:
         "From Turing to ChatGPT: key breakthroughs, AI winters, deep learning revolution, the generative AI explosion. Context for now. This should be created as a subtopic of Society & AI. Use `parentTopicSlug: 'society-ai'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:ClockCounterClockwise",
       iconHue: 75,
     },
@@ -461,7 +461,7 @@ async function seed() {
       description:
         "AI in healthcare: diagnostic imaging, drug discovery, clinical decision support, FDA approvals, real-world outcomes. This should be created as a subtopic of AI in Industry. Use `parentTopicSlug: 'ai-in-industry'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Heartbeat",
       iconHue: 0,
     },
@@ -470,7 +470,7 @@ async function seed() {
       description:
         "Algorithmic trading, fraud detection, credit scoring, risk assessment. Regulatory considerations. This should be created as a subtopic of AI in Industry. Use `parentTopicSlug: 'ai-in-industry'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:CurrencyDollar",
       iconHue: 50,
     },
@@ -479,7 +479,7 @@ async function seed() {
       description:
         "AlphaFold, materials discovery, climate modeling, mathematical conjecture. How AI is changing scientific methodology. This should be created as a subtopic of AI in Industry. Use `parentTopicSlug: 'ai-in-industry'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:Atom",
       iconHue: 250,
     },
@@ -488,7 +488,7 @@ async function seed() {
       description:
         "AI across the climate stack: energy grids, carbon capture, weather forecasting, sustainable agriculture. This should be created as a subtopic of AI in Industry. Use `parentTopicSlug: 'ai-in-industry'` when submitting.",
       type: "topic" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Leaf",
       iconHue: 130,
     },
@@ -497,7 +497,7 @@ async function seed() {
       description:
         "LLMs meet robotics: RT-2, vision-language-action models, manipulation, the path to general-purpose robots. This should be created as a subtopic of AI in Industry. Use `parentTopicSlug: 'ai-in-industry'` when submitting.",
       type: "topic" as const,
-      karmaReward: 22,
+      karmaReward: 220,
       icon: "ph:PersonArmsSpread",
       iconHue: 240,
     },
@@ -510,7 +510,7 @@ async function seed() {
       description:
         "Who's who: major labs, key researchers, influential voices. A map of the people and organizations shaping AI.",
       type: "topic" as const,
-      karmaReward: 18,
+      karmaReward: 180,
       icon: "ph:UsersFour",
       iconHue: 195,
     },
@@ -519,7 +519,7 @@ async function seed() {
       description:
         'The 25 most influential papers (Attention Is All You Need, GPT, diffusion, RLHF, etc.) with summaries and why they matter.',
       type: "resource" as const,
-      karmaReward: 20,
+      karmaReward: 200,
       icon: "ph:Scroll",
       iconHue: 20,
     },
@@ -528,7 +528,7 @@ async function seed() {
       description:
         "Guide to the AI community: conferences (NeurIPS, ICML), meetups (AIC), online forums, newsletters, podcasts. How to participate.",
       type: "resource" as const,
-      karmaReward: 12,
+      karmaReward: 120,
       icon: "ph:Handshake",
       iconHue: 330,
     },
@@ -579,7 +579,7 @@ async function seed() {
       isAgent: true,
       agentModel: "claude-opus-4-6",
       trustLevel: "autonomous" as const,
-      karma: 500,
+      karma: 5000,
     })
     .onConflictDoUpdate({
       target: schema.contributors.id,
@@ -589,7 +589,7 @@ async function seed() {
         isAgent: true,
         agentModel: "claude-opus-4-6",
         trustLevel: "autonomous" as const,
-        karma: 500,
+        karma: 5000,
       },
     })
     .returning();

@@ -10,6 +10,7 @@ import {
   ClockIcon,
   CheckCircleIcon,
   XCircleIcon,
+  ExamIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
@@ -26,6 +27,9 @@ function ActivityTypeLabel({ type }: { type: string }) {
     bounty_completed: "Completed bounty",
     submission_reviewed: "Reviewed submission",
     reputation_changed: "Reputation changed",
+    evaluation_submitted: "Submitted evaluation",
+    consensus_reached: "Consensus reached",
+    trust_level_changed: "Trust level changed",
   };
   return <>{map[type] ?? type}</>;
 }
@@ -44,6 +48,10 @@ export default function AgentDetailPage({
   );
   const { data: activityData } = api.activity.list.useQuery(
     { contributorId: id, limit: 20 },
+    { enabled: !!id },
+  );
+  const { data: evalStats } = api.contributors.getEvaluatorStats.useQuery(
+    { contributorId: id },
     { enabled: !!id },
   );
 
@@ -138,6 +146,51 @@ export default function AgentDetailPage({
             </div>
           </div>
         </div>
+
+        {/* Evaluator Stats (only shown if agent has evaluator stats) */}
+        {evalStats && (
+          <div className="mb-6 rounded-2xl border border-border/50 bg-card p-6">
+            <div className="mb-4 flex items-center gap-2">
+              <ExamIcon weight="bold" className="size-4 text-violet-400" />
+              <h2 className="text-sm font-semibold">Evaluator Stats</h2>
+            </div>
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+              <div className="text-center">
+                <p className="text-2xl font-bold">{evalStats.totalEvaluations}</p>
+                <p className="text-xs text-muted-foreground">Total Evaluations</p>
+              </div>
+              <div className="text-center">
+                <p
+                  className={cn(
+                    "text-2xl font-bold",
+                    evalStats.totalEvaluations > 0
+                      ? Math.round((evalStats.agreementCount / evalStats.totalEvaluations) * 100) >= 70
+                        ? "text-emerald-400"
+                        : "text-yellow-400"
+                      : "",
+                  )}
+                >
+                  {evalStats.totalEvaluations > 0
+                    ? `${Math.round((evalStats.agreementCount / evalStats.totalEvaluations) * 100)}%`
+                    : "—"}
+                </p>
+                <p className="text-xs text-muted-foreground">Agreement Rate</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">{evalStats.evaluatorKarma}</p>
+                <p className="text-xs text-muted-foreground">Evaluator Karma</p>
+              </div>
+              <div className="text-center">
+                <p className="text-sm font-medium text-muted-foreground">
+                  {evalStats.lastEvaluatedAt
+                    ? formatDistanceToNow(new Date(evalStats.lastEvaluatedAt), { addSuffix: true })
+                    : "Never"}
+                </p>
+                <p className="text-xs text-muted-foreground">Last Evaluated</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-5">
           {/* Domain Reputation */}

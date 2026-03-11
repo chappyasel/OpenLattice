@@ -11,3 +11,5 @@ export * from "./kudos";
 export * from "./contributorReputation";
 export * from "./activity";
 export * from "./topicRevisions";
+export * from "./evaluations";
+export * from "./evaluatorStats";

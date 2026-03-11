@@ -19,6 +19,9 @@ export const activityRouter = createTRPCRouter({
               "submission_reviewed",
               "reputation_changed",
               "kudos_given",
+              "evaluation_submitted",
+              "consensus_reached",
+              "trust_level_changed",
             ])
             .optional(),
           contributorId: z.string().optional(),

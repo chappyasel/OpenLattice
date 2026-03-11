@@ -173,18 +173,29 @@ async function reviewPendingSubmissions(
   trpc: ReturnType<typeof createTrpcClient>,
   log: Logger,
   maxSubmissions?: number,
+  consensusMode: "single" | "multi" = "single",
 ): Promise<number> {
   let reviewed = 0;
 
-  const expansions = await trpc.query<Submission[]>(
-    "evaluator.listPendingSubmissions",
-    { type: "expansion" },
-  );
-  const bountyResponses = await trpc.query<Submission[]>(
-    "evaluator.listPendingSubmissions",
-    { type: "bounty_response" },
-  );
-  let submissions = [...(expansions ?? []), ...(bountyResponses ?? [])];
+  let submissions: Submission[];
+  if (consensusMode === "multi") {
+    // In multi mode, query all submissions this evaluator hasn't reviewed yet
+    const evaluatable = await trpc.query<Submission[]>(
+      "evaluator.listEvaluatableSubmissions",
+      { limit: maxSubmissions ?? 50 },
+    );
+    submissions = evaluatable ?? [];
+  } else {
+    const expansions = await trpc.query<Submission[]>(
+      "evaluator.listPendingSubmissions",
+      { type: "expansion" },
+    );
+    const bountyResponses = await trpc.query<Submission[]>(
+      "evaluator.listPendingSubmissions",
+      { type: "bounty_response" },
+    );
+    submissions = [...(expansions ?? []), ...(bountyResponses ?? [])];
+  }
 
   if (!submissions.length) return 0;
 
@@ -385,13 +396,13 @@ async function reviewPendingSubmissions(
           if (totalUnique === 0) {
             karmaDelta = 0;
           } else if (accuracy >= 0.8) {
-            karmaDelta = 5;
+            karmaDelta = 50;
           } else if (accuracy >= 0.5) {
-            karmaDelta = 2;
+            karmaDelta = 20;
           } else if (accuracy >= 0.2) {
-            karmaDelta = -2;
+            karmaDelta = -20;
           } else {
-            karmaDelta = -5;
+            karmaDelta = -50;
           }
 
           edgeDiff = {
@@ -480,54 +491,79 @@ async function reviewPendingSubmissions(
         baseKarma +
         (result.verdict !== "revise" ? (edgeDiff?.karmaDelta ?? 0) : 0);
 
-      const reviewResult = await trpc.mutation<{
-        submission: any;
-        topicId: string | null;
-      }>("evaluator.reviewSubmission", {
-        submissionId: submission.id,
-        verdict: submissionVerdict,
-        reasoning: result.reasoning,
-        reputationDelta: totalReputationDelta,
-        resolvedTags: tagResult?.resolvedTags,
-        resolvedEdges: edgeDiff?.evaluatorEdges.map((e) => ({
-          targetTopicSlug: e.targetTopicSlug,
-          relationType: e.relationType,
-        })),
-        icon: iconResult?.icon,
-        iconHue: iconResult?.iconHue,
-        evaluationTrace: {
-          type: "expansion_review",
-          model,
-          durationMs,
-          overallScore: result.overallScore,
-          contentAssessment: result.contentAssessment,
-          resourceAssessment: result.resourceAssessment,
-          edgeAssessment: result.edgeAssessment,
-          improvementSuggestions: result.improvementSuggestions,
+      if (consensusMode === "multi") {
+        // In multi mode, submit as an evaluation vote instead of a final verdict
+        await trpc.mutation("evaluator.submitEvaluation", {
+          submissionId: submission.id,
           verdict: result.verdict,
-          topicTitle: expansion.topic.title,
-          contributorName: contributor?.name,
-          edgeDiff: edgeDiff
-            ? {
-                submittedEdges: edgeDiff.submittedEdges,
-                evaluatorEdges: edgeDiff.evaluatorEdges,
-                matchedTargets: edgeDiff.matchedTargets,
-                matchedExact: edgeDiff.matchedExact,
-                missingEdges: edgeDiff.missingEdges,
-                extraEdges: edgeDiff.extraEdges,
-                accuracy: edgeDiff.accuracy,
-                karmaDelta: edgeDiff.karmaDelta,
-              }
-            : null,
-          tagDiff: tagResult
-            ? {
-                submittedTags: tagResult.submittedTags,
-                evaluatorTags: tagResult.evaluatorTags,
-                resolvedTags: tagResult.resolvedTags,
-              }
-            : null,
-        },
-      });
+          overallScore: result.overallScore,
+          scores: {
+            contentAssessment: result.contentAssessment,
+            resourceAssessment: result.resourceAssessment,
+            edgeAssessment: result.edgeAssessment,
+          },
+          reasoning: result.reasoning,
+          suggestedReputationDelta: totalReputationDelta,
+          improvementSuggestions: result.improvementSuggestions,
+          duplicateOf: result.duplicateOf,
+          resolvedTags: tagResult?.resolvedTags,
+          resolvedEdges: edgeDiff?.evaluatorEdges.map((e) => ({
+            targetTopicSlug: e.targetTopicSlug,
+            relationType: e.relationType,
+          })),
+          icon: iconResult?.icon,
+          iconHue: iconResult?.iconHue,
+        });
+      } else {
+        const reviewResult = await trpc.mutation<{
+          submission: any;
+          topicId: string | null;
+        }>("evaluator.reviewSubmission", {
+          submissionId: submission.id,
+          verdict: submissionVerdict,
+          reasoning: result.reasoning,
+          reputationDelta: totalReputationDelta,
+          resolvedTags: tagResult?.resolvedTags,
+          resolvedEdges: edgeDiff?.evaluatorEdges.map((e) => ({
+            targetTopicSlug: e.targetTopicSlug,
+            relationType: e.relationType,
+          })),
+          icon: iconResult?.icon,
+          iconHue: iconResult?.iconHue,
+          evaluationTrace: {
+            type: "expansion_review",
+            model,
+            durationMs,
+            overallScore: result.overallScore,
+            contentAssessment: result.contentAssessment,
+            resourceAssessment: result.resourceAssessment,
+            edgeAssessment: result.edgeAssessment,
+            improvementSuggestions: result.improvementSuggestions,
+            verdict: result.verdict,
+            topicTitle: expansion.topic.title,
+            contributorName: contributor?.name,
+            edgeDiff: edgeDiff
+              ? {
+                  submittedEdges: edgeDiff.submittedEdges,
+                  evaluatorEdges: edgeDiff.evaluatorEdges,
+                  matchedTargets: edgeDiff.matchedTargets,
+                  matchedExact: edgeDiff.matchedExact,
+                  missingEdges: edgeDiff.missingEdges,
+                  extraEdges: edgeDiff.extraEdges,
+                  accuracy: edgeDiff.accuracy,
+                  karmaDelta: edgeDiff.karmaDelta,
+                }
+              : null,
+            tagDiff: tagResult
+              ? {
+                  submittedTags: tagResult.submittedTags,
+                  evaluatorTags: tagResult.evaluatorTags,
+                  resolvedTags: tagResult.resolvedTags,
+                }
+              : null,
+          },
+        });
+      }
 
       reviewed++;
       const statusIcon =
@@ -586,7 +622,7 @@ async function reviewPendingResources(
       });
 
       const approved = result.score >= 50;
-      const reputationDelta = approved ? 5 : -2;
+      const reputationDelta = approved ? 50 : -20;
 
       await trpc.mutation("evaluator.reviewSubmission", {
         submissionId: submission.id,
@@ -828,10 +864,11 @@ export async function runEvaluationCycle(
   log: Logger = console.log,
 ): Promise<CycleResult> {
   const start = Date.now();
+  const consensusMode = (process.env.CONSENSUS_MODE ?? "single") as "single" | "multi";
   const trpc = createTrpcClient(config.baseUrl, config.apiKey, log);
 
   log(
-    `\n${"=".repeat(60)}\n[Arbiter] Cycle — ${new Date().toISOString()}\n${"=".repeat(60)}`,
+    `\n${"=".repeat(60)}\n[Arbiter] Cycle — ${new Date().toISOString()}${consensusMode === "multi" ? " (multi-evaluator consensus)" : ""}\n${"=".repeat(60)}`,
   );
 
   const signal = config.signal;
@@ -846,6 +883,7 @@ export async function runEvaluationCycle(
       trpc,
       log,
       config.maxSubmissions,
+      consensusMode,
     );
   } catch (err: any) {
     if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }

@@ -14,11 +14,14 @@ import {
   BrainIcon,
   LightningIcon,
   PlayIcon,
+  ExamIcon,
+  ScalesIcon,
+  ShieldCheckIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
-import { SubmissionStatusBadge, EvalTypeBadge } from "@/components/badges";
+import { SubmissionStatusBadge, EvalTypeBadge, ConsensusStatusBadge, EvaluatorAgreementBadge } from "@/components/badges";
 
 // ─── Score Bar ─────────────────────────────────────────────────────────────────
 
@@ -208,18 +211,33 @@ type FeedItem = {
   data: Record<string, unknown> | null;
   createdAt: Date;
   contributor?: { name: string } | null;
+  submission?: { evaluationCount: number; consensusReachedAt: Date | null } | null;
 };
 
-function typeIcon(evalType: string) {
+function typeIcon(evalType: string, activityType?: string) {
+  if (activityType === "evaluation_submitted") return ExamIcon;
+  if (activityType === "consensus_reached") return ScalesIcon;
+  if (activityType === "trust_level_changed") return ShieldCheckIcon;
   if (evalType === "expansion_review") return ClipboardIcon;
   if (evalType === "resource_score") return BookOpenIcon;
   return RobotIcon;
 }
 
-function getVerdict(data: Record<string, unknown>): string {
+function getVerdict(data: Record<string, unknown>, activityType?: string): string {
+  if (activityType === "evaluation_submitted") return (data.verdict as string) ?? "reviewed";
+  if (activityType === "consensus_reached") return (data.verdict as string) ?? "consensus";
+  if (activityType === "trust_level_changed") return "trust change";
   if (data.type === "expansion_review") return (data.verdict as string) ?? "reviewed";
   if (data.type === "resource_score") return "scored";
   return "reviewed";
+}
+
+function getIconBg(evalType: string, activityType?: string): string {
+  if (activityType === "evaluation_submitted") return "bg-violet-500/10 text-violet-400";
+  if (activityType === "consensus_reached") return "bg-teal-500/10 text-teal-400";
+  if (activityType === "trust_level_changed") return "bg-orange-500/10 text-orange-400";
+  if (evalType === "expansion_review") return "bg-cyan-500/10 text-cyan-400";
+  return "bg-blue-500/10 text-blue-400";
 }
 
 function EvalCard({ item, expanded, onToggle }: {
@@ -229,9 +247,13 @@ function EvalCard({ item, expanded, onToggle }: {
 }) {
   const data = item.data ?? {};
   const evalType = (data.type as string) ?? item.type;
-  const Icon = typeIcon(evalType);
-  const verdict = getVerdict(data);
+  const activityType = item.type;
+  const isConsensusType = ["evaluation_submitted", "consensus_reached", "trust_level_changed"].includes(activityType);
+  const Icon = typeIcon(evalType, activityType);
+  const verdict = getVerdict(data, activityType);
   const durationMs = data.durationMs as number | undefined;
+  const consensusStatus = data.status as string | undefined;
+  const agreedWithConsensus = data.agreedWithConsensus as boolean | undefined;
 
   return (
     <div
@@ -248,8 +270,7 @@ function EvalCard({ item, expanded, onToggle }: {
         {/* Type icon */}
         <div className={cn(
           "flex shrink-0 items-center justify-center rounded-lg p-2",
-          evalType === "expansion_review" ? "bg-cyan-500/10 text-cyan-400" :
-          "bg-blue-500/10 text-blue-400",
+          getIconBg(evalType, activityType),
         )}>
           <Icon weight="bold" className="size-4" />
         </div>
@@ -268,8 +289,14 @@ function EvalCard({ item, expanded, onToggle }: {
 
         {/* Badges */}
         <div className="flex shrink-0 items-center gap-2">
-          <EvalTypeBadge type={evalType} />
-          <SubmissionStatusBadge status={verdict} />
+          {!isConsensusType && <EvalTypeBadge type={evalType} />}
+          {activityType === "consensus_reached" && consensusStatus && (
+            <ConsensusStatusBadge status={consensusStatus === "split" ? "split" : "consensus"} size="sm" />
+          )}
+          {activityType === "evaluation_submitted" && agreedWithConsensus !== undefined && (
+            <EvaluatorAgreementBadge agreed={agreedWithConsensus} />
+          )}
+          {!isConsensusType && <SubmissionStatusBadge status={verdict} />}
           {durationMs !== undefined && (
             <span className="hidden items-center gap-1 rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-xs text-muted-foreground sm:inline-flex">
               <ClockIcon weight="bold" className="size-3" />

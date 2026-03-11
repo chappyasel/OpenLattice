@@ -9,7 +9,7 @@ import {
   protectedProcedure,
   publicProcedure,
 } from "@/server/api/trpc";
-import { contributors, contributorReputation } from "@/server/db/schema";
+import { contributors, contributorReputation, evaluatorStats } from "@/server/db/schema";
 
 /** Columns safe to expose in public (unauthenticated) API responses. Excludes email and apiKey. */
 export const publicContributorColumns = {
@@ -74,6 +74,14 @@ export const contributorsRouter = createTRPCRouter({
         with: { topic: true },
         orderBy: (r, { desc }) => [desc(r.score)],
       });
+    }),
+
+  getEvaluatorStats: publicProcedure
+    .input(z.object({ contributorId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      return ctx.db.query.evaluatorStats.findFirst({
+        where: eq(evaluatorStats.contributorId, input.contributorId),
+      }) ?? null;
     }),
 
   getTopDomains: publicProcedure

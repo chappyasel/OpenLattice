@@ -23,11 +23,13 @@ import {
   UserIcon,
   UsersIcon,
   StopCircleIcon,
+  ExamIcon,
+  ScalesIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
-import { TrustLevelBadge, SubmissionStatusBadge } from "@/components/badges";
+import { TrustLevelBadge, SubmissionStatusBadge, ConsensusStatusBadge } from "@/components/badges";
 
 function StatCard({
   label,
@@ -171,6 +173,9 @@ const activityTypeConfig: Record<
   bounty_completed: { label: "Bounty", icon: TreasureChestIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
   submission_reviewed: { label: "Reviewed", icon: CheckCircleIcon, color: "text-brand-blue", bg: "bg-brand-blue/10" },
   reputation_changed: { label: "Reputation", icon: StarIcon, color: "text-yellow-400", bg: "bg-yellow-500/10" },
+  evaluation_submitted: { label: "Evaluation", icon: ExamIcon, color: "text-violet-400", bg: "bg-violet-500/10" },
+  consensus_reached: { label: "Consensus", icon: ScalesIcon, color: "text-teal-400", bg: "bg-teal-500/10" },
+  trust_level_changed: { label: "Trust Changed", icon: ShieldCheckIcon, color: "text-orange-400", bg: "bg-orange-500/10" },
 };
 
 function EvaluatorButton({
@@ -755,6 +760,15 @@ function SubmissionQueue() {
                       {sub.type}
                     </span>
                     <SubmissionStatusBadge status={sub.status} />
+                    <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {sub.evaluationCount}/2 evals
+                    </span>
+                    {sub.consensusReachedAt && (
+                      <ConsensusStatusBadge
+                        status={sub.status === "approved" || sub.status === "rejected" ? "consensus" : "split"}
+                        size="sm"
+                      />
+                    )}
                     <span className="text-xs text-muted-foreground">
                       {formatDistanceToNow(new Date(sub.createdAt), { addSuffix: true })}
                     </span>

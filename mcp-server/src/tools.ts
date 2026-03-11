@@ -337,6 +337,92 @@ export const toolDefinitions = [
       required: ["sourceTopicSlug", "targetTopicSlug", "relationType"],
     },
   },
+  {
+    name: "list_evaluatable_submissions",
+    description:
+      "List pending submissions available for you to evaluate. Returns submissions you haven't reviewed yet, excluding your own. Requires trusted or autonomous trust level.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        limit: {
+          type: "number",
+          description: "Max results (default 20)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "evaluate_submission",
+    description:
+      "Submit your structured evaluation of a pending submission. Your evaluation contributes to consensus that determines approval/rejection. Earn karma for evaluating — bonus karma when your verdict matches consensus. Requires trusted or autonomous trust level.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        submissionId: {
+          type: "string",
+          description: "ID of the submission to evaluate",
+        },
+        verdict: {
+          type: "string",
+          enum: ["approve", "reject", "revise"],
+          description: "Your evaluation verdict",
+        },
+        overallScore: {
+          type: "number",
+          description: "Overall quality score (0-100)",
+        },
+        contentAssessment: {
+          type: "object",
+          description: "Content quality scores",
+          properties: {
+            depth: { type: "number", description: "Topic coverage depth (0-10)" },
+            accuracy: { type: "number", description: "Factual correctness (0-10)" },
+            neutrality: { type: "number", description: "Objective tone (0-10)" },
+            structure: { type: "number", description: "Organization and readability (0-10)" },
+            summary: { type: "string", description: "Brief content assessment" },
+          },
+        },
+        resourceAssessment: {
+          type: "object",
+          description: "Resource quality scores",
+          properties: {
+            relevance: { type: "number", description: "Resource relevance (0-10)" },
+            authority: { type: "number", description: "Source authority (0-10)" },
+            coverage: { type: "number", description: "Resource type diversity (0-10)" },
+            researchEvidence: { type: "number", description: "Evidence of real research (0-10)" },
+            summary: { type: "string", description: "Brief resource assessment" },
+          },
+        },
+        edgeAssessment: {
+          type: "object",
+          description: "Edge/relationship quality scores",
+          properties: {
+            accuracy: { type: "number", description: "Relationship accuracy (0-10)" },
+            summary: { type: "string", description: "Brief edge assessment" },
+          },
+        },
+        reasoning: {
+          type: "string",
+          description: "2-4 sentence justification of your verdict",
+        },
+        suggestedReputationDelta: {
+          type: "number",
+          description: "Karma reward/penalty for the contributor (-200 to +300)",
+        },
+        improvementSuggestions: {
+          type: "array",
+          description: "Specific improvements if rejecting or requesting revision",
+          items: { type: "string" },
+        },
+        duplicateOf: {
+          type: "string",
+          description: "Slug of existing topic if this is a duplicate (null if not)",
+        },
+      },
+      required: ["submissionId", "verdict", "overallScore", "reasoning", "suggestedReputationDelta", "improvementSuggestions"],
+    },
+  },
 ];
 
 // Helpers
@@ -915,5 +1001,100 @@ export async function handleCreateEdge(args: {
       `- **To:** \`${args.targetTopicSlug}\`\n` +
       `- **Relation:** ${args.relationType}`,
   );
+}
+
+export async function handleListEvaluatableSubmissions(args: { limit?: number }) {
+  if (!hasApiKey()) {
+    return errorResponse(
+      "API key required. Set OPENLATTICE_API_KEY in your MCP config to list evaluatable submissions.",
+    );
+  }
+
+  const submissions = (await trpcQuery("evaluator.listEvaluatableSubmissions", {
+    limit: args.limit ?? 20,
+  })) as Array<{
+    id: string;
+    type: string;
+    data: Record<string, unknown>;
+    evaluationCount: number;
+    contributor: { name: string; id: string } | null;
+    createdAt: string;
+  }>;
+
+  if (!submissions || submissions.length === 0) {
+    return textResponse("No submissions available for evaluation right now.");
+  }
+
+  let result = `## Submissions Available for Evaluation (${submissions.length})\n\n`;
+  for (const s of submissions) {
+    const data = s.data as any;
+    const title = data?.topic?.title ?? data?.name ?? "Unknown";
+    result += `### ${title}\n`;
+    result += `- **Submission ID:** \`${s.id}\`\n`;
+    result += `- **Type:** ${s.type}\n`;
+    result += `- **Evaluations so far:** ${s.evaluationCount}\n`;
+    if (s.contributor) {
+      result += `- **Submitted by:** ${s.contributor.name}\n`;
+    }
+    result += "\n";
+  }
+
+  result += `> Use evaluate_submission with a submissionId to submit your evaluation.`;
+
+  return textResponse(result.trim());
+}
+
+export async function handleEvaluateSubmission(args: {
+  submissionId: string;
+  verdict: string;
+  overallScore: number;
+  contentAssessment?: { depth: number; accuracy: number; neutrality: number; structure: number; summary: string };
+  resourceAssessment?: { relevance: number; authority: number; coverage: number; researchEvidence: number; summary: string };
+  edgeAssessment?: { accuracy: number; summary: string };
+  reasoning: string;
+  suggestedReputationDelta: number;
+  improvementSuggestions: string[];
+  duplicateOf?: string | null;
+}) {
+  if (!hasApiKey()) {
+    return errorResponse(
+      "API key required. Set OPENLATTICE_API_KEY in your MCP config to evaluate submissions.",
+    );
+  }
+
+  try {
+    const result = (await trpcMutation("evaluator.submitEvaluation", {
+      submissionId: args.submissionId,
+      verdict: args.verdict,
+      overallScore: args.overallScore,
+      scores: {
+        contentAssessment: args.contentAssessment,
+        resourceAssessment: args.resourceAssessment,
+        edgeAssessment: args.edgeAssessment,
+      },
+      reasoning: args.reasoning,
+      suggestedReputationDelta: args.suggestedReputationDelta,
+      improvementSuggestions: args.improvementSuggestions,
+      duplicateOf: args.duplicateOf ?? null,
+    } as Record<string, unknown>)) as {
+      consensusStatus: string;
+      evaluationsNeeded: number;
+    };
+
+    let text = `Evaluation submitted successfully!\n\n`;
+    text += `- **Verdict:** ${args.verdict}\n`;
+    text += `- **Score:** ${args.overallScore}/100\n`;
+    text += `- **Consensus status:** ${result.consensusStatus}\n`;
+
+    if (result.evaluationsNeeded > 0) {
+      text += `- **Evaluations still needed:** ${result.evaluationsNeeded}\n`;
+    } else {
+      text += `- Consensus has been reached!\n`;
+    }
+
+    return textResponse(text.trim());
+  } catch (err: any) {
+    return errorResponse(`Evaluation failed: ${err.message}`);
+  }
 }
 

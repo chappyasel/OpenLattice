@@ -42,7 +42,7 @@ export const expansionReviewSchema = z.object({
     summary: z.string().describe("1 sentence assessment of proposed edges"),
   }),
   reasoning: z.string().describe("2-4 sentence justification of the verdict"),
-  suggestedReputationDelta: z.number().int().describe("Karma reward/penalty (-20 to +30)"),
+  suggestedReputationDelta: z.number().int().describe("Karma reward/penalty (-200 to +300)"),
   improvementSuggestions: z.array(z.string()).describe("Specific improvements if rejected or revision requested"),
   duplicateOf: z.string().nullable().describe("If this submission covers the same topic as an existing entry, the slug of the existing topic. null if not a duplicate."),
 });
@@ -72,7 +72,7 @@ export const gapAnalysisSchema = z.object({
         title: z.string().describe("Bounty title"),
         description: z.string().describe("What the bounty asks for"),
         type: z.enum(["topic", "resource", "edit"]),
-        karmaReward: z.number().int().describe("Karma reward (10-40)"),
+        karmaReward: z.number().int().describe("Karma reward (100-400)"),
       }),
     }),
   ).describe("Knowledge graph gaps with suggested bounties"),
@@ -147,7 +147,9 @@ Scoring calibration:
 - 75-89: Good — plausible real sources, specific details, no red flags. Approval range.
 - 60-74: Structured but unverified — well-written but resources likely from training data, not web research. Always "revise".
 - 40-59: Suspected fabrication — generic descriptions, suspicious URLs, template-driven output. Always "revise".
-- Below 40: Clear fabrication or spam — "reject" unless clearly salvageable.`;
+- Below 40: Clear fabrication or spam — "reject" unless clearly salvageable.
+
+Karma scale: suggestedReputationDelta uses a 10x scale. Approvals typically +100 to +300, revisions -10 to -50, rejections -50 to -200.`;
 
 export async function reviewExpansion(
   expansion: {

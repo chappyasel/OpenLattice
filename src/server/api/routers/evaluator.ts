@@ -1,11 +1,14 @@
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { iconSchema } from "@/lib/phosphor-icons";
+import { computeConsensus, computeEvalKarma } from "@/lib/evaluator/consensus";
+import { checkTrustPromotion, checkTrustDemotion } from "@/lib/trust";
 import {
   createTRPCRouter,
   apiKeyProcedure,
   evaluatorProcedure,
+  evaluatorAgentProcedure,
   publicProcedure,
 } from "@/server/api/trpc";
 import {
@@ -17,6 +20,9 @@ import {
   activity,
   topics,
   tags,
+  evaluations,
+  evaluatorStats,
+  type EvaluatorStats,
 } from "@/server/db/schema";
 import { activityId, generateUniqueId } from "@/lib/utils";
 import { applyExpansion } from "./expansions";
@@ -57,6 +63,246 @@ async function completeBountyForSubmission(db: any, updated: any) {
     type: "bounty_completed",
     contributorId: updated.contributorId,
     description: `Bounty completed: "${bounty.title}" (+${bounty.karmaReward} karma)`,
+  });
+}
+
+// Internal function: check if consensus is reached and finalize if so
+async function checkAndFinalizeConsensus(db: any, submissionId: string) {
+  // 1. Load all evaluations for this submission
+  const allEvals = await db.query.evaluations.findMany({
+    where: eq(evaluations.submissionId, submissionId),
+  });
+
+  // 2. Load evaluator stats and compute weights
+  const evaluatorIds = allEvals.map((e: any) => e.evaluatorId).filter(Boolean);
+  const stats = evaluatorIds.length > 0
+    ? await db.query.evaluatorStats.findMany({
+        where: inArray(evaluatorStats.contributorId, evaluatorIds),
+      })
+    : [];
+  const statsMap = new Map<string, EvaluatorStats>(stats.map((s: any) => [s.contributorId, s]));
+
+  // 3. Build EvaluationVote[] array
+  const votes = allEvals.map((e: any) => {
+    const s = statsMap.get(e.evaluatorId);
+    const weight = s
+      ? 0.5 + Math.min(s.agreementCount / Math.max(s.totalEvaluations, 1), 1) * 0.5
+      : 0.5;
+    return {
+      evaluatorId: e.evaluatorId,
+      verdict: e.verdict as "approve" | "reject" | "revise",
+      overallScore: e.overallScore,
+      scores: e.scores ?? {},
+      suggestedReputationDelta: e.suggestedReputationDelta,
+      resolvedTags: e.resolvedTags ?? undefined,
+      resolvedEdges: e.resolvedEdges ?? undefined,
+      icon: e.icon ?? undefined,
+      iconHue: e.iconHue ?? undefined,
+      weight,
+    };
+  });
+
+  // 4. Compute consensus
+  const result = computeConsensus(votes, { minEvaluations: 2, agreementThreshold: 0.67 });
+
+  // 5. If insufficient, wait for more
+  if (result.status === "insufficient") return;
+
+  // 6. If split, log and flag for system evaluator
+  if (result.status === "split") {
+    await db.insert(activity).values({
+      id: activityId("consensus-reached", submissionId),
+      type: "consensus_reached" as any,
+      submissionId,
+      description: `Consensus split on submission — flagged for system evaluator`,
+      data: { status: "split", confidence: result.confidence },
+    });
+    return;
+  }
+
+  // 7. Consensus reached
+  const verdictMap: Record<string, string> = {
+    approve: "approved",
+    reject: "rejected",
+    revise: "revision_requested",
+  };
+  const finalStatus = verdictMap[result.verdict!]!;
+  const finalReputationDelta = Math.round(result.finalReputationDelta ?? 0);
+
+  // Combine reasoning from winning evaluators
+  const winningEvals = allEvals.filter(
+    (e: any) => result.evaluatorAgreement[e.evaluatorId],
+  );
+  const combinedReasoning = winningEvals
+    .map((e: any) => e.reasoning)
+    .join("\n\n---\n\n");
+
+  // 7a. Update submission
+  await db
+    .update(submissions)
+    .set({
+      status: finalStatus as any,
+      consensusReachedAt: new Date(),
+      reviewReasoning: combinedReasoning,
+      reputationDelta: finalReputationDelta,
+    })
+    .where(eq(submissions.id, submissionId));
+
+  // 7b. Load updated submission with contributor
+  const updatedSubmission = await db.query.submissions.findFirst({
+    where: eq(submissions.id, submissionId),
+    with: { contributor: true },
+  });
+  if (!updatedSubmission) return;
+
+  // 7c. If approved expansion/bounty_response, apply expansion
+  if (finalStatus === "approved" && (updatedSubmission.type === "expansion" || updatedSubmission.type === "bounty_response")) {
+    const expansionData = updatedSubmission.data as any;
+    if (expansionData?.topic?.title && expansionData?.topic?.content) {
+      try {
+        await applyExpansion(
+          db,
+          updatedSubmission.id,
+          expansionData,
+          updatedSubmission.contributorId,
+          result.resolvedTags,
+          result.resolvedEdges as { targetTopicSlug: string; relationType: "related" | "prerequisite" | "subtopic" | "see_also" }[] | undefined,
+          result.icon && result.iconHue != null
+            ? { icon: result.icon, iconHue: result.iconHue }
+            : undefined,
+        );
+      } catch (applyError: any) {
+        await db
+          .update(submissions)
+          .set({
+            status: "rejected" as any,
+            reviewReasoning: `Approved by consensus but failed to apply: ${applyError.message?.slice(0, 200)}`,
+          })
+          .where(eq(submissions.id, submissionId));
+        return;
+      }
+    }
+  }
+
+  // 7d. Award contributor karma
+  if (updatedSubmission.contributorId && finalReputationDelta !== 0) {
+    await db
+      .update(contributors)
+      .set({ karma: sql`${contributors.karma} + ${finalReputationDelta}` })
+      .where(eq(contributors.id, updatedSubmission.contributorId));
+  }
+
+  // 7e. Update contributor stats (only for approve/reject, not revise)
+  if (updatedSubmission.contributorId && (finalStatus === "approved" || finalStatus === "rejected")) {
+    const field = finalStatus === "approved"
+      ? contributors.acceptedContributions
+      : contributors.rejectedContributions;
+    await db
+      .update(contributors)
+      .set({
+        totalContributions: sql`${contributors.totalContributions} + 1`,
+        [finalStatus === "approved" ? "acceptedContributions" : "rejectedContributions"]: sql`${field} + 1`,
+      })
+      .where(eq(contributors.id, updatedSubmission.contributorId));
+  }
+
+  // 7f. Get current pending count for eval karma calculation
+  const [pendingResult] = await db
+    .select({ count: count() })
+    .from(submissions)
+    .where(eq(submissions.status, "pending"));
+  const pendingCount = pendingResult?.count ?? 0;
+
+  // 7g. Award evaluator karma and update stats
+  for (const evaluation of allEvals) {
+    const agreed = result.evaluatorAgreement[evaluation.evaluatorId] ?? false;
+    const evalKarma = computeEvalKarma(
+      updatedSubmission.type,
+      pendingCount,
+      agreed,
+      finalReputationDelta,
+    );
+
+    // Update evaluation record
+    await db
+      .update(evaluations)
+      .set({
+        karmaAwarded: evalKarma,
+        agreedWithConsensus: agreed,
+      })
+      .where(eq(evaluations.id, evaluation.id));
+
+    // Update evaluator stats
+    const evalStatUpdate = agreed
+      ? { agreementCount: sql`${evaluatorStats.agreementCount} + 1`, evaluatorKarma: sql`${evaluatorStats.evaluatorKarma} + ${evalKarma}` }
+      : { disagreementCount: sql`${evaluatorStats.disagreementCount} + 1`, evaluatorKarma: sql`${evaluatorStats.evaluatorKarma} + ${evalKarma}` };
+    await db
+      .update(evaluatorStats)
+      .set(evalStatUpdate)
+      .where(eq(evaluatorStats.contributorId, evaluation.evaluatorId));
+
+    // Add karma to contributor
+    if (evaluation.evaluatorId) {
+      await db
+        .update(contributors)
+        .set({ karma: sql`${contributors.karma} + ${evalKarma}` })
+        .where(eq(contributors.id, evaluation.evaluatorId));
+    }
+  }
+
+  // 7h. Complete bounty if approved and bounty attached
+  if (finalStatus === "approved") {
+    await completeBountyForSubmission(db, updatedSubmission);
+  }
+
+  // 7i. Check trust promotion/demotion for the submitter
+  if (updatedSubmission.contributorId) {
+    const submitter = await db.query.contributors.findFirst({
+      where: eq(contributors.id, updatedSubmission.contributorId),
+    });
+    if (submitter) {
+      const promotion = checkTrustPromotion(submitter);
+      const demotion = !promotion ? checkTrustDemotion(submitter) : null;
+      const newTrustLevel = promotion ?? demotion;
+
+      if (newTrustLevel) {
+        // 7j. Update trust level
+        await db
+          .update(contributors)
+          .set({ trustLevel: newTrustLevel as any })
+          .where(eq(contributors.id, submitter.id));
+
+        // 7k. Log activity
+        await db.insert(activity).values({
+          id: activityId("trust-level-changed", submitter.id),
+          type: "trust_level_changed" as any,
+          contributorId: submitter.id,
+          description: `Trust level changed: ${submitter.trustLevel} → ${newTrustLevel}`,
+          data: {
+            previousLevel: submitter.trustLevel,
+            newLevel: newTrustLevel,
+            reason: promotion ? "promotion" : "demotion",
+          },
+        });
+      }
+    }
+  }
+
+  // 7l. Log consensus reached
+  await db.insert(activity).values({
+    id: activityId("consensus-reached", submissionId),
+    type: "consensus_reached" as any,
+    submissionId,
+    description: `Consensus reached: ${result.verdict} (confidence: ${Math.round(result.confidence * 100)}%)`,
+    data: {
+      status: "consensus",
+      verdict: result.verdict,
+      finalScore: result.finalScore,
+      finalReputationDelta,
+      confidence: result.confidence,
+      evaluatorAgreement: result.evaluatorAgreement,
+      evaluationCount: allEvals.length,
+    },
   });
 }
 
@@ -559,6 +805,228 @@ export const evaluatorRouter = createTRPCRouter({
     return { recalculated: allContributors.length };
   }),
 
+  // ─── Multi-Evaluator Consensus Endpoints ─────────────────────────────
+
+  listEvaluatableSubmissions: evaluatorAgentProcedure
+    .input(z.object({ limit: z.number().int().min(1).max(50).default(20) }).optional())
+    .query(async ({ ctx, input }) => {
+      // Get submission IDs this evaluator has already evaluated
+      const alreadyEvaluated = await ctx.db
+        .select({ submissionId: evaluations.submissionId })
+        .from(evaluations)
+        .where(eq(evaluations.evaluatorId, ctx.contributor.id));
+      const evaluatedIds = alreadyEvaluated.map((e) => e.submissionId);
+
+      const conditions = [
+        eq(submissions.status, "pending"),
+        ne(submissions.contributorId, ctx.contributor.id),
+        isNull(submissions.consensusReachedAt),
+      ];
+      if (evaluatedIds.length > 0) {
+        conditions.push(notInArray(submissions.id, evaluatedIds));
+      }
+
+      const results = await ctx.db.query.submissions.findMany({
+        where: and(...conditions),
+        with: { contributor: true },
+        orderBy: (s, { asc }) => [asc(s.createdAt)],
+        limit: input?.limit ?? 20,
+      });
+
+      return results.map((s) => ({
+        ...s,
+        evaluationCount: s.evaluationCount,
+      }));
+    }),
+
+  submitEvaluation: evaluatorAgentProcedure
+    .input(
+      z.object({
+        submissionId: z.string(),
+        verdict: z.enum(["approve", "reject", "revise"]),
+        overallScore: z.number().int().min(0).max(100),
+        scores: z.object({
+          contentAssessment: z.object({
+            depth: z.number(),
+            accuracy: z.number(),
+            neutrality: z.number(),
+            structure: z.number(),
+            summary: z.string(),
+          }).optional(),
+          resourceAssessment: z.object({
+            relevance: z.number(),
+            authority: z.number(),
+            coverage: z.number(),
+            researchEvidence: z.number(),
+            summary: z.string(),
+          }).optional(),
+          edgeAssessment: z.object({
+            accuracy: z.number(),
+            summary: z.string(),
+          }).optional(),
+        }),
+        reasoning: z.string(),
+        suggestedReputationDelta: z.number().int().min(-200).max(300),
+        improvementSuggestions: z.array(z.string()),
+        duplicateOf: z.string().nullable().optional(),
+        resolvedTags: z.array(z.string()).optional(),
+        resolvedEdges: z.array(z.object({
+          targetTopicSlug: z.string(),
+          relationType: z.enum(["related", "prerequisite", "subtopic", "see_also"]),
+        })).optional(),
+        icon: z.string().optional(),
+        iconHue: z.number().int().min(0).max(360).optional(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // 1. Look up the submission
+      const submission = await ctx.db.query.submissions.findFirst({
+        where: and(eq(submissions.id, input.submissionId), eq(submissions.status, "pending")),
+      });
+      if (!submission) {
+        throw new Error("Submission not found or not pending");
+      }
+
+      // 2. No self-review
+      if (submission.contributorId === ctx.contributor.id) {
+        throw new Error("Cannot evaluate your own submission");
+      }
+
+      // 3. Time check — too fast
+      const elapsed = Date.now() - new Date(submission.createdAt).getTime();
+      if (elapsed < 30000) {
+        throw new Error("Evaluation submitted too quickly — please review the submission thoroughly");
+      }
+
+      // 4. Rate limit: max 20 evaluations per hour
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const [recentCount] = await ctx.db
+        .select({ count: count() })
+        .from(evaluations)
+        .where(and(
+          eq(evaluations.evaluatorId, ctx.contributor.id),
+          gte(evaluations.createdAt, oneHourAgo),
+        ));
+      if (recentCount && recentCount.count >= 20) {
+        throw new Error("Rate limit exceeded: maximum 20 evaluations per hour");
+      }
+
+      // 5. Score inconsistency check
+      if (input.overallScore > 75) {
+        const checkScores = (obj: Record<string, unknown> | undefined) => {
+          if (!obj) return;
+          for (const [key, val] of Object.entries(obj)) {
+            if (key === "summary") continue;
+            if (typeof val === "number" && val < 3) {
+              throw new Error("Score inconsistency: high overall score with very low sub-scores");
+            }
+          }
+        };
+        checkScores(input.scores.contentAssessment as Record<string, unknown> | undefined);
+        checkScores(input.scores.resourceAssessment as Record<string, unknown> | undefined);
+      }
+
+      // 6. Insert evaluation
+      const evalId = await generateUniqueId(ctx.db, evaluations, evaluations.id, `eval-${ctx.contributor.id}`);
+      await ctx.db.insert(evaluations).values({
+        id: evalId,
+        submissionId: input.submissionId,
+        evaluatorId: ctx.contributor.id,
+        verdict: input.verdict,
+        overallScore: input.overallScore,
+        scores: input.scores as Record<string, unknown>,
+        reasoning: input.reasoning,
+        suggestedReputationDelta: input.suggestedReputationDelta,
+        improvementSuggestions: input.improvementSuggestions,
+        duplicateOf: input.duplicateOf ?? null,
+        resolvedTags: input.resolvedTags ?? null,
+        resolvedEdges: input.resolvedEdges ?? null,
+        icon: input.icon ?? null,
+        iconHue: input.iconHue ?? null,
+      });
+
+      // 7. Increment evaluation count
+      await ctx.db
+        .update(submissions)
+        .set({ evaluationCount: sql`${submissions.evaluationCount} + 1` })
+        .where(eq(submissions.id, input.submissionId));
+
+      // 8. Upsert evaluator stats
+      const existingStats = await ctx.db.query.evaluatorStats.findFirst({
+        where: eq(evaluatorStats.contributorId, ctx.contributor.id),
+      });
+      if (existingStats) {
+        await ctx.db
+          .update(evaluatorStats)
+          .set({
+            totalEvaluations: sql`${evaluatorStats.totalEvaluations} + 1`,
+            lastEvaluatedAt: new Date(),
+          })
+          .where(eq(evaluatorStats.id, existingStats.id));
+      } else {
+        const statsId = await generateUniqueId(ctx.db, evaluatorStats, evaluatorStats.id, `stats-${ctx.contributor.id}`);
+        await ctx.db.insert(evaluatorStats).values({
+          id: statsId,
+          contributorId: ctx.contributor.id,
+          totalEvaluations: 1,
+          lastEvaluatedAt: new Date(),
+        });
+      }
+
+      // 9. Check consensus
+      await checkAndFinalizeConsensus(ctx.db, input.submissionId);
+
+      // 10. Log activity
+      await ctx.db.insert(activity).values({
+        id: activityId("evaluation-submitted", ctx.contributor.id),
+        type: "evaluation_submitted" as any,
+        contributorId: ctx.contributor.id,
+        submissionId: input.submissionId,
+        description: `Evaluation submitted: ${input.verdict} (score: ${input.overallScore})`,
+      });
+
+      // 11. Return status
+      const updatedSubmission = await ctx.db.query.submissions.findFirst({
+        where: eq(submissions.id, input.submissionId),
+      });
+      const evalCount = updatedSubmission?.evaluationCount ?? 1;
+      const consensusStatus = updatedSubmission?.consensusReachedAt ? "reached" : "pending";
+      return {
+        consensusStatus,
+        evaluationsNeeded: Math.max(0, 2 - evalCount),
+      };
+    }),
+
+  getSubmissionEvaluations: evaluatorAgentProcedure
+    .input(z.object({ submissionId: z.string() }))
+    .query(async ({ ctx, input }) => {
+      // Only return evaluations after consensus is reached (prevent anchoring bias)
+      const submission = await ctx.db.query.submissions.findFirst({
+        where: eq(submissions.id, input.submissionId),
+      });
+      if (!submission || !submission.consensusReachedAt) {
+        return [];
+      }
+
+      const evals = await ctx.db.query.evaluations.findMany({
+        where: eq(evaluations.submissionId, input.submissionId),
+        with: { evaluator: { columns: publicContributorColumns } },
+        orderBy: (e, { asc }) => [asc(e.createdAt)],
+      });
+
+      return evals.map((e) => ({
+        id: e.id,
+        evaluatorId: e.evaluator?.id ?? null,
+        evaluatorName: e.evaluator?.name ?? null,
+        verdict: e.verdict,
+        overallScore: e.overallScore,
+        reasoning: e.reasoning,
+        agreedWithConsensus: e.agreedWithConsensus,
+        karmaAwarded: e.karmaAwarded,
+        createdAt: e.createdAt,
+      }));
+    }),
+
   // ─── Dashboard Queries (public, for /evaluator page) ──────────────────
 
   getEvaluationFeed: publicProcedure
@@ -570,9 +1038,9 @@ export const evaluatorRouter = createTRPCRouter({
         .optional(),
     )
     .query(async ({ ctx, input }) => {
-      // Get all activity entries that have evaluation trace data
+      // Get all activity entries that have evaluation trace data OR are consensus-related types
       return ctx.db.query.activity.findMany({
-        where: sql`${activity.data} IS NOT NULL AND ${activity.data}->>'type' IS NOT NULL`,
+        where: sql`(${activity.data} IS NOT NULL AND ${activity.data}->>'type' IS NOT NULL) OR ${activity.type} IN ('evaluation_submitted', 'consensus_reached', 'trust_level_changed')`,
         with: {
           contributor: { columns: publicContributorColumns },
           topic: true,

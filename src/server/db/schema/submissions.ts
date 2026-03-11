@@ -60,6 +60,8 @@ export const submissions = pgTable(
     reviewNotes: text("review_notes"),
     revisionCount: integer("revision_count").notNull().default(0),
     originalSubmissionId: text("original_submission_id"),
+    evaluationCount: integer("evaluation_count").notNull().default(0),
+    consensusReachedAt: timestamp("consensus_reached_at"),
     reviewedAt: timestamp("reviewed_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },

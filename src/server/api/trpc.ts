@@ -131,3 +131,14 @@ export const evaluatorProcedure = apiKeyProcedure.use(async ({ next, ctx }) => {
   }
   return next({ ctx });
 });
+
+/** Evaluator agent: requires API key + trusted or autonomous trust level */
+export const evaluatorAgentProcedure = apiKeyProcedure.use(async ({ next, ctx }) => {
+  if (ctx.contributor.trustLevel !== "trusted" && ctx.contributor.trustLevel !== "autonomous") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Evaluation requires trusted or autonomous trust level",
+    });
+  }
+  return next({ ctx });
+});

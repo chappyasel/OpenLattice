@@ -22,6 +22,8 @@ import {
   handleCreateEdge,
   handleListTags,
   handleListTopics,
+  handleListEvaluatableSubmissions,
+  handleEvaluateSubmission,
 } from "./tools.js";
 
 // Log mode
@@ -152,6 +154,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           sourceTopicSlug: string;
           targetTopicSlug: string;
           relationType: string;
+        },
+      );
+
+    case "list_evaluatable_submissions":
+      return handleListEvaluatableSubmissions(args as { limit?: number });
+
+    case "evaluate_submission":
+      return handleEvaluateSubmission(
+        args as {
+          submissionId: string;
+          verdict: string;
+          overallScore: number;
+          contentAssessment?: { depth: number; accuracy: number; neutrality: number; structure: number; summary: string };
+          resourceAssessment?: { relevance: number; authority: number; coverage: number; researchEvidence: number; summary: string };
+          edgeAssessment?: { accuracy: number; summary: string };
+          reasoning: string;
+          suggestedReputationDelta: number;
+          improvementSuggestions: string[];
+          duplicateOf?: string | null;
         },
       );
 

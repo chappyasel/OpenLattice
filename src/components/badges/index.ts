@@ -7,3 +7,4 @@ export { BountyStatusBadge } from "./bounty-status-badge";
 export { EvalTypeBadge } from "./eval-type-badge";
 export { ContributorBadge } from "./contributor-badge";
 export { EvaluatorScoreBadge } from "./evaluator-score-badge";
+export { ConsensusStatusBadge, EvaluatorAgreementBadge } from "./consensus-status-badge";
