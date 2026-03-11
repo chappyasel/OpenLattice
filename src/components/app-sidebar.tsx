@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, Reorder, useDragControls } from "framer-motion";
 import {
-  ArrowsInSimpleIcon,
   CaretRightIcon,
   CircleIcon,
+  DotsSixVerticalIcon,
   MagnifyingGlassIcon,
   HouseIcon,
   TreasureChestIcon,
@@ -20,11 +20,11 @@ import { api } from "@/trpc/react";
 import { useTopicContext } from "@/components/topic-context";
 import { TopicIcon } from "@/components/topic-icon";
 import { TagBadge, ResourceTypeBadge } from "@/components/badges";
+import { cn } from "@/lib/utils";
 import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
-  SidebarGroupAction,
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
@@ -161,10 +161,129 @@ function TopicTreeNode({
   );
 }
 
+// --- Reorderable base wrapper (needs its own component for useDragControls hook) ---
+
+function ReorderableBaseItem({
+  baseId,
+  children,
+}: {
+  baseId: string;
+  children: (controls: ReturnType<typeof useDragControls>) => React.ReactNode;
+}) {
+  const controls = useDragControls();
+  return (
+    <Reorder.Item
+      value={baseId}
+      as="div"
+      dragListener={false}
+      dragControls={controls}
+    >
+      {children(controls)}
+    </Reorder.Item>
+  );
+}
+
+// --- Collapsible base section with icon ---
+
+function BaseSection({
+  base,
+  topics,
+  collapsed,
+  onToggleCollapse,
+  dragControls,
+  pathname,
+  onSelect,
+  selectedSlug,
+  expandedIds,
+  onToggleExpand,
+}: {
+  base: { id: string; slug: string; name: string; icon: string | null; iconHue: number | null };
+  topics: TreeTopic[];
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  dragControls?: ReturnType<typeof useDragControls>;
+  pathname: string;
+  onSelect: (slug: string) => void;
+  selectedSlug: string | null;
+  expandedIds: Set<string>;
+  onToggleExpand: (id: string) => void;
+}) {
+  const isBaseActive = pathname === `/base/${base.slug}`;
+
+  return (
+    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      <SidebarGroupLabel className="gap-1">
+        <button
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onToggleCollapse();
+          }}
+          className="flex shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/40 hover:text-sidebar-foreground"
+        >
+          <motion.span
+            animate={{ rotate: collapsed ? 0 : 90 }}
+            transition={{ duration: 0.15, ease: "easeInOut" }}
+            className="flex items-center justify-center"
+          >
+            <CaretRightIcon weight="bold" className="!size-3" />
+          </motion.span>
+        </button>
+        <Link
+          href={`/base/${base.slug}`}
+          className={cn(
+            "flex flex-1 items-center gap-1.5 truncate hover:text-sidebar-foreground",
+            isBaseActive && "text-sidebar-foreground font-semibold",
+          )}
+        >
+          <TopicIcon icon={base.icon} hue={base.iconHue} size="sm" />
+          {base.name}
+        </Link>
+        {dragControls && (
+          <div
+            onPointerDown={(e) => dragControls.start(e)}
+            className="ml-auto cursor-grab touch-none text-sidebar-foreground/30 hover:text-sidebar-foreground/60 active:cursor-grabbing"
+          >
+            <DotsSixVerticalIcon weight="bold" className="!size-3.5" />
+          </div>
+        )}
+      </SidebarGroupLabel>
+
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <SidebarMenu className="gap-0">
+              {topics.map((topic) => (
+                <TopicTreeNode
+                  key={topic.id}
+                  topic={topic}
+                  pathname={pathname}
+                  onSelect={onSelect}
+                  selectedSlug={selectedSlug}
+                  expandedIds={expandedIds}
+                  onToggleExpand={onToggleExpand}
+                />
+              ))}
+            </SidebarMenu>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </SidebarGroup>
+  );
+}
+
 export function AppSidebar() {
   const pathname = usePathname();
   const { selectedSlug, setSelectedSlug } = useTopicContext();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [collapsedBases, setCollapsedBases] = useState<Set<string>>(new Set());
+  const [baseOrder, setBaseOrder] = useState<string[]>([]);
 
   const onToggleExpand = useCallback((id: string) => {
     setExpandedIds((prev) => {
@@ -174,6 +293,16 @@ export function AppSidebar() {
       return next;
     });
   }, []);
+
+  const toggleBaseCollapse = useCallback((baseId: string) => {
+    setCollapsedBases((prev) => {
+      const next = new Set(prev);
+      if (next.has(baseId)) next.delete(baseId);
+      else next.add(baseId);
+      return next;
+    });
+  }, []);
+
   const { data: rootTopics } = api.topics.listTree.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
     gcTime: Infinity,
@@ -192,6 +321,27 @@ export function AppSidebar() {
   });
   const { data: isAdmin } = api.admin.isAdmin.useQuery();
 
+  // Sync base order from query data, respecting localStorage preference
+  useEffect(() => {
+    if (!bases) return;
+    const serverIds = bases.map((b) => b.id);
+    try {
+      const saved = localStorage.getItem("sidebar:base-order");
+      if (saved) {
+        const savedIds = JSON.parse(saved) as string[];
+        // Keep saved order for IDs that still exist, append any new ones
+        const serverSet = new Set(serverIds);
+        const ordered = savedIds.filter((id) => serverSet.has(id));
+        const remaining = serverIds.filter((id) => !ordered.includes(id));
+        setBaseOrder([...ordered, ...remaining]);
+        return;
+      }
+    } catch {
+      // ignore malformed localStorage
+    }
+    setBaseOrder(serverIds);
+  }, [bases]);
+
   // Group root topics by base
   const groupedTopics = useMemo(() => {
     if (!rootTopics) return null;
@@ -204,6 +354,29 @@ export function AppSidebar() {
     }
     return byBase;
   }, [rootTopics]);
+
+  const baseMap = useMemo(() => {
+    if (!bases) return new Map<string, (typeof bases)[number]>();
+    return new Map(bases.map((b) => [b.id, b]));
+  }, [bases]);
+
+  const visibleBaseIds = useMemo(() => {
+    if (!groupedTopics) return [];
+    return baseOrder.filter((id) => {
+      const base = baseMap.get(id);
+      const topics = groupedTopics.get(id);
+      return base && topics && topics.length > 0;
+    });
+  }, [baseOrder, baseMap, groupedTopics]);
+
+  const handleReorder = useCallback((newOrder: string[]) => {
+    setBaseOrder(newOrder);
+    try {
+      localStorage.setItem("sidebar:base-order", JSON.stringify(newOrder));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
 
   const navItems = [
     { href: "/", label: "Home", icon: HouseIcon },
@@ -307,56 +480,41 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
 
-        {groupedTopics && bases ? (
+        {groupedTopics && visibleBaseIds.length > 0 ? (
           <>
-            {bases.map((base) => {
-              const topics = groupedTopics.get(base.id);
-              if (!topics || topics.length === 0) return null;
-              return (
-                <SidebarGroup key={base.id} className="group-data-[collapsible=icon]:hidden">
-                  <SidebarGroupLabel asChild>
-                    <Link href={`/base/${base.slug}`} className="hover:text-foreground">
-                      {base.name}
-                    </Link>
-                  </SidebarGroupLabel>
-                  {expandedIds.size > 0 && (
-                    <SidebarGroupAction
-                      title="Collapse all"
-                      className="text-muted-foreground/60 hover:text-foreground"
-                      onClick={() => setExpandedIds(new Set())}
-                    >
-                      <ArrowsInSimpleIcon weight="bold" />
-                    </SidebarGroupAction>
-                  )}
-                  <SidebarMenu className="gap-0">
-                    {topics.map((topic) => (
-                      <TopicTreeNode
-                        key={topic.id}
-                        topic={topic}
+            <Reorder.Group
+              axis="y"
+              values={visibleBaseIds}
+              onReorder={handleReorder}
+              as="div"
+            >
+              {visibleBaseIds.map((baseId) => {
+                const base = baseMap.get(baseId)!;
+                const topics = groupedTopics.get(baseId)!;
+                return (
+                  <ReorderableBaseItem key={baseId} baseId={baseId}>
+                    {(dragControls) => (
+                      <BaseSection
+                        base={base}
+                        topics={topics}
+                        collapsed={collapsedBases.has(baseId)}
+                        onToggleCollapse={() => toggleBaseCollapse(baseId)}
+                        dragControls={dragControls}
                         pathname={pathname}
                         onSelect={setSelectedSlug}
                         selectedSlug={selectedSlug}
                         expandedIds={expandedIds}
                         onToggleExpand={onToggleExpand}
                       />
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroup>
-              );
-            })}
-            {/* Uncategorized topics (no collection) */}
+                    )}
+                  </ReorderableBaseItem>
+                );
+              })}
+            </Reorder.Group>
+            {/* Uncategorized topics (no base) */}
             {groupedTopics.get(null) && groupedTopics.get(null)!.length > 0 && (
               <SidebarGroup className="group-data-[collapsible=icon]:hidden">
                 <SidebarGroupLabel>Topics</SidebarGroupLabel>
-                {expandedIds.size > 0 && (
-                  <SidebarGroupAction
-                    title="Collapse all"
-                    className="text-muted-foreground/60 hover:text-foreground"
-                    onClick={() => setExpandedIds(new Set())}
-                  >
-                    <ArrowsInSimpleIcon weight="bold" />
-                  </SidebarGroupAction>
-                )}
                 <SidebarMenu className="gap-0">
                   {groupedTopics.get(null)!.map((topic) => (
                     <TopicTreeNode
@@ -428,4 +586,3 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
-
