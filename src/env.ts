@@ -14,6 +14,8 @@ export const env = createEnv({
     AUTH_GOOGLE_CLIENT_SECRET: z.string(),
     ADMIN_EMAILS: z.string().optional(),
     AGENT_REGISTRATION_SECRET: z.string().optional(),
+    PLATFORM_API_URL: z.string().url(),
+    PLATFORM_API_KEY: z.string(),
   },
   client: {
     NEXT_PUBLIC_URL: z.string().url(),
@@ -27,6 +29,8 @@ export const env = createEnv({
     NEXT_PUBLIC_URL: process.env.NEXT_PUBLIC_URL,
     ADMIN_EMAILS: process.env.ADMIN_EMAILS,
     AGENT_REGISTRATION_SECRET: process.env.AGENT_REGISTRATION_SECRET,
+    PLATFORM_API_URL: process.env.PLATFORM_API_URL,
+    PLATFORM_API_KEY: process.env.PLATFORM_API_KEY,
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

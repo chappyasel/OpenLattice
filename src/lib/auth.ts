@@ -4,6 +4,28 @@ import Google from "next-auth/providers/google";
 
 import { env } from "@/env";
 
+async function verifyPlatformUser(
+  email: string,
+): Promise<{ valid: boolean; user?: unknown }> {
+  try {
+    const res = await fetch(
+      `${env.PLATFORM_API_URL}/api/public/users/verifyUser`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${env.PLATFORM_API_KEY}`,
+        },
+        body: JSON.stringify({ email: email.toLowerCase() }),
+      },
+    );
+    if (!res.ok) return { valid: false };
+    return (await res.json()) as { valid: boolean; user?: unknown };
+  } catch {
+    return { valid: false };
+  }
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     Google({
@@ -12,7 +34,16 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       checks: [],
     }),
   ],
+  pages: {
+    signIn: "/signin",
+    error: "/signin",
+  },
   callbacks: {
+    async signIn({ user }) {
+      if (!user.email) return false;
+      const result = await verifyPlatformUser(user.email);
+      return result.valid;
+    },
     session({ session, token }) {
       return {
         ...session,
