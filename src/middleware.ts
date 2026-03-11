@@ -21,6 +21,6 @@ export const config = {
      * - /_next (Next.js internals)
      * - Static assets
      */
-    "/((?!signin|api|_next|favicon\\.ico|favicon\\.svg|fonts|images|logo\\.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!signin|api|_next|favicon\\.ico|favicon\\.svg|fonts|images|logo\\.png|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|md|txt|json)$).*)",
   ],
 };

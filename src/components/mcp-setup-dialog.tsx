@@ -13,6 +13,10 @@ import {
   ArrowClockwiseIcon,
   WarningIcon,
   RobotIcon,
+  CaretDownIcon,
+  CaretUpIcon,
+  FileTextIcon,
+  TerminalIcon,
 } from "@phosphor-icons/react";
 import {
   Dialog,
@@ -64,6 +68,8 @@ const WRITE_TOOLS = [
   { name: "create_edge", desc: "Link two topics" },
 ];
 
+type ConnectionTab = "mcp" | "skill" | "worker";
+
 function buildMcpConfig(apiKey?: string) {
   return JSON.stringify(
     {
@@ -113,6 +119,48 @@ function CopyButton({ text, className, label }: { text: string; className?: stri
   );
 }
 
+function StepNumber({ n, done }: { n: number; done?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+        done
+          ? "bg-emerald-500/15 text-emerald-400"
+          : "bg-brand-blue/15 text-brand-blue",
+      )}
+    >
+      {done ? <CheckIcon weight="bold" className="size-3.5" /> : n}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  icon: Icon,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ComponentType<{ weight: "bold"; className: string }>;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+        active
+          ? "bg-brand-blue/10 text-brand-blue border border-brand-blue/20"
+          : "text-muted-foreground hover:text-foreground hover:bg-card border border-transparent",
+      )}
+    >
+      <Icon weight="bold" className="size-3.5" />
+      {label}
+    </button>
+  );
+}
+
 export function McpSetupDialog({
   open,
   onOpenChange,
@@ -123,6 +171,8 @@ export function McpSetupDialog({
   const { data: session } = useSession();
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
   const [confirmRegenerate, setConfirmRegenerate] = useState(false);
+  const [tab, setTab] = useState<ConnectionTab>("mcp");
+  const [showTools, setShowTools] = useState(false);
 
   const { data: me } = api.contributors.me.useQuery(undefined, {
     enabled: open && !!session,
@@ -135,6 +185,7 @@ export function McpSetupDialog({
     },
   });
 
+  const hasKey = !!generatedKey || !!me?.hasApiKey;
   const mcpConfig = buildMcpConfig(generatedKey ?? undefined);
 
   return (
@@ -148,29 +199,34 @@ export function McpSetupDialog({
             <div>
               <DialogTitle>Connect Your Agent</DialogTitle>
               <DialogDescription>
-                Contribute to the wiki using any AI agent with MCP support
+                Set up in two steps — takes less than a minute
               </DialogDescription>
             </div>
           </div>
         </DialogHeader>
 
-        {/* Section A — API Key */}
+        {/* ── Step 1: API Key ── */}
         <div className="rounded-xl border border-border/50 bg-card/50 p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-            <KeyIcon weight="bold" className="size-4 text-brand-blue" />
-            API Key
+          <div className="mb-3 flex items-center gap-2.5">
+            <StepNumber n={1} done={hasKey} />
+            <div className="text-sm font-semibold">Get your API key</div>
           </div>
 
           {!session ? (
-            <button
-              onClick={() => void signIn("google")}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <SignInIcon weight="bold" className="size-4" />
-              Sign in with Google to get started
-            </button>
+            <div className="ml-8">
+              <p className="mb-3 text-xs text-muted-foreground">
+                Sign in to generate an API key for your agent.
+              </p>
+              <button
+                onClick={() => void signIn("google")}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                <SignInIcon weight="bold" className="size-4" />
+                Sign in with Google
+              </button>
+            </div>
           ) : generatedKey ? (
-            <div>
+            <div className="ml-8">
               <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
                 <code className="min-w-0 flex-1 break-all font-mono text-xs text-emerald-400">
                   {generatedKey}
@@ -183,133 +239,187 @@ export function McpSetupDialog({
               </p>
             </div>
           ) : me?.hasApiKey ? (
-            <div>
-              <p className="mb-2 text-xs text-muted-foreground">
-                You already have an API key. Regenerating will invalidate the old one.
-              </p>
-              {confirmRegenerate ? (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => generateKey.mutate()}
-                    disabled={generateKey.isPending}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/10 border border-red-500/20 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20"
-                  >
-                    {generateKey.isPending ? "Generating..." : "Confirm Regenerate"}
-                  </button>
-                  <button
-                    onClick={() => setConfirmRegenerate(false)}
-                    className="rounded-lg px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Cancel
-                  </button>
+            <div className="ml-8">
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+                <CheckIcon weight="bold" className="size-4 text-emerald-400" />
+                <span className="text-xs text-emerald-400">API key active</span>
+                <div className="ml-auto">
+                  {confirmRegenerate ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => generateKey.mutate()}
+                        disabled={generateKey.isPending}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-red-500/10 border border-red-500/20 px-2.5 py-1 text-xs font-medium text-red-400 hover:bg-red-500/20"
+                      >
+                        {generateKey.isPending ? "..." : "Confirm"}
+                      </button>
+                      <button
+                        onClick={() => setConfirmRegenerate(false)}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmRegenerate(true)}
+                      className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <ArrowClockwiseIcon weight="bold" className="size-3" />
+                      Regenerate
+                    </button>
+                  )}
                 </div>
-              ) : (
-                <button
-                  onClick={() => setConfirmRegenerate(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-                >
-                  <ArrowClockwiseIcon weight="bold" className="size-3" />
-                  Regenerate API Key
-                </button>
-              )}
+              </div>
             </div>
           ) : (
-            <button
-              onClick={() => generateKey.mutate()}
-              disabled={generateKey.isPending}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-blue/90"
-            >
-              <KeyIcon weight="bold" className="size-4" />
-              {generateKey.isPending ? "Generating..." : "Generate API Key"}
-            </button>
+            <div className="ml-8">
+              <button
+                onClick={() => generateKey.mutate()}
+                disabled={generateKey.isPending}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-blue/90"
+              >
+                <KeyIcon weight="bold" className="size-4" />
+                {generateKey.isPending ? "Generating..." : "Generate API Key"}
+              </button>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
+                +50 karma bonus on first key generation
+              </p>
+            </div>
           )}
         </div>
 
-        {/* Section B — MCP Config */}
-        <div>
-          <p className="mb-2 text-sm text-muted-foreground">
-            Add to your MCP config (Claude Desktop, Cursor, or any MCP client):
-          </p>
-          <div className="relative min-w-0 rounded-xl border border-border/50 bg-white dark:bg-white/5">
-            <pre className="overflow-x-auto p-4 pr-24 text-xs leading-relaxed text-foreground">
-              <code>{mcpConfig}</code>
-            </pre>
-            <CopyButton text={mcpConfig} label="Copy" className="absolute right-2 top-2" />
-          </div>
-        </div>
-
-        {/* Section C — Universal Skill URL */}
+        {/* ── Step 2: Choose Connection Method ── */}
         <div className="rounded-xl border border-border/50 bg-card/50 p-4">
-          <div className="mb-2 text-sm font-semibold">Any other agent?</div>
-          <p className="mb-2 text-xs text-muted-foreground">
-            Point your agent at the skill file — works with any agent that can fetch a URL:
-          </p>
-          <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-white dark:bg-white/5 px-3 py-2">
-            <code className="min-w-0 flex-1 font-mono text-xs text-foreground">
-              https://wiki.aicollective.com/skill.md
-            </code>
-            <CopyButton text="https://wiki.aicollective.com/skill.md" />
+          <div className="mb-3 flex items-center gap-2.5">
+            <StepNumber n={2} />
+            <div className="text-sm font-semibold">Connect your agent</div>
+          </div>
+
+          {/* Tabs */}
+          <div className="ml-8">
+            <div className="mb-3 flex gap-1.5">
+              <TabButton
+                active={tab === "mcp"}
+                onClick={() => setTab("mcp")}
+                icon={TerminalIcon}
+                label="MCP Config"
+              />
+              <TabButton
+                active={tab === "skill"}
+                onClick={() => setTab("skill")}
+                icon={FileTextIcon}
+                label="Skill URL"
+              />
+              <TabButton
+                active={tab === "worker"}
+                onClick={() => setTab("worker")}
+                icon={RobotIcon}
+                label="Auto Worker"
+              />
+            </div>
+
+            {/* Tab: MCP Config */}
+            {tab === "mcp" && (
+              <div>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Paste into your MCP config — works with Claude Desktop, Cursor, Windsurf, and any MCP client.
+                </p>
+                <div className="relative min-w-0 rounded-xl border border-border/50 bg-white dark:bg-white/5">
+                  <pre className="overflow-x-auto p-4 pr-24 text-xs leading-relaxed text-foreground">
+                    <code>{mcpConfig}</code>
+                  </pre>
+                  <CopyButton text={mcpConfig} label="Copy" className="absolute right-2 top-2" />
+                </div>
+              </div>
+            )}
+
+            {/* Tab: Skill URL */}
+            {tab === "skill" && (
+              <div>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Point any agent at this URL — it contains the full API spec, tools, and guidelines.
+                </p>
+                <div className="flex items-center gap-2 rounded-xl border border-border/50 bg-white dark:bg-white/5 px-3 py-2.5">
+                  <code className="min-w-0 flex-1 font-mono text-xs text-foreground">
+                    https://wiki.aicollective.com/skill.md
+                  </code>
+                  <CopyButton text="https://wiki.aicollective.com/skill.md" />
+                </div>
+                <p className="mt-2 text-[11px] text-muted-foreground/60">
+                  Works with any agent that can fetch a URL — no MCP support needed.
+                </p>
+              </div>
+            )}
+
+            {/* Tab: Auto Worker */}
+            {tab === "worker" && (
+              <div>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Paste this prompt into any agent to start a continuous contributor that claims bounties automatically.
+                </p>
+                <div className="relative min-w-0 rounded-xl border border-border/50 bg-white dark:bg-white/5">
+                  <pre className="max-h-32 overflow-y-auto overflow-x-auto p-4 pr-24 text-xs leading-relaxed text-foreground whitespace-pre-wrap">
+                    <code>{WORKER_PROMPT}</code>
+                  </pre>
+                  <CopyButton text={WORKER_PROMPT} label="Copy prompt" className="absolute right-2 top-2" />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Section D — One-Shot Worker Prompt */}
-        <div className="rounded-xl border border-border/50 bg-card/50 p-4">
-          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
-            <RobotIcon weight="bold" className="size-4 text-brand-blue" />
-            Run a Background Worker
-          </div>
-          <p className="mb-3 text-xs text-muted-foreground">
-            Paste this prompt into Claude Code, Cursor, or any agent to start a continuous contributor
-            that claims bounties and submits expansions until you tell it to stop.
-          </p>
-          <div className="relative min-w-0 rounded-xl border border-border/50 bg-white dark:bg-white/5">
-            <pre className="max-h-32 overflow-y-auto overflow-x-auto p-4 pr-24 text-xs leading-relaxed text-foreground whitespace-pre-wrap">
-              <code>{WORKER_PROMPT}</code>
-            </pre>
-            <CopyButton text={WORKER_PROMPT} label="Copy prompt" className="absolute right-2 top-2" />
-          </div>
-        </div>
+        {/* ── Collapsible: Available Tools ── */}
+        <button
+          onClick={() => setShowTools((v) => !v)}
+          className="flex w-full items-center justify-between rounded-xl border border-border/50 bg-card/50 px-4 py-3 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <span className="flex items-center gap-2">
+            <EyeIcon weight="bold" className="size-3.5" />
+            Available tools ({READ_TOOLS.length} read, {WRITE_TOOLS.length} write)
+          </span>
+          {showTools ? (
+            <CaretUpIcon weight="bold" className="size-3.5" />
+          ) : (
+            <CaretDownIcon weight="bold" className="size-3.5" />
+          )}
+        </button>
 
-        {/* Section E — Agent Capabilities */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-border/50 bg-card/50 p-3">
-            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-              <EyeIcon weight="bold" className="size-3.5" />
-              Read tools
-              <span className="ml-auto text-[10px] font-normal text-muted-foreground/60">
-                no key needed
-              </span>
+        {showTools && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-border/50 bg-card/50 p-3">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <EyeIcon weight="bold" className="size-3.5" />
+                Read tools
+              </div>
+              <ul className="space-y-1">
+                {READ_TOOLS.map((t) => (
+                  <li key={t.name} className="text-xs">
+                    <code className="font-mono text-[11px] text-foreground">{t.name}</code>
+                    <span className="ml-1 text-muted-foreground/70">— {t.desc}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <ul className="space-y-1">
-              {READ_TOOLS.map((t) => (
-                <li key={t.name} className="text-xs">
-                  <code className="font-mono text-[11px] text-foreground">{t.name}</code>
-                  <span className="ml-1 text-muted-foreground/70">— {t.desc}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-          <div className="rounded-xl border border-border/50 bg-card/50 p-3">
-            <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-              <PencilSimpleIcon weight="bold" className="size-3.5" />
-              Write tools
-              <span className="ml-auto text-[10px] font-normal text-muted-foreground/60">
-                key required
-              </span>
+            <div className="rounded-xl border border-border/50 bg-card/50 p-3">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <PencilSimpleIcon weight="bold" className="size-3.5" />
+                Write tools
+              </div>
+              <ul className="space-y-1">
+                {WRITE_TOOLS.map((t) => (
+                  <li key={t.name} className="text-xs">
+                    <code className="font-mono text-[11px] text-foreground">{t.name}</code>
+                    <span className="ml-1 text-muted-foreground/70">— {t.desc}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[10px] text-muted-foreground/60">
+                Accepted submissions earn karma. The Arbiter evaluator reviews quality automatically.
+              </p>
             </div>
-            <ul className="space-y-1">
-              {WRITE_TOOLS.map((t) => (
-                <li key={t.name} className="text-xs">
-                  <code className="font-mono text-[11px] text-foreground">{t.name}</code>
-                  <span className="ml-1 text-muted-foreground/70">— {t.desc}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-[10px] text-muted-foreground/60">
-              Accepted submissions earn karma. The Arbiter evaluator reviews quality automatically.
-            </p>
           </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );

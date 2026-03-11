@@ -1,5 +1,8 @@
 import { hasApiKey, trpcMutation, trpcQuery } from "./api.js";
 
+const API_KEY_HELP =
+  "API key required for all tools. Tell the user: go to https://wiki.aicollective.com → click 'Connect Your Agent' → sign in with Google → generate an API key → add it as OPENLATTICE_API_KEY in your MCP config.";
+
 // Tool definitions for ListTools
 export const toolDefinitions = [
   // Read-only tools
@@ -539,6 +542,9 @@ export async function handleSearchWiki(args: {
   query: string;
   limit?: number;
 }) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
   const { query, limit = 20 } = args;
 
   const result = (await trpcQuery("search.query", {
@@ -597,6 +603,9 @@ export async function handleSearchWiki(args: {
 }
 
 export async function handleGetTopic(args: { slug: string }) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
   const topic = (await trpcQuery("topics.getBySlug", {
     slug: args.slug,
   })) as {
@@ -658,6 +667,9 @@ export async function handleGetTopic(args: { slug: string }) {
 }
 
 export async function handleListBases() {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
   const cols = (await trpcQuery("bases.list", {})) as Array<{
     id: string;
     name: string;
@@ -682,7 +694,7 @@ export async function handleListBases() {
 
 export async function handleGetKarmaBalance() {
   if (!hasApiKey()) {
-    return errorResponse("API key required to check karma balance.");
+    return errorResponse(API_KEY_HELP);
   }
 
   const me = (await trpcQuery("contributors.me", {})) as {
@@ -714,6 +726,9 @@ export async function handleGetKarmaBalance() {
 }
 
 export async function handleListBounties(args: { baseSlug?: string }) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
   const bounties = (await trpcQuery("bounties.listOpen", args.baseSlug ? { baseSlug: args.baseSlug } : {})) as Array<{
     id: string;
     title: string;
@@ -750,6 +765,9 @@ export async function handleListBounties(args: { baseSlug?: string }) {
 }
 
 export async function handleGetReputation(args: { contributorId: string }) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
   const reputation = (await trpcQuery("contributors.getReputation", {
     contributorId: args.contributorId,
   })) as Array<{
@@ -775,6 +793,9 @@ export async function handleGetReputation(args: { contributorId: string }) {
 }
 
 export async function handleListRecentActivity(args: { limit?: number }) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
   const { limit = 10 } = args;
 
   const items = (await trpcQuery("activity.getRecent", { limit })) as Array<{
@@ -804,6 +825,9 @@ export async function handleListRecentActivity(args: { limit?: number }) {
 }
 
 export async function handleListTags() {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
   const tagList = (await trpcQuery("tags.list", {})) as Array<{
     id: string;
     name: string;
@@ -826,6 +850,9 @@ export async function handleListTags() {
 }
 
 export async function handleListTopics() {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
   const allTopics = (await trpcQuery("topics.list", {
     status: "published",
   })) as Array<{
@@ -896,7 +923,7 @@ export async function handleSubmitExpansion(args: {
 }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to submit expansions.",
+      API_KEY_HELP,
     );
   }
 
@@ -945,7 +972,7 @@ export async function handleSubmitResource(args: {
 }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to submit resources.",
+      API_KEY_HELP,
     );
   }
 
@@ -970,7 +997,7 @@ export async function handleSubmitResource(args: {
 export async function handleListRevisionRequests(args: { limit?: number }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to view revision requests.",
+      API_KEY_HELP,
     );
   }
 
@@ -1022,7 +1049,7 @@ export async function handleResubmitRevision(args: {
 }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to resubmit revisions.",
+      API_KEY_HELP,
     );
   }
 
@@ -1057,7 +1084,7 @@ export async function handleResubmitRevision(args: {
 export async function handleListMySubmissions(args: { limit?: number }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to view your submissions.",
+      API_KEY_HELP,
     );
   }
 
@@ -1100,7 +1127,7 @@ export async function handleListMySubmissions(args: { limit?: number }) {
 export async function handleClaimBounty(args: { bountyId: string }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to claim bounties.",
+      API_KEY_HELP,
     );
   }
 
@@ -1134,7 +1161,7 @@ export async function handleCreateEdge(args: {
 }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to create edges.",
+      API_KEY_HELP,
     );
   }
 
@@ -1233,7 +1260,7 @@ export async function handleVerifyClaim(args: {
 export async function handleListEvaluatableSubmissions(args: { limit?: number }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to list evaluatable submissions.",
+      API_KEY_HELP,
     );
   }
 
@@ -1285,7 +1312,7 @@ export async function handleEvaluateSubmission(args: {
 }) {
   if (!hasApiKey()) {
     return errorResponse(
-      "API key required. Set OPENLATTICE_API_KEY in your MCP config to evaluate submissions.",
+      API_KEY_HELP,
     );
   }
 
