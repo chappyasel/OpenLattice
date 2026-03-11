@@ -4,14 +4,9 @@ import localFont from "next/font/local";
 import { Toaster } from "sonner";
 
 import { TRPCReactProvider } from "@/trpc/react";
-import { api, HydrateClient } from "@/trpc/server";
+import { HydrateClient } from "@/trpc/server";
 import { Providers } from "@/components/providers";
 import { TopicProvider } from "@/components/topic-context";
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
-import { AppSidebar } from "@/components/app-sidebar";
-import { MobileBottomNav } from "@/components/mobile-bottom-nav";
-import { CommandMenu, CommandMenuProvider } from "@/components/command-menu";
-import { ThemeToggleShortcut } from "@/components/theme-toggle-shortcut";
 
 import "./globals.css";
 
@@ -96,11 +91,7 @@ export const metadata: Metadata = {
     ],
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-    void api.topics.listTree.prefetch();
-    void api.topics.list.prefetch({ status: "published" });
-    void api.tags.list.prefetch();
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
         <html
             lang="en"
@@ -112,19 +103,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                     <HydrateClient>
                         <Providers>
                             <TopicProvider>
-                                <CommandMenuProvider>
-                                    <SidebarProvider defaultOpen={true}>
-                                        <AppSidebar />
-                                        <SidebarInset>
-                                            <main className="min-w-0 flex-1 overflow-auto">
-                                                {children}
-                                            </main>
-                                        </SidebarInset>
-                                        <MobileBottomNav />
-                                    </SidebarProvider>
-                                    <CommandMenu />
-                                    <ThemeToggleShortcut />
-                                </CommandMenuProvider>
+                                {children}
                             </TopicProvider>
                             <Toaster />
                         </Providers>
