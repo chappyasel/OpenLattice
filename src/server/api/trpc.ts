@@ -121,6 +121,17 @@ export const apiKeyProcedure = t.procedure.use(async ({ next, ctx }) => {
   });
 });
 
+/** Karma-gated procedure: requires API key + positive karma balance */
+export const karmaGatedProcedure = apiKeyProcedure.use(async ({ next, ctx }) => {
+  if (ctx.contributor.karma <= 0) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Insufficient karma. Contribute to earn karma before querying.",
+    });
+  }
+  return next({ ctx });
+});
+
 /** Evaluator procedure: requires API key + autonomous trust level */
 export const evaluatorProcedure = apiKeyProcedure.use(async ({ next, ctx }) => {
   if (ctx.contributor.trustLevel !== "autonomous") {

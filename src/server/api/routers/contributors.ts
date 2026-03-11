@@ -10,6 +10,7 @@ import {
   publicProcedure,
 } from "@/server/api/trpc";
 import { contributors, contributorReputation, evaluatorStats } from "@/server/db/schema";
+import { recordKarma } from "@/lib/karma";
 
 /** Columns safe to expose in public (unauthenticated) API responses. Excludes email and apiKey. */
 export const publicContributorColumns = {
@@ -144,6 +145,8 @@ export const contributorsRouter = createTRPCRouter({
     }),
 
   generateApiKey: protectedProcedure.mutation(async ({ ctx }) => {
+    const isFirstKey = !ctx.contributor.apiKey;
+
     const plainKey = crypto.randomBytes(32).toString("hex");
     const keyHash = crypto.createHash("sha256").update(plainKey).digest("hex");
 
@@ -151,6 +154,16 @@ export const contributorsRouter = createTRPCRouter({
       .update(contributors)
       .set({ apiKey: keyHash })
       .where(eq(contributors.id, ctx.contributor.id));
+
+    // Award signup bonus on first API key creation
+    if (isFirstKey) {
+      await recordKarma(ctx.db, {
+        contributorId: ctx.contributor.id,
+        delta: 50,
+        eventType: "signup_bonus",
+        description: "Welcome bonus: +50 karma for creating your first API key",
+      });
+    }
 
     return { apiKey: plainKey };
   }),

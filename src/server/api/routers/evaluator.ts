@@ -4,6 +4,7 @@ import { z } from "zod";
 import { iconSchema } from "@/lib/phosphor-icons";
 import { computeConsensus, computeEvalKarma } from "@/lib/evaluator/consensus";
 import { checkTrustPromotion, checkTrustDemotion } from "@/lib/trust";
+import { recordKarma } from "@/lib/karma";
 import {
   createTRPCRouter,
   apiKeyProcedure,
@@ -51,12 +52,13 @@ async function completeBountyForSubmission(db: any, updated: any) {
       and(eq(bounties.id, bounty.id), inArray(bounties.status, ["open", "claimed"])),
     );
 
-  await db
-    .update(contributors)
-    .set({
-      karma: sql`${contributors.karma} + ${bounty.karmaReward}`,
-    })
-    .where(eq(contributors.id, updated.contributorId));
+  await recordKarma(db, {
+    contributorId: updated.contributorId,
+    delta: bounty.karmaReward,
+    eventType: "bounty_completed",
+    description: `Bounty completed: "${bounty.title}" (+${bounty.karmaReward} karma)`,
+    bountyId: bounty.id,
+  });
 
   await db.insert(activity).values({
     id: activityId("bounty-completed", updated.contributorId),
@@ -186,10 +188,14 @@ async function checkAndFinalizeConsensus(db: any, submissionId: string) {
 
   // 7d. Award contributor karma
   if (updatedSubmission.contributorId && finalReputationDelta !== 0) {
-    await db
-      .update(contributors)
-      .set({ karma: sql`${contributors.karma} + ${finalReputationDelta}` })
-      .where(eq(contributors.id, updatedSubmission.contributorId));
+    const eventType = finalReputationDelta > 0 ? "submission_approved" : "submission_rejected";
+    await recordKarma(db, {
+      contributorId: updatedSubmission.contributorId,
+      delta: finalReputationDelta,
+      eventType,
+      description: `Submission ${result.verdict}: ${finalReputationDelta > 0 ? "+" : ""}${finalReputationDelta} karma`,
+      submissionId,
+    });
   }
 
   // 7e. Update contributor stats (only for approve/reject, not revise)
@@ -241,12 +247,15 @@ async function checkAndFinalizeConsensus(db: any, submissionId: string) {
       .set(evalStatUpdate)
       .where(eq(evaluatorStats.contributorId, evaluation.evaluatorId));
 
-    // Add karma to contributor
+    // Add karma to evaluator
     if (evaluation.evaluatorId) {
-      await db
-        .update(contributors)
-        .set({ karma: sql`${contributors.karma} + ${evalKarma}` })
-        .where(eq(contributors.id, evaluation.evaluatorId));
+      await recordKarma(db, {
+        contributorId: evaluation.evaluatorId,
+        delta: evalKarma,
+        eventType: "evaluation_reward",
+        description: `Evaluation ${agreed ? "agreed" : "disagreed"} with consensus (${evalKarma > 0 ? "+" : ""}${evalKarma} karma)`,
+        submissionId,
+      });
     }
   }
 
@@ -387,12 +396,45 @@ export const evaluatorRouter = createTRPCRouter({
         }
 
         if (input.reputationDelta) {
-          await ctx.db
-            .update(contributors)
-            .set({
-              karma: sql`${contributors.karma} + ${input.reputationDelta}`,
-            })
-            .where(eq(contributors.id, updated.contributorId));
+          const eventType = input.reputationDelta > 0 ? "submission_approved" : "submission_rejected";
+          await recordKarma(ctx.db, {
+            contributorId: updated.contributorId,
+            delta: input.reputationDelta,
+            eventType,
+            description: `Submission ${verdictLabel}: ${input.reputationDelta > 0 ? "+" : ""}${input.reputationDelta} karma`,
+            submissionId: input.submissionId,
+          });
+        }
+
+        // Check trust promotion/demotion after stats update
+        if (input.verdict !== "revision_requested") {
+          const submitter = await ctx.db.query.contributors.findFirst({
+            where: eq(contributors.id, updated.contributorId),
+          });
+          if (submitter) {
+            const promotion = checkTrustPromotion(submitter);
+            const demotion = !promotion ? checkTrustDemotion(submitter) : null;
+            const newTrustLevel = promotion ?? demotion;
+
+            if (newTrustLevel) {
+              await ctx.db
+                .update(contributors)
+                .set({ trustLevel: newTrustLevel as any })
+                .where(eq(contributors.id, submitter.id));
+
+              await ctx.db.insert(activity).values({
+                id: activityId("trust-level-changed", submitter.id),
+                type: "trust_level_changed" as any,
+                contributorId: submitter.id,
+                description: `Trust level changed: ${submitter.trustLevel} → ${newTrustLevel}`,
+                data: {
+                  previousLevel: submitter.trustLevel,
+                  newLevel: newTrustLevel,
+                  reason: promotion ? "promotion" : "demotion",
+                },
+              });
+            }
+          }
         }
       }
 
@@ -727,12 +769,13 @@ export const evaluatorRouter = createTRPCRouter({
 
       if (updated) {
         // Award karma to the contributor
-        await ctx.db
-          .update(contributors)
-          .set({
-            karma: sql`${contributors.karma} + ${bounty.karmaReward}`,
-          })
-          .where(eq(contributors.id, input.contributorId));
+        await recordKarma(ctx.db, {
+          contributorId: input.contributorId,
+          delta: bounty.karmaReward,
+          eventType: "bounty_completed",
+          description: `Bounty completed: "${bounty.title}" (+${bounty.karmaReward} karma)`,
+          bountyId: bounty.id,
+        });
 
         await ctx.db.insert(activity).values({
           id: activityId("bounty-completed", input.contributorId),

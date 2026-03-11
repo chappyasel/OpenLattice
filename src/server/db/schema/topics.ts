@@ -15,7 +15,7 @@ import { difficultyEnum, topicStatusEnum } from "./enums";
 import { topicResources } from "./topicResources";
 import { topicTags } from "./tags";
 import { topicRevisions } from "./topicRevisions";
-import { practitionerNotes } from "./practitionerNotes";
+import { claims } from "./claims";
 
 export { difficultyEnum, topicStatusEnum };
 
@@ -87,7 +87,7 @@ export const topicsRelations = relations(topics, ({ one, many }) => ({
   topicResources: many(topicResources),
   topicTags: many(topicTags),
   revisions: many(topicRevisions),
-  practitionerNotes: many(practitionerNotes),
+  claims: many(claims),
 }));
 
 export type Topic = typeof topics.$inferSelect;

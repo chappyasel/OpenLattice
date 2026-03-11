@@ -15,4 +15,4 @@ export * from "./topicRevisions";
 export * from "./evaluations";
 export * from "./evaluatorStats";
 export * from "./karmaLedger";
-export * from "./practitionerNotes";
+export * from "./claims";
