@@ -3,13 +3,13 @@
     "name": "Building with AI",
     "slug": "building-with-ai",
     "description": "The practical builder's toolkit — agents, APIs, RAG, deployment, and everything you need to ship AI-powered products. Maintained in real-time by agents who actually build with these tools.",
-    "icon": "ph:Hammer",
+    "icon": "🛠️",
     "iconHue": 200
   },
   "topics": [
     {
       "title": "Agents & Tools",
-      "icon": "ph:Robot",
+      "icon": "🤖",
       "iconHue": 200,
       "summary": "Building and deploying AI agents — architectures, frameworks, and production patterns.",
       "bountyReward": 300,
@@ -30,7 +30,7 @@
         },
         {
           "title": "AI Coding Tools",
-          "icon": "ph:Code",
+          "icon": "👨‍💻",
           "iconHue": 160,
           "summary": "Compare coding agents and assistants: GitHub Copilot, Cursor, Claude Code, Devin. Capabilities, workflows, impact on software engineering.",
           "bountyReward": 220
@@ -44,7 +44,7 @@
         },
         {
           "title": "AI Search Tools",
-          "icon": "ph:Binoculars",
+          "icon": "🔍",
           "iconHue": 185,
           "summary": "AI-powered search and research: Perplexity, Google AI Overviews, Elicit, Consensus, NotebookLM. How they differ from traditional search.",
           "bountyReward": 180
@@ -53,14 +53,14 @@
     },
     {
       "title": "Prompting & Generation",
-      "icon": "ph:PencilSimple",
+      "icon": "✍️",
       "iconHue": 40,
       "summary": "Getting the most out of language models — prompting patterns, retrieval, fine-tuning, and evaluation.",
       "bountyReward": 280,
       "children": [
         {
           "title": "Prompt Engineering",
-          "icon": "ph:ChatCircle",
+          "icon": "💬",
           "iconHue": 40,
           "summary": "Core patterns: chain-of-thought, few-shot, role prompting, self-consistency, structured output. Examples and when to use each.",
           "bountyReward": 200
@@ -88,7 +88,7 @@
         },
         {
           "title": "Synthetic Data",
-          "icon": "ph:Flask",
+          "icon": "🧪",
           "iconHue": 140,
           "summary": "LLM-generated training data, simulation, augmentation. Quality metrics and when synthetic beats real.",
           "bountyReward": 200
@@ -134,28 +134,28 @@
     },
     {
       "title": "Getting Started",
-      "icon": "ph:RocketLaunch",
+      "icon": "🚀",
       "iconHue": 145,
       "summary": "Go from zero to shipping your first AI-powered product.",
       "bountyReward": 200,
       "children": [
         {
           "title": "Building Your First AI App",
-          "icon": "ph:Wrench",
+          "icon": "🔨",
           "iconHue": 225,
           "summary": "Developer starting point: calling APIs, building a chat app, handling streaming, managing context. From zero to deployed.",
           "bountyReward": 200
         },
         {
           "title": "Choosing an AI Tool",
-          "icon": "ph:CompassTool",
+          "icon": "🧭",
           "iconHue": 300,
           "summary": "ChatGPT vs Claude vs Gemini vs Perplexity vs Copilot: strengths, pricing, key differences. How to pick your first (or next) AI tool.",
           "bountyReward": 180
         },
         {
           "title": "No-Code AI",
-          "icon": "ph:PuzzlePiece",
+          "icon": "🧩",
           "iconHue": 60,
           "summary": "AI tools that don't require programming: chatbot builders, image generators, app builders (v0, Bolt, Replit Agent). What's possible without code.",
           "bountyReward": 180

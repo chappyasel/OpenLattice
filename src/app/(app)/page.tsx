@@ -14,9 +14,9 @@ import {
     TreasureChestIcon,
     ArrowsOutIcon,
     XIcon,
-    FolderIcon,
     NewspaperIcon,
 } from "@phosphor-icons/react";
+import { TopicIcon } from "@/components/topic-icon";
 import { McpSetupDialog } from "@/components/mcp-setup-dialog";
 import { GrainientBackground } from "@/components/ui/grainient-background";
 import { api } from "@/trpc/react";
@@ -274,7 +274,7 @@ export default function HomePage() {
                     </div>
 
                     {/* Suggested Topics */}
-                    <div className="mx-auto -mt-16 w-full max-w-3xl px-6 pb-8">
+                    <div className="mx-auto w-full max-w-3xl px-6 pb-8">
                         <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                             Suggested Topics
                         </h2>
@@ -334,19 +334,11 @@ export default function HomePage() {
                                             href={`/base/${col.slug}`}
                                             className="flex items-center gap-3 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 transition-all hover:bg-card"
                                         >
-                                            <div
-                                                className="flex size-10 shrink-0 items-center justify-center rounded-xl"
-                                                style={{
-                                                    backgroundColor: col.iconHue
-                                                        ? `hsl(${col.iconHue}, 60%, 95%)`
-                                                        : "hsl(210, 60%, 95%)",
-                                                }}
-                                            >
-                                                <FolderIcon
-                                                    weight="bold"
-                                                    className="size-5 text-brand-blue"
-                                                />
-                                            </div>
+                                            <TopicIcon
+                                                icon={col.icon}
+                                                hue={col.iconHue}
+                                                size="lg"
+                                            />
                                             <div className="flex-1">
                                                 <h3 className="text-sm font-semibold">
                                                     {col.name}
