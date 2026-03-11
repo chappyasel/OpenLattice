@@ -23,6 +23,7 @@ import {
   TagBadge,
 } from "@/components/badges";
 import { Breadcrumb } from "@/components/breadcrumb";
+import { MarkdownRenderer } from "@/components/markdown-renderer";
 import {
   Dialog,
   DialogContent,
@@ -167,6 +168,13 @@ export default function TopicPage({
             </div>
           </div>
         </div>
+
+        {/* Content */}
+        {topic.content && (
+          <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6 md:p-8 prose-sm">
+            <MarkdownRenderer content={topic.content} />
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="mb-6 flex gap-1 rounded-xl border border-border/50 bg-card p-1">

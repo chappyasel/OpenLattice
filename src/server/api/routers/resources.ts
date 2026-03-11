@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -115,6 +115,22 @@ export const resourcesRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      // Rate limit: 30 resource submissions per hour
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const [recentCount] = await ctx.db
+        .select({ count: count() })
+        .from(submissions)
+        .where(
+          and(
+            eq(submissions.contributorId, ctx.contributor.id),
+            eq(submissions.type, "resource"),
+            gte(submissions.createdAt, oneHourAgo),
+          ),
+        );
+      if (recentCount && recentCount.count >= 30) {
+        throw new Error("Rate limit: max 30 resource submissions per hour");
+      }
+
       const [submission] = await ctx.db
         .insert(submissions)
         .values({

@@ -33,30 +33,32 @@ export async function recordKarma(
   db: any,
   input: RecordKarmaInput,
 ): Promise<number> {
-  // 1. Update the contributor's karma balance and get the new value
-  const [updated] = await db
-    .update(contributors)
-    .set({
-      karma: sql`GREATEST(0, ${contributors.karma} + ${input.delta})`,
-    })
-    .where(eq(contributors.id, input.contributorId))
-    .returning({ karma: contributors.karma });
+  return db.transaction(async (tx: any) => {
+    // 1. Update the contributor's karma balance and get the new value
+    const [updated] = await tx
+      .update(contributors)
+      .set({
+        karma: sql`GREATEST(0, ${contributors.karma} + ${input.delta})`,
+      })
+      .where(eq(contributors.id, input.contributorId))
+      .returning({ karma: contributors.karma });
 
-  const newBalance = updated?.karma ?? 0;
+    const newBalance = updated?.karma ?? 0;
 
-  // 2. Insert ledger entry with the new balance
-  await db.insert(karmaLedger).values({
-    id: activityId("karma", input.contributorId),
-    contributorId: input.contributorId,
-    eventType: input.eventType,
-    delta: input.delta,
-    balance: newBalance,
-    description: input.description,
-    submissionId: input.submissionId ?? null,
-    bountyId: input.bountyId ?? null,
-    topicId: input.topicId ?? null,
-    collectionId: input.collectionId ?? null,
+    // 2. Insert ledger entry with the new balance
+    await tx.insert(karmaLedger).values({
+      id: activityId("karma", input.contributorId),
+      contributorId: input.contributorId,
+      eventType: input.eventType,
+      delta: input.delta,
+      balance: newBalance,
+      description: input.description,
+      submissionId: input.submissionId ?? null,
+      bountyId: input.bountyId ?? null,
+      topicId: input.topicId ?? null,
+      collectionId: input.collectionId ?? null,
+    });
+
+    return newBalance;
   });
-
-  return newBalance;
 }

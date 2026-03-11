@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, count, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import {
@@ -63,6 +63,22 @@ export const expansionsRouter = createTRPCRouter({
   submit: apiKeyProcedure
     .input(expansionSchema)
     .mutation(async ({ ctx, input }) => {
+      // Rate limit: 10 expansion submissions per hour
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const [recentCount] = await ctx.db
+        .select({ count: count() })
+        .from(submissions)
+        .where(
+          and(
+            eq(submissions.contributorId, ctx.contributor.id),
+            gte(submissions.createdAt, oneHourAgo),
+            eq(submissions.type, "expansion"),
+          ),
+        );
+      if (recentCount && recentCount.count >= 10) {
+        throw new Error("Rate limit: max 10 expansion submissions per hour");
+      }
+
       // If agent is autonomous, auto-apply
       const autoApply = ctx.contributor.trustLevel === "autonomous";
 

@@ -1,8 +1,8 @@
-import { and, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
-import { resources, topics } from "@/server/db/schema";
+import { resources, tags, topics, topicTags } from "@/server/db/schema";
 
 export const searchRouter = createTRPCRouter({
   query: publicProcedure
@@ -16,8 +16,170 @@ export const searchRouter = createTRPCRouter({
       const { q, limit } = input;
       const pattern = `%${q}%`;
 
-      const [matchedTopics, matchedResources] =
-        await Promise.all([
+      try {
+        // pg_trgm fuzzy search with similarity scoring
+        const titleSimilarity =
+          sql<number>`similarity(${topics.title}, ${q})`.as(
+            "title_similarity",
+          );
+        const nameSimilarity =
+          sql<number>`similarity(${resources.name}, ${q})`.as(
+            "name_similarity",
+          );
+
+        const [matchedTopicRows, matchedResources] = await Promise.all([
+          ctx.db
+            .select({
+              id: topics.id,
+              title: topics.title,
+              content: topics.content,
+              summary: topics.summary,
+              difficulty: topics.difficulty,
+              status: topics.status,
+              parentTopicId: topics.parentTopicId,
+              collectionId: topics.collectionId,
+              materializedPath: topics.materializedPath,
+              depth: topics.depth,
+              freshnessScore: topics.freshnessScore,
+              lastContributedAt: topics.lastContributedAt,
+              contributorCount: topics.contributorCount,
+              sourceCount: topics.sourceCount,
+              isFeatured: topics.isFeatured,
+              icon: topics.icon,
+              iconHue: topics.iconHue,
+              sortOrder: topics.sortOrder,
+              createdById: topics.createdById,
+              createdAt: topics.createdAt,
+              updatedAt: topics.updatedAt,
+              titleSimilarity,
+            })
+            .from(topics)
+            .where(
+              and(
+                eq(topics.status, "published"),
+                or(
+                  sql`similarity(${topics.title}, ${q}) > 0.1`,
+                  ilike(topics.content, pattern),
+                ),
+              ),
+            )
+            .orderBy(desc(titleSimilarity))
+            .limit(limit),
+          ctx.db
+            .select({
+              id: resources.id,
+              name: resources.name,
+              url: resources.url,
+              type: resources.type,
+              summary: resources.summary,
+              content: resources.content,
+              imageUrls: resources.imageUrls,
+              score: resources.score,
+              visibility: resources.visibility,
+              data: resources.data,
+              submittedById: resources.submittedById,
+              reviewedAt: resources.reviewedAt,
+              reviewNotes: resources.reviewNotes,
+              createdAt: resources.createdAt,
+              updatedAt: resources.updatedAt,
+              nameSimilarity,
+            })
+            .from(resources)
+            .where(
+              and(
+                eq(resources.visibility, "public"),
+                or(
+                  sql`similarity(${resources.name}, ${q}) > 0.1`,
+                  ilike(resources.summary, pattern),
+                ),
+              ),
+            )
+            .orderBy(desc(nameSimilarity))
+            .limit(limit),
+        ]);
+
+        // Fetch topicTags for matched topics to preserve the original response shape
+        const topicIds = matchedTopicRows.map((t) => t.id);
+        const topicTagRows =
+          topicIds.length > 0
+            ? await ctx.db
+                .select({
+                  topicTagId: topicTags.id,
+                  topicId: topicTags.topicId,
+                  tagId: topicTags.tagId,
+                  topicTagCreatedAt: topicTags.createdAt,
+                  tagId2: tags.id,
+                  tagName: tags.name,
+                  tagIconHue: tags.iconHue,
+                  tagIcon: tags.icon,
+                  tagDescription: tags.description,
+                  tagCreatedAt: tags.createdAt,
+                  tagUpdatedAt: tags.updatedAt,
+                })
+                .from(topicTags)
+                .innerJoin(tags, eq(topicTags.tagId, tags.id))
+                .where(
+                  sql`${topicTags.topicId} IN ${topicIds}`,
+                )
+            : [];
+
+        // Group tags by topic ID
+        const tagsByTopicId = new Map<
+          string,
+          Array<{
+            id: string;
+            topicId: string;
+            tagId: string;
+            createdAt: Date;
+            tag: {
+              id: string;
+              name: string;
+              iconHue: number;
+              icon: string;
+              description: string;
+              createdAt: Date;
+              updatedAt: Date;
+            };
+          }>
+        >();
+        for (const row of topicTagRows) {
+          const arr = tagsByTopicId.get(row.topicId) ?? [];
+          arr.push({
+            id: row.topicTagId,
+            topicId: row.topicId,
+            tagId: row.tagId,
+            createdAt: row.topicTagCreatedAt,
+            tag: {
+              id: row.tagId2,
+              name: row.tagName,
+              iconHue: row.tagIconHue,
+              icon: row.tagIcon,
+              description: row.tagDescription,
+              createdAt: row.tagCreatedAt,
+              updatedAt: row.tagUpdatedAt,
+            },
+          });
+          tagsByTopicId.set(row.topicId, arr);
+        }
+
+        const matchedTopics = matchedTopicRows.map(
+          ({ titleSimilarity: _sim, ...topic }) => ({
+            ...topic,
+            topicTags: tagsByTopicId.get(topic.id) ?? [],
+          }),
+        );
+
+        const matchedResourcesClean = matchedResources.map(
+          ({ nameSimilarity: _sim, ...resource }) => resource,
+        );
+
+        return {
+          topics: matchedTopics,
+          resources: matchedResourcesClean,
+        };
+      } catch {
+        // Fallback to ILIKE-only search if pg_trgm is not installed
+        const [matchedTopics, matchedResources] = await Promise.all([
           ctx.db.query.topics.findMany({
             where: and(
               eq(topics.status, "published"),
@@ -43,9 +205,10 @@ export const searchRouter = createTRPCRouter({
           }),
         ]);
 
-      return {
-        topics: matchedTopics,
-        resources: matchedResources,
-      };
+        return {
+          topics: matchedTopics,
+          resources: matchedResources,
+        };
+      }
     }),
 });
