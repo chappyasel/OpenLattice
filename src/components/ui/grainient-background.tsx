@@ -1,15 +1,19 @@
 "use client";
 
-import { useTheme } from "next-themes";
-import Grainient from "@/components/reactbits/grainient";
+import dynamic from "next/dynamic";
 
-export function GrainientBackground() {
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
+const Grainient = dynamic(() => import("@/components/reactbits/grainient"), {
+  ssr: false,
+});
 
-  return (
+export function GrainientBackground({
+  children,
+}: {
+  children?: React.ReactNode;
+}) {
+  const overlay = (
     <div
-      className="pointer-events-none fixed inset-0 z-0"
+      className="pointer-events-none fixed inset-0"
       style={{
         opacity: 0.7,
         maskImage:
@@ -20,10 +24,21 @@ export function GrainientBackground() {
     >
       <Grainient
         className="!absolute !inset-0"
-        color1={isDark ? "#1c1917" : "#f5f5f4"}
+        color1="#f5f5f4"
         color2="#0076db"
         color3="#ff640d"
       />
+    </div>
+  );
+
+  if (!children) return overlay;
+
+  return (
+    <div className="min-h-screen">
+      {overlay}
+      <div className="relative flex min-h-screen items-center justify-center p-4">
+        {children}
+      </div>
     </div>
   );
 }

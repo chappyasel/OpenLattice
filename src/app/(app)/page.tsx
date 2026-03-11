@@ -131,9 +131,9 @@ export default function HomePage() {
                     allTopics={allBreadcrumbs ?? []}
                 />
             ) : (
-                <div className="flex min-h-screen flex-col items-center justify-center pb-16">
+                <div className="flex flex-col items-center pb-16">
                     {/* Hero Section */}
-                    <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-12">
+                    <div className="relative flex flex-col items-center justify-center px-6 py-12">
                         <GrainientBackground />
 
                         <div className="relative text-center">
@@ -141,12 +141,18 @@ export default function HomePage() {
                             <div className="group mx-auto mb-4 flex justify-center">
                                 <motion.div
                                     className="relative size-36 drop-shadow-md"
+                                    animate={{
+                                        y: [0, -6, 0],
+                                    }}
                                     whileHover={{
                                         scale: 1.1,
                                         rotate: 3,
                                         filter: "drop-shadow(0 12px 20px rgba(0,0,0,0.2))",
                                     }}
-                                    transition={{ type: "spring", stiffness: 300, damping: 15 }}
+                                    transition={{
+                                        y: { duration: 3, repeat: Infinity, ease: "easeInOut" },
+                                        default: { type: "spring", stiffness: 300, damping: 15 },
+                                    }}
                                 >
                                     <Image
                                         src="/images/members/caik-1.png"
