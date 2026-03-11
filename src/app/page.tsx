@@ -14,6 +14,8 @@ import {
     TreasureChestIcon,
     ArrowsOutIcon,
     XIcon,
+    FolderIcon,
+    NewspaperIcon,
 } from "@phosphor-icons/react";
 import { McpSetupDialog } from "@/components/mcp-setup-dialog";
 import { GrainientBackground } from "@/components/ui/grainient-background";
@@ -57,6 +59,7 @@ export default function HomePage() {
         },
     );
     const { data: graphData } = api.graph.getFullGraph.useQuery();
+    const { data: collectionsData } = api.collections.list.useQuery();
     const { data: searchResults } = api.search.query.useQuery(
         { q: debouncedQuery },
         { enabled: debouncedQuery.length >= 2 },
@@ -310,6 +313,69 @@ export default function HomePage() {
                                   ))}
                         </div>
                     </div>
+
+                    {/* Collections */}
+                    {collectionsData && collectionsData.length > 0 && (
+                        <div className="mx-auto w-full max-w-3xl px-6 pb-8">
+                            <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                                Knowledge Collections
+                            </h2>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                {collectionsData.map((col) => (
+                                    <motion.div
+                                        key={col.id}
+                                        whileHover={{
+                                            scale: 1.02,
+                                            boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                                        }}
+                                        className="rounded-xl"
+                                    >
+                                        <Link
+                                            href={`/collection/${col.slug}`}
+                                            className="flex items-center gap-3 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 transition-all hover:bg-card"
+                                        >
+                                            <div
+                                                className="flex size-10 shrink-0 items-center justify-center rounded-xl"
+                                                style={{
+                                                    backgroundColor: col.iconHue
+                                                        ? `hsl(${col.iconHue}, 60%, 95%)`
+                                                        : "hsl(210, 60%, 95%)",
+                                                }}
+                                            >
+                                                <FolderIcon
+                                                    weight="bold"
+                                                    className="size-5 text-brand-blue"
+                                                />
+                                            </div>
+                                            <div className="flex-1">
+                                                <h3 className="text-sm font-semibold">
+                                                    {col.name}
+                                                </h3>
+                                                {col.description && (
+                                                    <p className="text-xs text-muted-foreground line-clamp-1">
+                                                        {col.description}
+                                                    </p>
+                                                )}
+                                            </div>
+                                            <ArrowRightIcon
+                                                weight="bold"
+                                                className="size-4 text-muted-foreground"
+                                            />
+                                        </Link>
+                                    </motion.div>
+                                ))}
+                            </div>
+                            <div className="mt-3 text-center">
+                                <Link
+                                    href="/digest"
+                                    className="inline-flex items-center gap-1.5 text-xs text-brand-blue hover:underline"
+                                >
+                                    <NewspaperIcon weight="bold" className="size-3.5" />
+                                    View Weekly Digest
+                                </Link>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Graph Preview */}
                     <div className="mx-auto w-full max-w-4xl px-6 pb-8">

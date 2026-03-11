@@ -14,6 +14,7 @@ import {
   TreasureChestIcon,
   TrophyIcon,
   ShieldCheckIcon,
+  NewspaperIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { useTopicContext } from "@/components/topic-context";
@@ -190,6 +191,7 @@ export function AppSidebar() {
     { href: "/", label: "Home", icon: HouseIcon },
     { href: "/bounties", label: "Bounties", icon: TreasureChestIcon },
     { href: "/leaderboard", label: "Leaderboard", icon: TrophyIcon },
+    { href: "/digest", label: "Digest", icon: NewspaperIcon },
   ];
 
   return (

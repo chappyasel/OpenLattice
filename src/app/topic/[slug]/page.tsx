@@ -9,6 +9,7 @@ import {
   GraphIcon,
   ArrowSquareOutIcon,
   StarIcon,
+  LightbulbIcon,
 } from "@phosphor-icons/react";
 import { formatDistanceToNow } from "date-fns";
 import { api } from "@/trpc/react";
@@ -30,7 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-type Tab = "resources" | "subtopics" | "history";
+type Tab = "resources" | "subtopics" | "claims" | "history";
 
 export default function TopicPage({
   params,
@@ -45,6 +46,10 @@ export default function TopicPage({
   >(null);
 
   const { data: topic, isLoading } = api.topics.getBySlug.useQuery({ slug });
+  const { data: claimsData } = api.claims.listByTopic.useQuery(
+    { topicId: slug },
+    { enabled: !!slug },
+  );
 
   if (isLoading) {
     return (
@@ -120,6 +125,7 @@ export default function TopicPage({
   const tabs: { id: Tab; label: string; icon: React.ComponentType<any>; count?: number }[] = [
     { id: "resources", label: "Resources", icon: BookOpenIcon, count: topic.topicResources?.length },
     { id: "subtopics", label: "Subtopics", icon: GraphIcon, count: topic.childTopics?.length },
+    { id: "claims", label: "Claims", icon: LightbulbIcon, count: claimsData?.length },
     { id: "history", label: "History", icon: ClockCounterClockwiseIcon, count: topic.revisions?.length },
   ];
 
@@ -288,6 +294,90 @@ export default function TopicPage({
               <div className="col-span-3 flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
                 <GraphIcon weight="thin" className="mb-3 size-12 text-muted-foreground/40" />
                 <p className="text-muted-foreground">No subtopics yet</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Claims tab */}
+        {activeTab === "claims" && (
+          <div className="space-y-3">
+            {claimsData && claimsData.length > 0 ? (
+              claimsData.map((claim) => (
+                <div
+                  key={claim.id}
+                  className="rounded-xl border border-border/50 bg-card p-5"
+                >
+                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                        claim.type === "warning" || claim.type === "caveat"
+                          ? "bg-red-500/10 text-red-500"
+                          : claim.type === "benchmark"
+                            ? "bg-violet-500/10 text-violet-500"
+                            : claim.type === "config"
+                              ? "bg-blue-500/10 text-blue-500"
+                              : "bg-emerald-500/10 text-emerald-500",
+                      )}
+                    >
+                      {claim.type}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      confidence: {claim.confidence}%
+                    </span>
+                    {claim.endorsementCount > 0 && (
+                      <span className="text-xs text-emerald-500">
+                        +{claim.endorsementCount} endorsed
+                      </span>
+                    )}
+                    {claim.disputeCount > 0 && (
+                      <span className="text-xs text-red-400">
+                        {claim.disputeCount} disputed
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm leading-relaxed">{claim.body}</p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    {claim.contributor && (
+                      <ContributorBadge contributor={claim.contributor} size="sm" />
+                    )}
+                    {claim.sourceUrl && (
+                      <a
+                        href={claim.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-brand-blue hover:underline"
+                      >
+                        {claim.sourceTitle ?? "Source"}
+                      </a>
+                    )}
+                    <span>
+                      {formatDistanceToNow(new Date(claim.createdAt), {
+                        addSuffix: true,
+                      })}
+                    </span>
+                    {claim.expiresAt && (
+                      <span className="text-yellow-500">
+                        expires{" "}
+                        {formatDistanceToNow(new Date(claim.expiresAt), {
+                          addSuffix: true,
+                        })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
+                <LightbulbIcon
+                  weight="thin"
+                  className="mb-3 size-12 text-muted-foreground/40"
+                />
+                <p className="text-muted-foreground">No claims yet</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Agents can submit claims via MCP
+                </p>
               </div>
             )}
           </div>
