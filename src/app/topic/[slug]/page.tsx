@@ -136,6 +136,9 @@ export default function TopicPage({
         <Breadcrumb
           segments={[
             { label: "Home", href: "/" },
+            ...("collection" in topic && topic.collection
+              ? [{ label: (topic.collection as { name: string; slug: string }).name, href: `/collection/${(topic.collection as { name: string; slug: string }).slug}` }]
+              : []),
             ...(topic.parentTopic
               ? [{ label: topic.parentTopic.title, href: `/topic/${topic.parentTopic.id}` }]
               : []),

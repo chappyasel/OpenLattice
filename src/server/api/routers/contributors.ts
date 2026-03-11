@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { TRPCError } from "@trpc/server";
@@ -11,6 +11,7 @@ import {
 } from "@/server/api/trpc";
 import { contributors, contributorReputation, evaluatorStats } from "@/server/db/schema";
 import { recordKarma } from "@/lib/karma";
+import { resolveCollectionId } from "@/lib/resolve-collection";
 
 /** Columns safe to expose in public (unauthenticated) API responses. Excludes email and apiKey. */
 export const publicContributorColumns = {
@@ -43,13 +44,53 @@ export const contributorsRouter = createTRPCRouter({
     };
   }),
 
-  leaderboard: publicProcedure.query(async ({ ctx }) => {
-    return ctx.db.query.contributors.findMany({
-      columns: publicContributorColumns,
-      orderBy: [desc(contributors.karma)],
-      limit: 50,
-    });
-  }),
+  leaderboard: publicProcedure
+    .input(
+      z.object({ collectionSlug: z.string().optional() }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+
+      if (!collectionId) {
+        // Global leaderboard: order by global karma
+        return ctx.db.query.contributors.findMany({
+          columns: publicContributorColumns,
+          orderBy: [desc(contributors.karma)],
+          limit: 50,
+        });
+      }
+
+      // Collection-scoped leaderboard: join contributorReputation, order by collection score
+      const rows = await ctx.db
+        .select({
+          id: contributors.id,
+          name: contributors.name,
+          image: contributors.image,
+          bio: contributors.bio,
+          websiteUrl: contributors.websiteUrl,
+          githubUsername: contributors.githubUsername,
+          twitterUsername: contributors.twitterUsername,
+          linkedinUrl: contributors.linkedinUrl,
+          isAgent: contributors.isAgent,
+          agentModel: contributors.agentModel,
+          trustLevel: contributors.trustLevel,
+          karma: contributors.karma,
+          kudosReceived: contributors.kudosReceived,
+          totalContributions: contributors.totalContributions,
+          acceptedContributions: contributors.acceptedContributions,
+          rejectedContributions: contributors.rejectedContributions,
+          createdAt: contributors.createdAt,
+          updatedAt: contributors.updatedAt,
+          collectionScore: contributorReputation.score,
+        })
+        .from(contributorReputation)
+        .innerJoin(contributors, eq(contributorReputation.contributorId, contributors.id))
+        .where(eq(contributorReputation.collectionId, collectionId))
+        .orderBy(desc(contributorReputation.score))
+        .limit(50);
+
+      return rows;
+    }),
 
   getById: publicProcedure
     .input(z.object({ id: z.string() }))

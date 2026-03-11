@@ -1,8 +1,9 @@
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
-import { resources, tags, topics, topicTags } from "@/server/db/schema";
+import { resources, tags, topics, topicResources, topicTags } from "@/server/db/schema";
+import { resolveCollectionId } from "@/lib/resolve-collection";
 
 export const searchRouter = createTRPCRouter({
   query: publicProcedure
@@ -10,11 +11,13 @@ export const searchRouter = createTRPCRouter({
       z.object({
         q: z.string().min(1),
         limit: z.number().int().min(1).max(100).default(20),
+        collectionSlug: z.string().optional(),
       }),
     )
     .query(async ({ ctx, input }) => {
       const { q, limit } = input;
       const pattern = `%${q}%`;
+      const collectionId = await resolveCollectionId(ctx.db, input.collectionSlug);
 
       try {
         // pg_trgm fuzzy search with similarity scoring
@@ -26,6 +29,40 @@ export const searchRouter = createTRPCRouter({
           sql<number>`similarity(${resources.name}, ${q})`.as(
             "name_similarity",
           );
+
+        // Build topic conditions
+        const topicConditions = [
+          eq(topics.status, "published"),
+          or(
+            sql`similarity(${topics.title}, ${q}) > 0.1`,
+            ilike(topics.content, pattern),
+          ),
+        ];
+        if (collectionId) {
+          topicConditions.push(eq(topics.collectionId, collectionId));
+        }
+
+        // Build resource conditions
+        const resourceConditions = [
+          eq(resources.visibility, "public"),
+          or(
+            sql`similarity(${resources.name}, ${q}) > 0.1`,
+            ilike(resources.summary, pattern),
+          ),
+        ];
+        // Filter resources by collection via topicResources → topics
+        if (collectionId) {
+          resourceConditions.push(
+            inArray(
+              resources.id,
+              ctx.db
+                .select({ id: topicResources.resourceId })
+                .from(topicResources)
+                .innerJoin(topics, eq(topicResources.topicId, topics.id))
+                .where(eq(topics.collectionId, collectionId)),
+            ),
+          );
+        }
 
         const [matchedTopicRows, matchedResources] = await Promise.all([
           ctx.db
@@ -54,15 +91,7 @@ export const searchRouter = createTRPCRouter({
               titleSimilarity,
             })
             .from(topics)
-            .where(
-              and(
-                eq(topics.status, "published"),
-                or(
-                  sql`similarity(${topics.title}, ${q}) > 0.1`,
-                  ilike(topics.content, pattern),
-                ),
-              ),
-            )
+            .where(and(...topicConditions))
             .orderBy(desc(titleSimilarity))
             .limit(limit),
           ctx.db
@@ -85,15 +114,7 @@ export const searchRouter = createTRPCRouter({
               nameSimilarity,
             })
             .from(resources)
-            .where(
-              and(
-                eq(resources.visibility, "public"),
-                or(
-                  sql`similarity(${resources.name}, ${q}) > 0.1`,
-                  ilike(resources.summary, pattern),
-                ),
-              ),
-            )
+            .where(and(...resourceConditions))
             .orderBy(desc(nameSimilarity))
             .limit(limit),
         ]);
@@ -179,28 +200,47 @@ export const searchRouter = createTRPCRouter({
         };
       } catch {
         // Fallback to ILIKE-only search if pg_trgm is not installed
+        const fallbackTopicConditions = [
+          eq(topics.status, "published"),
+          or(
+            ilike(topics.title, pattern),
+            ilike(topics.content, pattern),
+          ),
+        ];
+        if (collectionId) {
+          fallbackTopicConditions.push(eq(topics.collectionId, collectionId));
+        }
+
+        const fallbackResourceConditions = [
+          eq(resources.visibility, "public"),
+          or(
+            ilike(resources.name, pattern),
+            ilike(resources.summary, pattern),
+          ),
+        ];
+        if (collectionId) {
+          fallbackResourceConditions.push(
+            inArray(
+              resources.id,
+              ctx.db
+                .select({ id: topicResources.resourceId })
+                .from(topicResources)
+                .innerJoin(topics, eq(topicResources.topicId, topics.id))
+                .where(eq(topics.collectionId, collectionId)),
+            ),
+          );
+        }
+
         const [matchedTopics, matchedResources] = await Promise.all([
           ctx.db.query.topics.findMany({
-            where: and(
-              eq(topics.status, "published"),
-              or(
-                ilike(topics.title, pattern),
-                ilike(topics.content, pattern),
-              ),
-            ),
+            where: and(...fallbackTopicConditions),
             with: {
               topicTags: { with: { tag: true } },
             },
             limit,
           }),
           ctx.db.query.resources.findMany({
-            where: and(
-              eq(resources.visibility, "public"),
-              or(
-                ilike(resources.name, pattern),
-                ilike(resources.summary, pattern),
-              ),
-            ),
+            where: and(...fallbackResourceConditions),
             limit,
           }),
         ]);

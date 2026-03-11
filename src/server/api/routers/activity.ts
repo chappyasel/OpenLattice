@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { createTRPCRouter, publicProcedure } from "@/server/api/trpc";
 import { activity } from "@/server/db/schema";
+import { resolveCollectionId } from "@/lib/resolve-collection";
 import { publicContributorColumns } from "./contributors";
 
 export const activityRouter = createTRPCRouter({
@@ -26,18 +27,23 @@ export const activityRouter = createTRPCRouter({
             .optional(),
           contributorId: z.string().optional(),
           topicId: z.string().optional(),
+          collectionSlug: z.string().optional(),
           limit: z.number().int().min(1).max(100).default(50),
           cursor: z.string().optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
+      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+
       const conditions = [];
       if (input?.type) conditions.push(eq(activity.type, input.type));
       if (input?.contributorId)
         conditions.push(eq(activity.contributorId, input.contributorId));
       if (input?.topicId)
         conditions.push(eq(activity.topicId, input.topicId));
+      if (collectionId)
+        conditions.push(eq(activity.collectionId, collectionId));
 
       const items = await ctx.db.query.activity.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
@@ -60,9 +66,17 @@ export const activityRouter = createTRPCRouter({
     }),
 
   getRecent: publicProcedure
-    .input(z.object({ limit: z.number().int().min(1).max(50).default(10) }).optional())
+    .input(
+      z.object({
+        limit: z.number().int().min(1).max(50).default(10),
+        collectionSlug: z.string().optional(),
+      }).optional(),
+    )
     .query(async ({ ctx, input }) => {
+      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+
       return ctx.db.query.activity.findMany({
+        where: collectionId ? eq(activity.collectionId, collectionId) : undefined,
         with: {
           contributor: { columns: publicContributorColumns },
           topic: true,

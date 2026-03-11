@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { formatTimestamp, generateUniqueId, slugify } from "@/lib/utils";
 import { iconSchema } from "@/lib/phosphor-icons";
+import { resolveCollectionId } from "@/lib/resolve-collection";
 import {
   adminProcedure,
   apiKeyProcedure,
@@ -14,42 +15,56 @@ import { bounties, contributors, submissions } from "@/server/db/schema";
 import { publicContributorColumns } from "./contributors";
 
 export const bountiesRouter = createTRPCRouter({
-  listOpen: publicProcedure.query(async ({ ctx }) => {
-    // Lazy expiration: reset stale claims back to open
-    await ctx.db
-      .update(bounties)
-      .set({
-        status: "open",
-        claimedById: null,
-        claimedAt: null,
-        claimExpiresAt: null,
-      })
-      .where(
-        and(
-          eq(bounties.status, "claimed"),
-          lt(bounties.claimExpiresAt, new Date()),
-        ),
-      );
+  listOpen: publicProcedure
+    .input(
+      z.object({ collectionSlug: z.string().optional() }).optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
 
-    return ctx.db.query.bounties.findMany({
-      where: inArray(bounties.status, ["open", "claimed"]),
-      with: {
-        topic: true,
-        claimedBy: { columns: publicContributorColumns },
-      },
-      orderBy: (b, { desc }) => [desc(b.karmaReward), desc(b.createdAt)],
-    });
-  }),
+      // Lazy expiration: reset stale claims back to open
+      await ctx.db
+        .update(bounties)
+        .set({
+          status: "open",
+          claimedById: null,
+          claimedAt: null,
+          claimExpiresAt: null,
+        })
+        .where(
+          and(
+            eq(bounties.status, "claimed"),
+            lt(bounties.claimExpiresAt, new Date()),
+          ),
+        );
+
+      const conditions = [inArray(bounties.status, ["open", "claimed"])];
+      if (collectionId) {
+        conditions.push(eq(bounties.collectionId, collectionId));
+      }
+
+      return ctx.db.query.bounties.findMany({
+        where: and(...conditions),
+        with: {
+          topic: true,
+          claimedBy: { columns: publicContributorColumns },
+        },
+        orderBy: (b, { desc }) => [desc(b.karmaReward), desc(b.createdAt)],
+      });
+    }),
 
   list: publicProcedure
     .input(
       z
         .object({
           status: z.enum(["open", "claimed", "completed", "cancelled"]).optional(),
+          collectionSlug: z.string().optional(),
         })
         .optional(),
     )
     .query(async ({ ctx, input }) => {
+      const collectionId = await resolveCollectionId(ctx.db, input?.collectionSlug);
+
       // Lazy expiration: reset stale claims back to open (same as listOpen)
       await ctx.db
         .update(bounties)
@@ -66,8 +81,12 @@ export const bountiesRouter = createTRPCRouter({
           ),
         );
 
+      const conditions = [];
+      if (input?.status) conditions.push(eq(bounties.status, input.status));
+      if (collectionId) conditions.push(eq(bounties.collectionId, collectionId));
+
       return ctx.db.query.bounties.findMany({
-        where: input?.status ? eq(bounties.status, input.status) : undefined,
+        where: conditions.length > 0 ? and(...conditions) : undefined,
         with: {
           topic: true,
           claimedBy: { columns: publicContributorColumns },

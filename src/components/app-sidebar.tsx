@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -41,6 +41,7 @@ interface TreeTopic {
   id: string;
   title: string;
   parentTopicId: string | null;
+  collectionId: string | null;
   icon: string | null;
   iconHue: number | null;
   childCount: number;
@@ -177,6 +178,10 @@ export function AppSidebar() {
     staleTime: 5 * 60 * 1000,
     gcTime: Infinity,
   });
+  const { data: collections } = api.collections.list.useQuery(undefined, {
+    staleTime: 5 * 60 * 1000,
+    gcTime: Infinity,
+  });
   const { data: allTags } = api.tags.list.useQuery(undefined, {
     staleTime: 5 * 60 * 1000,
     gcTime: Infinity,
@@ -186,6 +191,19 @@ export function AppSidebar() {
     gcTime: Infinity,
   });
   const { data: isAdmin } = api.admin.isAdmin.useQuery();
+
+  // Group root topics by collection
+  const groupedTopics = useMemo(() => {
+    if (!rootTopics) return null;
+    const byCollection = new Map<string | null, TreeTopic[]>();
+    for (const topic of rootTopics) {
+      const key = topic.collectionId;
+      const arr = byCollection.get(key) ?? [];
+      arr.push(topic);
+      byCollection.set(key, arr);
+    }
+    return byCollection;
+  }, [rootTopics]);
 
   const navItems = [
     { href: "/", label: "Home", icon: HouseIcon },
@@ -289,31 +307,90 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
 
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          <SidebarGroupLabel>Topics</SidebarGroupLabel>
-          {expandedIds.size > 0 && (
-            <SidebarGroupAction
-              title="Collapse all"
-              className="text-muted-foreground/60 hover:text-foreground"
-              onClick={() => setExpandedIds(new Set())}
-            >
-              <ArrowsInSimpleIcon weight="bold" />
-            </SidebarGroupAction>
-          )}
-          <SidebarMenu className="gap-0">
-            {rootTopics?.map((topic) => (
-              <TopicTreeNode
-                key={topic.id}
-                topic={topic}
-                pathname={pathname}
-                onSelect={setSelectedSlug}
-                selectedSlug={selectedSlug}
-                expandedIds={expandedIds}
-                onToggleExpand={onToggleExpand}
-              />
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
+        {groupedTopics && collections ? (
+          <>
+            {collections.map((collection) => {
+              const topics = groupedTopics.get(collection.id);
+              if (!topics || topics.length === 0) return null;
+              return (
+                <SidebarGroup key={collection.id} className="group-data-[collapsible=icon]:hidden">
+                  <SidebarGroupLabel asChild>
+                    <Link href={`/collection/${collection.slug}`} className="hover:text-foreground">
+                      {collection.name}
+                    </Link>
+                  </SidebarGroupLabel>
+                  {expandedIds.size > 0 && (
+                    <SidebarGroupAction
+                      title="Collapse all"
+                      className="text-muted-foreground/60 hover:text-foreground"
+                      onClick={() => setExpandedIds(new Set())}
+                    >
+                      <ArrowsInSimpleIcon weight="bold" />
+                    </SidebarGroupAction>
+                  )}
+                  <SidebarMenu className="gap-0">
+                    {topics.map((topic) => (
+                      <TopicTreeNode
+                        key={topic.id}
+                        topic={topic}
+                        pathname={pathname}
+                        onSelect={setSelectedSlug}
+                        selectedSlug={selectedSlug}
+                        expandedIds={expandedIds}
+                        onToggleExpand={onToggleExpand}
+                      />
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroup>
+              );
+            })}
+            {/* Uncategorized topics (no collection) */}
+            {groupedTopics.get(null) && groupedTopics.get(null)!.length > 0 && (
+              <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+                <SidebarGroupLabel>Topics</SidebarGroupLabel>
+                {expandedIds.size > 0 && (
+                  <SidebarGroupAction
+                    title="Collapse all"
+                    className="text-muted-foreground/60 hover:text-foreground"
+                    onClick={() => setExpandedIds(new Set())}
+                  >
+                    <ArrowsInSimpleIcon weight="bold" />
+                  </SidebarGroupAction>
+                )}
+                <SidebarMenu className="gap-0">
+                  {groupedTopics.get(null)!.map((topic) => (
+                    <TopicTreeNode
+                      key={topic.id}
+                      topic={topic}
+                      pathname={pathname}
+                      onSelect={setSelectedSlug}
+                      selectedSlug={selectedSlug}
+                      expandedIds={expandedIds}
+                      onToggleExpand={onToggleExpand}
+                    />
+                  ))}
+                </SidebarMenu>
+              </SidebarGroup>
+            )}
+          </>
+        ) : (
+          <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+            <SidebarGroupLabel>Topics</SidebarGroupLabel>
+            <SidebarMenu className="gap-0">
+              {rootTopics?.map((topic) => (
+                <TopicTreeNode
+                  key={topic.id}
+                  topic={topic}
+                  pathname={pathname}
+                  onSelect={setSelectedSlug}
+                  selectedSlug={selectedSlug}
+                  expandedIds={expandedIds}
+                  onToggleExpand={onToggleExpand}
+                />
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
 
         <SidebarGroup className="group-data-[collapsible=icon]:hidden">
           {allTags && allTags.length > 0 && (

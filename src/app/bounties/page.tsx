@@ -202,7 +202,13 @@ function BountyDetailDialog({
 }
 
 export default function BountiesPage() {
-  const { data: bounties, isLoading } = api.bounties.list.useQuery();
+  const [collectionFilter, setCollectionFilter] = useQueryState("collection", {
+    shallow: true,
+  });
+  const { data: collections } = api.collections.list.useQuery();
+  const { data: bounties, isLoading } = api.bounties.list.useQuery(
+    collectionFilter ? { collectionSlug: collectionFilter } : undefined,
+  );
   const [selectedBountyId, setSelectedBountyId] = useQueryState("bounty", {
     shallow: true,
   });
@@ -249,6 +255,37 @@ export default function BountiesPage() {
             <p className="text-xs text-muted-foreground">Completed</p>
           </div>
         </div>
+
+        {/* Collection Filter */}
+        {collections && collections.length > 0 && (
+          <div className="mb-6 flex flex-wrap gap-2">
+            <button
+              onClick={() => setCollectionFilter(null)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                !collectionFilter
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+            >
+              All
+            </button>
+            {collections.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setCollectionFilter(c.slug)}
+                className={cn(
+                  "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                  collectionFilter === c.slug
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Open Bounties */}
         <div className="mb-8">

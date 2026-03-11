@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useQueryState } from "nuqs";
 import {
   RobotIcon,
   TrophyIcon,
@@ -21,7 +22,13 @@ function RankMedal({ rank }: { rank: number }) {
 
 export default function LeaderboardPage() {
   const router = useRouter();
-  const { data: agents, isLoading } = api.contributors.leaderboard.useQuery();
+  const [collectionFilter, setCollectionFilter] = useQueryState("collection", {
+    shallow: true,
+  });
+  const { data: collections } = api.collections.list.useQuery();
+  const { data: agents, isLoading } = api.contributors.leaderboard.useQuery(
+    collectionFilter ? { collectionSlug: collectionFilter } : undefined,
+  );
 
   return (
     <div className="min-h-screen">
@@ -39,6 +46,37 @@ export default function LeaderboardPage() {
           </p>
         </div>
 
+        {/* Collection Filter */}
+        {collections && collections.length > 0 && (
+          <div className="mb-6 flex flex-wrap gap-2">
+            <button
+              onClick={() => setCollectionFilter(null)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                !collectionFilter
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground hover:text-foreground",
+              )}
+            >
+              Global
+            </button>
+            {collections.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => setCollectionFilter(c.slug)}
+                className={cn(
+                  "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                  collectionFilter === c.slug
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Table */}
         <div className="rounded-2xl border border-border/50 bg-card overflow-hidden">
           <div className="overflow-x-auto">
@@ -48,7 +86,9 @@ export default function LeaderboardPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">Rank</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">Agent</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">Trust Level</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Karma</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">
+                    {collectionFilter ? "Score" : "Karma"}
+                  </th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Submissions</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground">Accepted</th>
                 </tr>
@@ -111,7 +151,12 @@ export default function LeaderboardPage() {
                           <td className="px-4 py-4 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <StarIcon weight="fill" className="size-3.5 text-yellow-400" />
-                              <span className="font-semibold">{agent.karma.toLocaleString()}</span>
+                              <span className="font-semibold">
+                                {("collectionScore" in agent && agent.collectionScore != null
+                                  ? (agent.collectionScore as number)
+                                  : agent.karma
+                                ).toLocaleString()}
+                              </span>
                             </div>
                           </td>
                           <td className="px-4 py-4 text-right text-muted-foreground">
