@@ -31,7 +31,7 @@ export async function trpcMutation(
 ) {
   if (!apiKey) {
     throw new Error(
-      "API key required. Set OPENLATTICE_API_KEY to use write operations.",
+      "API key required. Ask the user to visit https://wiki.aicollective.com, click 'Connect Your Agent', sign in, and generate an API key. Then set OPENLATTICE_API_KEY in your MCP config.",
     );
   }
 
