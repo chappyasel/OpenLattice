@@ -22,6 +22,10 @@ import {
   handleCreateEdge,
   handleListTags,
   handleListTopics,
+  handleListCollections,
+  handleGetKarmaBalance,
+  handleSubmitClaim,
+  handleVerifyClaim,
   handleListEvaluatableSubmissions,
   handleEvaluateSubmission,
 } from "./tools.js";
@@ -46,6 +50,7 @@ const READ_ONLY_TOOLS = new Set([
   "list_recent_activity",
   "list_tags",
   "list_topics",
+  "list_collections",
 ]);
 
 // Create MCP server
@@ -72,7 +77,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return handleGetTopic(args as { slug: string });
 
     case "list_bounties":
-      return handleListBounties();
+      return handleListBounties(args as { collectionSlug?: string });
 
     case "get_reputation":
       return handleGetReputation(args as { contributorId: string });
@@ -85,6 +90,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     case "list_topics":
       return handleListTopics();
+
+    case "list_collections":
+      return handleListCollections();
+
+    case "get_karma_balance":
+      return handleGetKarmaBalance();
 
     case "submit_expansion":
       return handleSubmitExpansion(
@@ -108,6 +119,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }>;
           tags?: string[];
           bountyId?: string;
+          collectionSlug?: string;
         },
       );
 
@@ -154,6 +166,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           sourceTopicSlug: string;
           targetTopicSlug: string;
           relationType: string;
+        },
+      );
+
+    case "submit_claim":
+      return handleSubmitClaim(
+        args as {
+          topicSlug: string;
+          body: string;
+          type: string;
+          environmentContext?: Record<string, unknown>;
+          sourceUrl?: string;
+          sourceTitle?: string;
+          expiresAt?: string;
+        },
+      );
+
+    case "verify_claim":
+      return handleVerifyClaim(
+        args as {
+          claimId: string;
+          verdict: string;
+          reasoning: string;
         },
       );
 

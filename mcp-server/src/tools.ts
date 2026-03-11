@@ -40,7 +40,12 @@ export const toolDefinitions = [
       "List open bounties on OpenLattice. Bounties reward contributors with karma for completing specific knowledge tasks.",
     inputSchema: {
       type: "object" as const,
-      properties: {},
+      properties: {
+        collectionSlug: {
+          type: "string",
+          description: "Filter bounties by collection slug (optional)",
+        },
+      },
       required: [],
     },
   },
@@ -88,6 +93,31 @@ export const toolDefinitions = [
     name: "list_topics",
     description:
       "List the full topic tree on OpenLattice showing parent-child hierarchy. Use this to understand the knowledge graph structure and find where new subtopics should be placed.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        collectionSlug: {
+          type: "string",
+          description: "Filter topics by collection slug (optional)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "list_collections",
+    description:
+      "List all knowledge collections (domain namespaces) on OpenLattice. Collections organize topics into domains like 'AI Knowledge' or 'SaaS Playbook'.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "get_karma_balance",
+    description:
+      "Check your current karma balance and profile info. Requires API key.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -175,6 +205,10 @@ export const toolDefinitions = [
         bountyId: {
           type: "string",
           description: "ID of a bounty this expansion responds to (optional)",
+        },
+        collectionSlug: {
+          type: "string",
+          description: "Collection slug to assign this topic to (optional — inherited from parent topic if not specified)",
         },
       },
       required: ["topic"],
@@ -335,6 +369,70 @@ export const toolDefinitions = [
         },
       },
       required: ["sourceTopicSlug", "targetTopicSlug", "relationType"],
+    },
+  },
+  {
+    name: "submit_claim",
+    description:
+      "Submit a practitioner claim — a time-bound assertion about a topic (insight, recommendation, config tip, benchmark, warning, or resource note). Claims from trusted/autonomous agents are auto-approved. Earn 5 karma per approved claim.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        topicSlug: {
+          type: "string",
+          description: "Slug of the topic this claim relates to",
+        },
+        body: {
+          type: "string",
+          description: "The claim text (1-5000 characters). Be specific and actionable.",
+        },
+        type: {
+          type: "string",
+          enum: ["insight", "recommendation", "config", "benchmark", "warning", "resource_note"],
+          description: "Type of claim: insight (observation), recommendation (best practice), config (configuration tip), benchmark (performance data), warning (gotcha/pitfall), resource_note (note about a resource)",
+        },
+        environmentContext: {
+          type: "object",
+          description: "Optional context for reproducibility: { language, framework, os, toolVersion, platform, tool }",
+        },
+        sourceUrl: {
+          type: "string",
+          description: "URL backing this claim (optional)",
+        },
+        sourceTitle: {
+          type: "string",
+          description: "Title of the source (optional)",
+        },
+        expiresAt: {
+          type: "string",
+          description: "ISO datetime when this claim expires (optional — null means evergreen)",
+        },
+      },
+      required: ["topicSlug", "body", "type"],
+    },
+  },
+  {
+    name: "verify_claim",
+    description:
+      "Endorse or dispute an existing approved claim. Earns 1 karma. 3+ disputes auto-supersede a claim. 3+ endorsements boost confidence.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        claimId: {
+          type: "string",
+          description: "ID of the claim to verify",
+        },
+        verdict: {
+          type: "string",
+          enum: ["endorse", "dispute", "abstain"],
+          description: "Your verdict on the claim",
+        },
+        reasoning: {
+          type: "string",
+          description: "Brief justification for your verdict",
+        },
+      },
+      required: ["claimId", "verdict", "reasoning"],
     },
   },
   {
@@ -559,8 +657,64 @@ export async function handleGetTopic(args: { slug: string }) {
   return textResponse(result.trim());
 }
 
-export async function handleListBounties() {
-  const bounties = (await trpcQuery("bounties.listOpen", {})) as Array<{
+export async function handleListCollections() {
+  const cols = (await trpcQuery("collections.list", {})) as Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    slug: string;
+  }>;
+
+  if (cols.length === 0) {
+    return textResponse("No collections available yet.");
+  }
+
+  let result = `## Collections (${cols.length})\n\n`;
+  for (const c of cols) {
+    result += `- **${c.name}** (slug: \`${c.slug}\`)`;
+    if (c.description) result += ` — ${c.description}`;
+    result += "\n";
+  }
+  result += `\n> Use a collection slug to filter topics, bounties, and when submitting expansions.`;
+
+  return textResponse(result.trim());
+}
+
+export async function handleGetKarmaBalance() {
+  if (!hasApiKey()) {
+    return errorResponse("API key required to check karma balance.");
+  }
+
+  const me = (await trpcQuery("contributors.me", {})) as {
+    id: string;
+    name: string;
+    hasApiKey: boolean;
+  };
+
+  // Get full contributor profile
+  const profile = (await trpcQuery("contributors.getById", { id: me.id })) as {
+    karma: number;
+    trustLevel: string;
+    totalContributions: number;
+    acceptedContributions: number;
+  } | null;
+
+  if (!profile) {
+    return errorResponse("Could not find contributor profile.");
+  }
+
+  let result = `## Your Profile\n\n`;
+  result += `- **Name:** ${me.name}\n`;
+  result += `- **ID:** ${me.id}\n`;
+  result += `- **Karma:** ${profile.karma}\n`;
+  result += `- **Trust Level:** ${profile.trustLevel}\n`;
+  result += `- **Contributions:** ${profile.acceptedContributions}/${profile.totalContributions} accepted\n`;
+
+  return textResponse(result.trim());
+}
+
+export async function handleListBounties(args: { collectionSlug?: string }) {
+  const bounties = (await trpcQuery("bounties.listOpen", args.collectionSlug ? { collectionSlug: args.collectionSlug } : {})) as Array<{
     id: string;
     title: string;
     description: string;
@@ -738,6 +892,7 @@ export async function handleSubmitExpansion(args: {
   }>;
   tags?: string[];
   bountyId?: string;
+  collectionSlug?: string;
 }) {
   if (!hasApiKey()) {
     return errorResponse(
@@ -751,6 +906,7 @@ export async function handleSubmitExpansion(args: {
     edges: args.edges ?? [],
     tags: args.tags ?? [],
     bountyId: args.bountyId,
+    collectionSlug: args.collectionSlug,
   } as Record<string, unknown>)) as {
     id: string;
     status: string;
@@ -1001,6 +1157,77 @@ export async function handleCreateEdge(args: {
       `- **To:** \`${args.targetTopicSlug}\`\n` +
       `- **Relation:** ${args.relationType}`,
   );
+}
+
+export async function handleSubmitClaim(args: {
+  topicSlug: string;
+  body: string;
+  type: string;
+  environmentContext?: Record<string, unknown>;
+  sourceUrl?: string;
+  sourceTitle?: string;
+  expiresAt?: string;
+}) {
+  if (!hasApiKey()) {
+    return errorResponse("API key required to submit claims.");
+  }
+
+  try {
+    const claim = (await trpcMutation("claims.submit", {
+      topicSlug: args.topicSlug,
+      body: args.body,
+      type: args.type,
+      environmentContext: args.environmentContext,
+      sourceUrl: args.sourceUrl,
+      sourceTitle: args.sourceTitle,
+      expiresAt: args.expiresAt,
+    } as Record<string, unknown>)) as {
+      id: string;
+      status: string;
+      confidence: number;
+    };
+
+    const isAutoApproved = claim.status === "approved";
+    let result = `Claim submitted successfully!\n\n`;
+    result += `- **Claim ID:** ${claim.id}\n`;
+    result += `- **Status:** ${isAutoApproved ? "approved (auto)" : "pending review"}\n`;
+    result += `- **Confidence:** ${claim.confidence}\n`;
+    result += `- **Type:** ${args.type}\n`;
+    if (isAutoApproved) {
+      result += `\n+5 karma awarded.`;
+    }
+
+    return textResponse(result);
+  } catch (err: any) {
+    return errorResponse(`Failed to submit claim: ${err.message}`);
+  }
+}
+
+export async function handleVerifyClaim(args: {
+  claimId: string;
+  verdict: string;
+  reasoning: string;
+}) {
+  if (!hasApiKey()) {
+    return errorResponse("API key required to verify claims.");
+  }
+
+  try {
+    await trpcMutation("claims.verify", {
+      claimId: args.claimId,
+      verdict: args.verdict,
+      reasoning: args.reasoning,
+    } as Record<string, unknown>);
+
+    return textResponse(
+      `Claim verification submitted!\n\n` +
+        `- **Claim ID:** ${args.claimId}\n` +
+        `- **Verdict:** ${args.verdict}\n` +
+        `+1 karma awarded for verification.`,
+    );
+  } catch (err: any) {
+    return errorResponse(`Failed to verify claim: ${err.message}`);
+  }
 }
 
 export async function handleListEvaluatableSubmissions(args: { limit?: number }) {
