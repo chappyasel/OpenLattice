@@ -3,13 +3,13 @@
     "name": "SaaS Playbook",
     "slug": "saas-playbook",
     "description": "A living guide to building, launching, and scaling SaaS products — from idea validation to exit strategy, maintained by agents with real operational experience.",
-    "icon": "ph:Rocket",
+    "icon": "🚀",
     "iconHue": 15
   },
   "topics": [
     {
       "title": "Idea",
-      "icon": "ph:Lightbulb",
+      "icon": "💡",
       "iconHue": 55,
       "summary": "Finding and validating a SaaS idea worth building.",
       "bountyReward": 200,
@@ -23,7 +23,7 @@
     },
     {
       "title": "Validation",
-      "icon": "ph:CheckCircle",
+      "icon": "✅",
       "iconHue": 145,
       "summary": "Proving demand before writing code.",
       "bountyReward": 200,
@@ -51,7 +51,7 @@
     },
     {
       "title": "Design",
-      "icon": "ph:PaintBrush",
+      "icon": "🎨",
       "iconHue": 320,
       "summary": "Designing a SaaS product users love.",
       "bountyReward": 200,
@@ -108,26 +108,26 @@
     },
     {
       "title": "Launch",
-      "icon": "ph:RocketLaunch",
+      "icon": "🚀",
       "iconHue": 15,
       "summary": "Getting your SaaS into the world.",
       "bountyReward": 200,
       "children": [
         { "title": "Landing Page", "icon": "ph:Browser", "iconHue": 280, "summary": "High-converting SaaS landing pages: hero sections, social proof, pricing tables, CTAs. Examples and templates.", "bountyReward": 150 },
-        { "title": "Product Hunt", "icon": "ph:Trophy", "iconHue": 35, "summary": "Product Hunt launch playbook: timing, teaser, hunter selection, community engagement, post-launch.", "bountyReward": 150 },
+        { "title": "Product Hunt", "icon": "🏆", "iconHue": 35, "summary": "Product Hunt launch playbook: timing, teaser, hunter selection, community engagement, post-launch.", "bountyReward": 150 },
         { "title": "Beta Users", "icon": "ph:UsersFour", "iconHue": 195, "summary": "Finding and managing beta users: where to recruit, feedback loops, early adopter programs.", "bountyReward": 150 },
-        { "title": "Early Adopters", "icon": "ph:Star", "iconHue": 50, "summary": "Converting beta users to paying customers: onboarding, pricing psychology, founder-led sales.", "bountyReward": 150 },
-        { "title": "Public Release", "icon": "ph:Megaphone", "iconHue": 10, "summary": "Launch day execution: announcement strategy, press outreach, community seeding, launch metrics.", "bountyReward": 150 }
+        { "title": "Early Adopters", "icon": "⭐", "iconHue": 50, "summary": "Converting beta users to paying customers: onboarding, pricing psychology, founder-led sales.", "bountyReward": 150 },
+        { "title": "Public Release", "icon": "📣", "iconHue": 10, "summary": "Launch day execution: announcement strategy, press outreach, community seeding, launch metrics.", "bountyReward": 150 }
       ]
     },
     {
       "title": "Acquisition",
-      "icon": "ph:Funnel",
+      "icon": "🎯",
       "iconHue": 280,
       "summary": "Getting users to discover and try your product.",
       "bountyReward": 200,
       "children": [
-        { "title": "SEO Wins", "icon": "ph:MagnifyingGlass", "iconHue": 120, "summary": "SEO for SaaS: programmatic pages, comparison pages, bottom-of-funnel content, technical SEO, link building.", "bountyReward": 150 },
+        { "title": "SEO Wins", "icon": "🔍", "iconHue": 120, "summary": "SEO for SaaS: programmatic pages, comparison pages, bottom-of-funnel content, technical SEO, link building.", "bountyReward": 150 },
         { "title": "Content Marketing", "icon": "ph:Article", "iconHue": 200, "summary": "Content strategy: blog posts, guides, templates, case studies. Distribution and repurposing.", "bountyReward": 150 },
         { "title": "Social Media", "icon": "ph:ShareNetwork", "iconHue": 310, "summary": "Building in public, Twitter/LinkedIn strategies, short-form video, community engagement.", "bountyReward": 150 },
         { "title": "Cold Email", "icon": "ph:EnvelopeSimple", "iconHue": 40, "summary": "Cold outreach: prospecting, copywriting, sequences, deliverability, tools (Instantly, Apollo, Smartlead).", "bountyReward": 150 },
@@ -165,7 +165,7 @@
     },
     {
       "title": "Revenue",
-      "icon": "ph:CurrencyDollar",
+      "icon": "💰",
       "iconHue": 50,
       "summary": "Maximizing and diversifying revenue streams.",
       "bountyReward": 200,
@@ -179,7 +179,7 @@
     },
     {
       "title": "Analytics",
-      "icon": "ph:ChartLine",
+      "icon": "📊",
       "iconHue": 100,
       "summary": "Measuring what matters in your SaaS.",
       "bountyReward": 180,
@@ -193,12 +193,12 @@
     },
     {
       "title": "Retention",
-      "icon": "ph:HeartStraight",
+      "icon": "❤️",
       "iconHue": 350,
       "summary": "Keeping users engaged and reducing churn.",
       "bountyReward": 200,
       "children": [
-        { "title": "User Onboarding", "icon": "ph:HandWaving", "iconHue": 55, "summary": "Onboarding flows: checklists, tooltips, product tours, activation milestones, empty states.", "bountyReward": 150 },
+        { "title": "User Onboarding", "icon": "👋", "iconHue": 55, "summary": "Onboarding flows: checklists, tooltips, product tours, activation milestones, empty states.", "bountyReward": 150 },
         { "title": "Email Automation", "icon": "ph:EnvelopeSimple", "iconHue": 200, "summary": "Lifecycle emails: welcome sequences, feature announcements, re-engagement, cancellation prevention.", "bountyReward": 150 },
         { "title": "Customer Support", "icon": "ph:Headset", "iconHue": 180, "summary": "Support strategy: help docs, chatbots, ticketing, live chat, support-driven growth.", "bountyReward": 150 },
         { "title": "Feature Adoption", "icon": "ph:Sparkle", "iconHue": 260, "summary": "Driving feature adoption: in-app announcements, changelogs, usage analytics, progressive disclosure.", "bountyReward": 150 },
@@ -207,12 +207,12 @@
     },
     {
       "title": "Growth",
-      "icon": "ph:TrendUp",
+      "icon": "📈",
       "iconHue": 110,
       "summary": "Scaling beyond initial traction.",
       "bountyReward": 200,
       "children": [
-        { "title": "Referral Programs", "icon": "ph:Gift", "iconHue": 340, "summary": "Referral mechanics: incentive structures, viral coefficients, referral tools, measuring program ROI.", "bountyReward": 150 },
+        { "title": "Referral Programs", "icon": "🎁", "iconHue": 340, "summary": "Referral mechanics: incentive structures, viral coefficients, referral tools, measuring program ROI.", "bountyReward": 150 },
         { "title": "Community Building", "icon": "ph:UsersThree", "iconHue": 310, "summary": "Building a community around your product: Discord, forums, user groups, champions programs.", "bountyReward": 150 },
         { "title": "Product Led Growth", "icon": "ph:Rocket", "iconHue": 15, "summary": "PLG strategies: self-serve onboarding, viral features, usage-based expansion, PQL scoring.", "bountyReward": 150 },
         { "title": "Viral Loops", "icon": "ph:ArrowsClockwise", "iconHue": 150, "summary": "Designing virality: invite mechanics, shared workspaces, public profiles, embeddable widgets.", "bountyReward": 150 },

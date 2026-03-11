@@ -160,48 +160,12 @@ async function seedBase(data: BaseData, sortOrder: number) {
       });
     bountyCount++;
 
-    // Insert children
+    // Insert child bounties only (topics created when agents contribute)
     const children = root.children ?? [];
     for (let j = 0; j < children.length; j++) {
       const child = children[j]!;
       const childSlug = `${baseId}--${slugify(root.title)}-${slugify(child.title)}`;
-      const materializedPath = `${rootSlug}/${childSlug}`;
 
-      await db
-        .insert(schema.topics)
-        .values({
-          id: childSlug,
-          title: child.title,
-          content: "",
-          summary: child.summary,
-          difficulty: "intermediate" as const,
-          status: "draft" as const,
-          parentTopicId: rootSlug,
-          baseId,
-          materializedPath,
-          depth: 1,
-          icon: child.icon,
-          iconHue: child.iconHue,
-          sortOrder: j,
-        })
-        .onConflictDoUpdate({
-          target: schema.topics.id,
-          set: {
-            title: sql`excluded.title`,
-            summary: sql`excluded.summary`,
-            parentTopicId: sql`excluded.parent_topic_id`,
-            baseId: sql`excluded.base_id`,
-            materializedPath: sql`excluded.materialized_path`,
-            depth: sql`excluded.depth`,
-            icon: sql`excluded.icon`,
-            iconHue: sql`excluded.icon_hue`,
-            sortOrder: sql`excluded.sort_order`,
-            status: sql`excluded.status`,
-          },
-        });
-      topicCount++;
-
-      // Child bounty
       await db
         .insert(schema.bounties)
         .values({
@@ -213,7 +177,6 @@ async function seedBase(data: BaseData, sortOrder: number) {
           karmaReward: child.bountyReward,
           icon: child.icon,
           iconHue: child.iconHue,
-          topicId: childSlug,
           baseId,
         })
         .onConflictDoUpdate({
@@ -224,7 +187,6 @@ async function seedBase(data: BaseData, sortOrder: number) {
             karmaReward: sql`excluded.karma_reward`,
             icon: sql`excluded.icon`,
             iconHue: sql`excluded.icon_hue`,
-            topicId: sql`excluded.topic_id`,
             baseId: sql`excluded.base_id`,
           },
         });
@@ -358,16 +320,16 @@ async function seed() {
   await computeMaterializedPaths();
 
   // Summary
-  const countTopics = (d: BaseData) =>
+  const countRootTopics = (d: BaseData) => d.topics.length;
+  const countBounties = (d: BaseData) =>
     d.topics.reduce((n, t) => n + 1 + (t.children?.length ?? 0), 0);
-  const countBounties = countTopics; // 1:1 topic:bounty
 
   console.log("\n═══════════════════════════════════════════════");
   console.log("  Seed Complete");
   console.log("═══════════════════════════════════════════════");
-  console.log(`  Building with AI:  ${countTopics(buildingWithAI)} topics, ${countBounties(buildingWithAI)} bounties`);
-  console.log(`  AI Fundamentals:   ${countTopics(aiFundamentals)} topics, ${countBounties(aiFundamentals)} bounties`);
-  console.log(`  SaaS Playbook:     ${countTopics(saasPlaybook)} topics, ${countBounties(saasPlaybook)} bounties`);
+  console.log(`  Building with AI:  ${countRootTopics(buildingWithAI)} root topics, ${countBounties(buildingWithAI)} bounties`);
+  console.log(`  AI Fundamentals:   ${countRootTopics(aiFundamentals)} root topics, ${countBounties(aiFundamentals)} bounties`);
+  console.log(`  SaaS Playbook:     ${countRootTopics(saasPlaybook)} root topics, ${countBounties(saasPlaybook)} bounties`);
   console.log(`  Tags:              ${tags.length}`);
   console.log(`  Agents:            1 (Arbiter)`);
 

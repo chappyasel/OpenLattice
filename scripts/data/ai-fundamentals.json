@@ -3,7 +3,7 @@
     "name": "AI Fundamentals",
     "slug": "ai-fundamentals",
     "description": "Understand modern AI — models, safety, governance, and societal impact. The foundational knowledge that informs everything you build.",
-    "icon": "ph:Brain",
+    "icon": "🧠",
     "iconHue": 260
   },
   "topics": [
@@ -16,14 +16,14 @@
       "children": [
         {
           "title": "Large Language Models",
-          "icon": "ph:Brain",
+          "icon": "🧠",
           "iconHue": 260,
           "summary": "Comprehensive overview of LLMs: architecture, pretraining, scaling laws, context windows, frontier and open-source models.",
           "bountyReward": 300
         },
         {
           "title": "Transformers",
-          "icon": "ph:Lightning",
+          "icon": "⚡",
           "iconHue": 45,
           "summary": "Deep dive into the transformer architecture: self-attention, positional encoding, feed-forward layers. From 'Attention Is All You Need' to modern variants.",
           "bountyReward": 250
@@ -37,21 +37,21 @@
         },
         {
           "title": "Computer Vision",
-          "icon": "ph:Eye",
+          "icon": "👁️",
           "iconHue": 180,
           "summary": "Vision transformers, diffusion models, VLMs, 3D understanding. The evolution from CNNs to multimodal foundation models.",
           "bountyReward": 250
         },
         {
           "title": "Image Generation",
-          "icon": "ph:ImageSquare",
+          "icon": "🎨",
           "iconHue": 310,
           "summary": "Diffusion model architectures. Compare Stable Diffusion, DALL-E, Midjourney, Flux on quality, speed, controllability.",
           "bountyReward": 220
         },
         {
           "title": "Speech & Audio AI",
-          "icon": "ph:Waveform",
+          "icon": "🎙️",
           "iconHue": 290,
           "summary": "Speech recognition (Whisper), text-to-speech, voice cloning, music generation. Real-time and on-device capabilities.",
           "bountyReward": 200
@@ -60,35 +60,35 @@
     },
     {
       "title": "Safety & Alignment",
-      "icon": "ph:ShieldCheck",
+      "icon": "🛡️",
       "iconHue": 350,
       "summary": "Ensuring AI systems are safe, fair, and aligned with human values.",
       "bountyReward": 280,
       "children": [
         {
           "title": "AI Safety",
-          "icon": "ph:ShieldCheck",
+          "icon": "🛡️",
           "iconHue": 350,
           "summary": "Overview of alignment research: RLHF, Constitutional AI, interpretability, red teaming, scalable oversight. Near-term and long-horizon concerns.",
           "bountyReward": 300
         },
         {
           "title": "Bias in AI",
-          "icon": "ph:Warning",
+          "icon": "⚠️",
           "iconHue": 40,
           "summary": "How AI encodes and amplifies biases: documented examples, evaluation methods, mitigation. Accessible to non-technical readers.",
           "bountyReward": 200
         },
         {
           "title": "AI and Privacy",
-          "icon": "ph:LockKey",
+          "icon": "🔒",
           "iconHue": 230,
           "summary": "Training data, user data practices, inference attacks, surveillance. Differential privacy, federated learning, regulations.",
           "bountyReward": 200
         },
         {
           "title": "Misinformation",
-          "icon": "ph:MaskHappy",
+          "icon": "🎭",
           "iconHue": 10,
           "summary": "Deepfakes, synthetic media, detection methods. Technical and institutional approaches to preserving trust.",
           "bountyReward": 200
@@ -97,14 +97,14 @@
     },
     {
       "title": "Governance & Policy",
-      "icon": "ph:Gavel",
+      "icon": "⚖️",
       "iconHue": 30,
       "summary": "The regulatory and geopolitical landscape shaping AI development worldwide.",
       "bountyReward": 260,
       "children": [
         {
           "title": "AI Regulation",
-          "icon": "ph:Scales",
+          "icon": "⚖️",
           "iconHue": 25,
           "summary": "Major regulations worldwide: EU AI Act, US executive orders, China's rules. Comparing approaches and enforcement.",
           "bountyReward": 220
@@ -118,7 +118,7 @@
         },
         {
           "title": "AI Geopolitics",
-          "icon": "ph:GlobeHemisphereWest",
+          "icon": "🌍",
           "iconHue": 205,
           "summary": "US-China competition, chip export controls, talent flows, compute sovereignty. How AI reshapes international power.",
           "bountyReward": 220
@@ -127,28 +127,28 @@
     },
     {
       "title": "Society & Impact",
-      "icon": "ph:UsersThree",
+      "icon": "🌐",
       "iconHue": 310,
       "summary": "How AI is reshaping work, education, creativity, and the economy.",
       "bountyReward": 250,
       "children": [
         {
           "title": "Future of Work",
-          "icon": "ph:Briefcase",
+          "icon": "💼",
           "iconHue": 35,
           "summary": "Task-level automation, job displacement research, augmentation vs. replacement, new roles. Practical advice for professionals.",
           "bountyReward": 220
         },
         {
           "title": "AI and Education",
-          "icon": "ph:GraduationCap",
+          "icon": "🎓",
           "iconHue": 175,
           "summary": "AI tutoring, curriculum reform, assessment redesign, digital literacy. How learning is changing at every level.",
           "bountyReward": 180
         },
         {
           "title": "Creative AI",
-          "icon": "ph:PaintBrush",
+          "icon": "🎨",
           "iconHue": 320,
           "summary": "AI's impact on music, film, writing, visual arts. Economic disruption, new tools, copyright debates, artist adaptation.",
           "bountyReward": 200
@@ -162,7 +162,7 @@
         },
         {
           "title": "History of AI",
-          "icon": "ph:ClockCounterClockwise",
+          "icon": "📜",
           "iconHue": 75,
           "summary": "From Turing to ChatGPT: key breakthroughs, AI winters, deep learning revolution, the generative AI explosion.",
           "bountyReward": 220
@@ -171,42 +171,42 @@
     },
     {
       "title": "Industry Applications",
-      "icon": "ph:Buildings",
+      "icon": "🏭",
       "iconHue": 35,
       "summary": "Applied AI across sectors — real-world deployments and outcomes.",
       "bountyReward": 250,
       "children": [
         {
           "title": "Healthcare AI",
-          "icon": "ph:Heartbeat",
+          "icon": "🏥",
           "iconHue": 0,
           "summary": "AI in healthcare: diagnostic imaging, drug discovery, clinical decision support, FDA approvals, real-world outcomes.",
           "bountyReward": 200
         },
         {
           "title": "AI in Finance",
-          "icon": "ph:CurrencyDollar",
+          "icon": "💰",
           "iconHue": 50,
           "summary": "Algorithmic trading, fraud detection, credit scoring, risk assessment. Regulatory considerations.",
           "bountyReward": 200
         },
         {
           "title": "AI in Science",
-          "icon": "ph:Atom",
+          "icon": "🔬",
           "iconHue": 250,
           "summary": "AlphaFold, materials discovery, climate modeling, mathematical conjecture. How AI is changing scientific methodology.",
           "bountyReward": 220
         },
         {
           "title": "Climate AI",
-          "icon": "ph:Leaf",
+          "icon": "🌿",
           "iconHue": 130,
           "summary": "AI across the climate stack: energy grids, carbon capture, weather forecasting, sustainable agriculture.",
           "bountyReward": 200
         },
         {
           "title": "Robotics",
-          "icon": "ph:PersonArmsSpread",
+          "icon": "🦾",
           "iconHue": 240,
           "summary": "LLMs meet robotics: RT-2, vision-language-action models, manipulation, the path to general-purpose robots.",
           "bountyReward": 220
@@ -215,21 +215,21 @@
     },
     {
       "title": "Reference",
-      "icon": "ph:BookOpen",
+      "icon": "📚",
       "iconHue": 85,
       "summary": "Foundational resources for understanding the AI landscape.",
       "bountyReward": 200,
       "children": [
         {
           "title": "How AI Works",
-          "icon": "ph:Lightbulb",
+          "icon": "💡",
           "iconHue": 55,
           "summary": "Non-technical explanation of modern AI: training, neural networks, language models. After reading this, a layperson understands what's inside ChatGPT.",
           "bountyReward": 200
         },
         {
           "title": "AI Glossary",
-          "icon": "ph:BookOpen",
+          "icon": "📖",
           "iconHue": 85,
           "summary": "Plain-language definitions of the 100 most important AI terms: LLM, fine-tuning, hallucination, token, agent, embedding, and more.",
           "bountyReward": 120
@@ -250,14 +250,14 @@
         },
         {
           "title": "Landmark AI Papers",
-          "icon": "ph:Scroll",
+          "icon": "📜",
           "iconHue": 20,
           "summary": "The 25 most influential papers (Attention Is All You Need, GPT, diffusion, RLHF, etc.) with summaries and why they matter.",
           "bountyReward": 200
         },
         {
           "title": "AI Communities",
-          "icon": "ph:Handshake",
+          "icon": "🤝",
           "iconHue": 330,
           "summary": "Guide to the AI community: conferences (NeurIPS, ICML), meetups (AIC), online forums, newsletters, podcasts.",
           "bountyReward": 120
