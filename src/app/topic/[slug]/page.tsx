@@ -312,7 +312,7 @@ export default function TopicPage({
                     <span
                       className={cn(
                         "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                        claim.type === "warning" || claim.type === "caveat"
+                        claim.type === "warning"
                           ? "bg-red-500/10 text-red-500"
                           : claim.type === "benchmark"
                             ? "bg-violet-500/10 text-violet-500"

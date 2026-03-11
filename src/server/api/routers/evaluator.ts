@@ -378,6 +378,8 @@ export const evaluatorRouter = createTRPCRouter({
 
       if (!updated) return null; // Already reviewed by another evaluator cycle
 
+      const verdictLabel = input.verdict === "revision_requested" ? "revision requested" : input.verdict;
+
       if (updated?.contributorId) {
         // Only increment contribution counters for final verdicts (not revision requests)
         if (input.verdict !== "revision_requested") {
@@ -439,7 +441,6 @@ export const evaluatorRouter = createTRPCRouter({
       }
 
       // Log activity with full evaluation trace
-      const verdictLabel = input.verdict === "revision_requested" ? "revision requested" : input.verdict;
       await ctx.db.insert(activity).values({
         id: activityId("submission-reviewed", ctx.contributor.id),
         type: "submission_reviewed",

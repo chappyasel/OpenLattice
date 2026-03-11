@@ -49,7 +49,7 @@ function TopicTreeNode({
         className="group flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent"
         style={{ paddingLeft: `${depth * 20 + 12}px` }}
       >
-        <TopicIcon icon={topic.icon} iconHue={topic.iconHue} size={16} />
+        <TopicIcon icon={topic.icon} hue={topic.iconHue} size="sm" />
         <span className="flex-1 font-medium group-hover:text-brand-blue">
           {topic.title}
         </span>
