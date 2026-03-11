@@ -65,14 +65,49 @@ Required env vars (see `.env.example`): `DATABASE_URL`, `AUTH_SECRET`, `AUTH_GOO
 
 Env validation via `@t3-oss/env-nextjs` in `src/env.ts`. Skip with `SKIP_ENV_VALIDATION=1`.
 
+## Key Files
+
+| Purpose | Location |
+|---------|----------|
+| tRPC routers | `/src/server/api/routers/*.ts` → register in `/src/server/api/root.ts` |
+| Auth & procedures | `/src/server/api/trpc.ts` |
+| Database schema | `/src/server/db/schema/*.ts` (split by entity, re-exported from `index.ts`) |
+| Trust logic | `/src/lib/trust.ts` |
+| Evaluator consensus | `/src/lib/evaluator/consensus.ts` |
+| Icon validation | `/src/lib/phosphor-icons.ts` |
+| Utilities | `/src/lib/utils.ts` (cn, slugify, generateUniqueId, activityId) |
+| Environment vars | `/src/env.ts` (type-safe, always use this) |
+| UI components | `/src/components/ui/*.tsx` (shadcn) |
+| MCP server | `/mcp-server/` (separate package) |
+
 ## Workflow Rules
 
 - **Never run `yarn dev`, `yarn build`, or database commands unless explicitly requested.** Use `yarn lint` or `yarn fix` for quick checks instead.
 
-## Style
+## Development Guidelines
+
+### IMPORTANT — Things Claude Gets Wrong
+
+- **Phosphor icon names**: DB format is `ph:Name` (PascalCase, no "Icon" suffix). `Puzzle` does NOT exist → use `PuzzlePiece`. `Handshake` exists (not `HandShake`). Validate against `PHOSPHOR_ICON_NAMES` in `lib/phosphor-icons.ts` before saving
+- **Icon format is three-tier**: `ph:Name` (Phosphor), `img:url` (image URL), or plain emoji. The `TopicIcon` component handles all three
+- **Email case sensitivity**: Always `.toLowerCase()` before storing or querying. Contributors are identified by email (unique index)
+- **Submission polymorphism**: Submissions have a `type` enum + JSONB `data` field. Always check `type` before accessing type-specific fields — don't assume all submissions have the same `data` shape
+- **Topic ID = slug**: Topic IDs are URL slugs used in routes (`/topic/[slug]`). Use `generateUniqueId()` to create them, never manual slug creation
+- **Topic merging on duplicate titles**: When an expansion targets an existing topic title (case-insensitive), the system auto-merges via AI. It picks the canonical topic = most children, or shortest slug if tied
+- **Autonomous auto-approval**: Contributors with `trustLevel === "autonomous"` bypass the evaluation queue entirely — expansions are auto-approved on submit
+- **Evaluator safety checks**: Self-review, <30s timing, >20/hr rate limit, and score inconsistency all auto-fail. Don't remove these guards
+- **Activity IDs need randomness**: Use `activityId(prefix, ...parts)` which appends a UUID — prevents collisions when multiple events fire simultaneously
+
+### Style
 
 - Package manager: **yarn** (v1)
 - Imports use `@/` path alias mapping to `src/`
-- UI components: Radix primitives + shadcn/ui patterns + Phosphor icons
+- Environment vars via `import { env } from "@/env"`, never `process.env` directly
+- UI components: Radix primitives + shadcn/ui patterns + Phosphor icons (NEVER Lucide)
+- Theme colors: Use `bg-background`, `text-foreground`, etc. — not hardcoded `bg-white`/`text-black`
 - Graph visualization: reagraph
 - Markdown rendering: react-markdown + remark-gfm + rehype-raw
+
+### Planning Large Features
+
+When planning large features, the plan should include an **execution strategy** specifying which subagents handle each step. Use `backend-engineer` for router/query work, `frontend-engineer` for UI components, `database-engineer` for schema/migrations, and direct edits for trivial changes.
