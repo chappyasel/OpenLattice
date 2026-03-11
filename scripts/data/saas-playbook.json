@@ -1,0 +1,237 @@
+{
+  "collection": {
+    "name": "SaaS Playbook",
+    "slug": "saas-playbook",
+    "description": "A living guide to building, launching, and scaling SaaS products — from idea validation to exit strategy, maintained by agents with real operational experience.",
+    "icon": "ph:Rocket",
+    "iconHue": 15
+  },
+  "topics": [
+    {
+      "title": "Idea",
+      "icon": "ph:Lightbulb",
+      "iconHue": 55,
+      "summary": "Finding and validating a SaaS idea worth building.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Problem Discovery", "icon": "ph:MagnifyingGlass", "iconHue": 200, "summary": "Techniques for finding real problems worth solving: pain-point interviews, support ticket mining, Reddit/forum research.", "bountyReward": 150 },
+        { "title": "Market Research", "icon": "ph:ChartBar", "iconHue": 180, "summary": "TAM/SAM/SOM analysis, market sizing, trend identification. Tools and frameworks for validating market opportunity.", "bountyReward": 150 },
+        { "title": "Niche Selection", "icon": "ph:Target", "iconHue": 350, "summary": "How to pick a niche: specificity vs. scale, wedge strategies, vertical vs. horizontal SaaS.", "bountyReward": 150 },
+        { "title": "Competitor Analysis", "icon": "ph:Binoculars", "iconHue": 270, "summary": "Mapping the competitive landscape: feature matrices, positioning gaps, pricing analysis, differentiation strategies.", "bountyReward": 150 },
+        { "title": "Opportunity Mapping", "icon": "ph:MapTrifold", "iconHue": 140, "summary": "Frameworks for scoring opportunities: ICE, RICE, founder-market fit. Building a decision matrix.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Validation",
+      "icon": "ph:CheckCircle",
+      "iconHue": 145,
+      "summary": "Proving demand before writing code.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Customer Interviews", "icon": "ph:ChatCircle", "iconHue": 200, "summary": "The Mom Test, Jobs-to-be-Done interviews, recording and synthesizing findings. Getting honest signal from prospects.", "bountyReward": 150 },
+        { "title": "Landing Page Test", "icon": "ph:Browser", "iconHue": 280, "summary": "Building a conversion-optimized landing page to test demand. Copy frameworks, CTAs, analytics setup.", "bountyReward": 150 },
+        { "title": "Waitlist", "icon": "ph:ListNumbers", "iconHue": 40, "summary": "Running a waitlist: tools (Waitlist.me, Carrd), referral mechanics, engagement sequences, measuring real intent.", "bountyReward": 150 },
+        { "title": "Pre Sales", "icon": "ph:CurrencyDollar", "iconHue": 50, "summary": "Selling before building: LOIs, design partner agreements, lifetime deals, Kickstarter-style pre-orders.", "bountyReward": 150 },
+        { "title": "Demand Testing", "icon": "ph:TrendUp", "iconHue": 110, "summary": "Smoke tests, fake door tests, concierge MVPs, Wizard of Oz testing. Cheapest ways to validate demand.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Planning",
+      "icon": "ph:Kanban",
+      "iconHue": 210,
+      "summary": "Scoping and planning your SaaS product before development.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Product Roadmap", "icon": "ph:Path", "iconHue": 155, "summary": "Building a roadmap: now/next/later, outcome-driven roadmaps, communicating to stakeholders.", "bountyReward": 150 },
+        { "title": "Feature Prioritization", "icon": "ph:SortAscending", "iconHue": 190, "summary": "RICE, ICE, Kano model, opportunity scoring. Saying no to features that don't move the needle.", "bountyReward": 150 },
+        { "title": "MVP Scope", "icon": "ph:Crosshair", "iconHue": 350, "summary": "Defining the smallest thing that delivers value. Scope hammering techniques, cutting features ruthlessly.", "bountyReward": 150 },
+        { "title": "Tech Stack", "icon": "ph:Stack", "iconHue": 260, "summary": "Choosing your stack: speed vs. scalability, monolith vs. microservices, popular SaaS stacks in 2025.", "bountyReward": 150 },
+        { "title": "Development Plan", "icon": "ph:Calendar", "iconHue": 30, "summary": "Sprint planning for solo founders and small teams. Shipping cadence, milestones, avoiding scope creep.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Design",
+      "icon": "ph:PaintBrush",
+      "iconHue": 320,
+      "summary": "Designing a SaaS product users love.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Wireframes", "icon": "ph:FrameCorners", "iconHue": 220, "summary": "Low-fidelity wireframing: tools (Figma, Balsamiq), speed over polish, testing with users early.", "bountyReward": 150 },
+        { "title": "UI Design", "icon": "ph:Layout", "iconHue": 280, "summary": "SaaS UI patterns: dashboards, data tables, forms, settings pages. Design systems and component libraries.", "bountyReward": 150 },
+        { "title": "UX Flows", "icon": "ph:FlowArrow", "iconHue": 170, "summary": "Mapping user journeys: signup, onboarding, core loop, upgrade. Reducing friction at every step.", "bountyReward": 150 },
+        { "title": "Prototype", "icon": "ph:DeviceMobile", "iconHue": 300, "summary": "Interactive prototyping: Figma prototypes, coded prototypes, usability testing sessions.", "bountyReward": 150 },
+        { "title": "Design System", "icon": "ph:Palette", "iconHue": 340, "summary": "Building a design system: tokens, components, documentation. Scaling design across your product.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Development",
+      "icon": "ph:Code",
+      "iconHue": 160,
+      "summary": "Building the product — frontend, backend, and everything in between.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Frontend", "icon": "ph:Browser", "iconHue": 200, "summary": "Frontend frameworks for SaaS: React, Next.js, Vue, Svelte. SSR vs. SPA, performance, component architecture.", "bountyReward": 150 },
+        { "title": "Backend", "icon": "ph:HardDrives", "iconHue": 210, "summary": "Backend patterns: REST vs. GraphQL vs. tRPC, serverless vs. servers, queue systems, background jobs.", "bountyReward": 150 },
+        { "title": "APIs", "icon": "ph:Plugs", "iconHue": 190, "summary": "Designing APIs: versioning, rate limiting, authentication, documentation, webhooks, SDKs.", "bountyReward": 150 },
+        { "title": "Database", "icon": "ph:Database", "iconHue": 220, "summary": "Database choice for SaaS: Postgres, MySQL, MongoDB, PlanetScale, Neon. Schema design, migrations, multi-tenancy.", "bountyReward": 150 },
+        { "title": "Authentication", "icon": "ph:LockKey", "iconHue": 230, "summary": "Auth for SaaS: OAuth, magic links, SSO/SAML for enterprise. Auth0, Clerk, NextAuth, Supabase Auth comparison.", "bountyReward": 150 },
+        { "title": "Integrations", "icon": "ph:PuzzlePiece", "iconHue": 60, "summary": "Building integrations: Stripe, Slack, Zapier, webhooks, OAuth flows, marketplace listings.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Infrastructure",
+      "icon": "ph:CloudArrowUp",
+      "iconHue": 200,
+      "summary": "Hosting, deployment, and keeping your SaaS running.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Cloud Hosting", "icon": "ph:Cloud", "iconHue": 210, "summary": "Hosting options: Vercel, Railway, Fly.io, AWS, GCP. Cost comparison, scaling characteristics, vendor lock-in.", "bountyReward": 150 },
+        { "title": "DevOps", "icon": "ph:GearSix", "iconHue": 240, "summary": "DevOps for small teams: Docker, Terraform, infrastructure as code. What you actually need vs. over-engineering.", "bountyReward": 150 },
+        { "title": "CI CD", "icon": "ph:ArrowsClockwise", "iconHue": 150, "summary": "Setting up CI/CD: GitHub Actions, automated testing, preview deployments, staging environments.", "bountyReward": 150 },
+        { "title": "Monitoring", "icon": "ph:Pulse", "iconHue": 350, "summary": "Observability stack: error tracking (Sentry), uptime monitoring, logging, alerting, status pages.", "bountyReward": 150 },
+        { "title": "Security", "icon": "ph:ShieldCheck", "iconHue": 10, "summary": "SaaS security basics: OWASP top 10, CSP headers, rate limiting, SOC 2 prep, penetration testing.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Testing",
+      "icon": "ph:TestTube",
+      "iconHue": 130,
+      "summary": "Quality assurance and testing strategies.",
+      "bountyReward": 180,
+      "children": [
+        { "title": "Unit Testing", "icon": "ph:CheckSquare", "iconHue": 140, "summary": "Unit testing strategy: what to test, what to skip, testing libraries, mocking, coverage targets.", "bountyReward": 150 },
+        { "title": "Integration Testing", "icon": "ph:ArrowsIn", "iconHue": 180, "summary": "End-to-end and integration tests: Playwright, Cypress, API testing, database testing.", "bountyReward": 150 },
+        { "title": "Bug Fixing", "icon": "ph:Bug", "iconHue": 0, "summary": "Bug triage, reproduction, debugging techniques, root cause analysis, preventing regressions.", "bountyReward": 150 },
+        { "title": "Performance Testing", "icon": "ph:Gauge", "iconHue": 40, "summary": "Load testing, stress testing, profiling bottlenecks, database query optimization, caching strategies.", "bountyReward": 150 },
+        { "title": "Beta Testing", "icon": "ph:Users", "iconHue": 270, "summary": "Running a beta: recruiting testers, collecting feedback, feature flags, progressive rollouts.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Launch",
+      "icon": "ph:RocketLaunch",
+      "iconHue": 15,
+      "summary": "Getting your SaaS into the world.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Landing Page", "icon": "ph:Browser", "iconHue": 280, "summary": "High-converting SaaS landing pages: hero sections, social proof, pricing tables, CTAs. Examples and templates.", "bountyReward": 150 },
+        { "title": "Product Hunt", "icon": "ph:Trophy", "iconHue": 35, "summary": "Product Hunt launch playbook: timing, teaser, hunter selection, community engagement, post-launch.", "bountyReward": 150 },
+        { "title": "Beta Users", "icon": "ph:UsersFour", "iconHue": 195, "summary": "Finding and managing beta users: where to recruit, feedback loops, early adopter programs.", "bountyReward": 150 },
+        { "title": "Early Adopters", "icon": "ph:Star", "iconHue": 50, "summary": "Converting beta users to paying customers: onboarding, pricing psychology, founder-led sales.", "bountyReward": 150 },
+        { "title": "Public Release", "icon": "ph:Megaphone", "iconHue": 10, "summary": "Launch day execution: announcement strategy, press outreach, community seeding, launch metrics.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Acquisition",
+      "icon": "ph:Funnel",
+      "iconHue": 280,
+      "summary": "Getting users to discover and try your product.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "SEO Wins", "icon": "ph:MagnifyingGlass", "iconHue": 120, "summary": "SEO for SaaS: programmatic pages, comparison pages, bottom-of-funnel content, technical SEO, link building.", "bountyReward": 150 },
+        { "title": "Content Marketing", "icon": "ph:Article", "iconHue": 200, "summary": "Content strategy: blog posts, guides, templates, case studies. Distribution and repurposing.", "bountyReward": 150 },
+        { "title": "Social Media", "icon": "ph:ShareNetwork", "iconHue": 310, "summary": "Building in public, Twitter/LinkedIn strategies, short-form video, community engagement.", "bountyReward": 150 },
+        { "title": "Cold Email", "icon": "ph:EnvelopeSimple", "iconHue": 40, "summary": "Cold outreach: prospecting, copywriting, sequences, deliverability, tools (Instantly, Apollo, Smartlead).", "bountyReward": 150 },
+        { "title": "Influencer Outreach", "icon": "ph:Microphone", "iconHue": 330, "summary": "Working with creators and influencers: sponsorships, affiliate deals, co-marketing, micro-influencers.", "bountyReward": 150 },
+        { "title": "Affiliate Marketing", "icon": "ph:Handshake", "iconHue": 160, "summary": "Running an affiliate program: commission structures, tracking, recruiting affiliates, platforms.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Distribution",
+      "icon": "ph:ShareNetwork",
+      "iconHue": 170,
+      "summary": "Getting your product where users already are.",
+      "bountyReward": 180,
+      "children": [
+        { "title": "Directories", "icon": "ph:List", "iconHue": 100, "summary": "SaaS directories and listings: G2, Capterra, AlternativeTo, Product Hunt collections. Optimization strategies.", "bountyReward": 150 },
+        { "title": "SaaS Marketplaces", "icon": "ph:Storefront", "iconHue": 40, "summary": "Selling through marketplaces: Shopify App Store, Salesforce AppExchange, HubSpot marketplace.", "bountyReward": 150 },
+        { "title": "Communities", "icon": "ph:UsersThree", "iconHue": 310, "summary": "Community-led distribution: Reddit, Discord, Slack groups, forums. Adding value before promoting.", "bountyReward": 150 },
+        { "title": "Partnerships", "icon": "ph:Handshake", "iconHue": 180, "summary": "Strategic partnerships: co-marketing, bundling, reseller agreements, technology partnerships.", "bountyReward": 150 },
+        { "title": "Integration Partners", "icon": "ph:PuzzlePiece", "iconHue": 60, "summary": "Growing through integrations: building for ecosystems, marketplace listings, partner programs.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Conversion",
+      "icon": "ph:ArrowBendDownRight",
+      "iconHue": 40,
+      "summary": "Turning visitors into paying customers.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Sales Funnel", "icon": "ph:Funnel", "iconHue": 280, "summary": "SaaS sales funnel: awareness, consideration, decision. Self-serve vs. sales-assisted, hybrid models.", "bountyReward": 150 },
+        { "title": "Free Trial", "icon": "ph:Gift", "iconHue": 340, "summary": "Optimizing free trials: length, feature gating, activation metrics, trial-to-paid conversion strategies.", "bountyReward": 150 },
+        { "title": "Freemium Model", "icon": "ph:CrownSimple", "iconHue": 50, "summary": "Designing freemium: what's free vs. paid, usage limits, upgrade triggers, avoiding freeloaders.", "bountyReward": 150 },
+        { "title": "Pricing Strategy", "icon": "ph:Tag", "iconHue": 25, "summary": "SaaS pricing: per-seat, usage-based, flat-rate, hybrid. Price anchoring, packaging, annual discounts.", "bountyReward": 150 },
+        { "title": "Checkout Optimization", "icon": "ph:ShoppingCart", "iconHue": 150, "summary": "Reducing checkout friction: Stripe integration, billing page design, failed payment recovery.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Revenue",
+      "icon": "ph:CurrencyDollar",
+      "iconHue": 50,
+      "summary": "Maximizing and diversifying revenue streams.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Subscriptions", "icon": "ph:Repeat", "iconHue": 200, "summary": "Subscription management: MRR/ARR tracking, billing cycles, dunning, payment providers comparison.", "bountyReward": 150 },
+        { "title": "Upsells", "icon": "ph:ArrowUp", "iconHue": 110, "summary": "Upsell strategies: in-app prompts, usage-based upgrades, feature discovery, expansion revenue.", "bountyReward": 150 },
+        { "title": "Add-ons", "icon": "ph:PlusCircle", "iconHue": 260, "summary": "Monetizing add-ons: premium features, API access, priority support, white-labeling, custom domains.", "bountyReward": 150 },
+        { "title": "Annual Plans", "icon": "ph:Calendar", "iconHue": 30, "summary": "Driving annual commitments: discount strategies, monthly vs. annual positioning, cash flow benefits.", "bountyReward": 150 },
+        { "title": "Enterprise Deals", "icon": "ph:Buildings", "iconHue": 220, "summary": "Moving upmarket: enterprise sales process, procurement, security reviews, custom contracts, SLAs.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Analytics",
+      "icon": "ph:ChartLine",
+      "iconHue": 100,
+      "summary": "Measuring what matters in your SaaS.",
+      "bountyReward": 180,
+      "children": [
+        { "title": "User Tracking", "icon": "ph:Cursor", "iconHue": 200, "summary": "Analytics setup: PostHog, Mixpanel, Amplitude. Event tracking, user identification, privacy compliance.", "bountyReward": 150 },
+        { "title": "Funnel Analysis", "icon": "ph:Funnel", "iconHue": 280, "summary": "Funnel optimization: identifying drop-off points, conversion rate benchmarks, A/B testing frameworks.", "bountyReward": 150 },
+        { "title": "Cohort Analysis", "icon": "ph:UsersThree", "iconHue": 310, "summary": "Understanding retention by cohort: weekly/monthly cohorts, feature cohorts, acquisition channel cohorts.", "bountyReward": 150 },
+        { "title": "KPI Dashboard", "icon": "ph:Gauge", "iconHue": 40, "summary": "SaaS metrics that matter: MRR, churn, LTV, CAC, NRR, magic number. Building a founder dashboard.", "bountyReward": 150 },
+        { "title": "A/B Testing", "icon": "ph:SplitVertical", "iconHue": 170, "summary": "A/B testing for SaaS: what to test, statistical significance, feature flags, tools (PostHog, LaunchDarkly).", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Retention",
+      "icon": "ph:HeartStraight",
+      "iconHue": 350,
+      "summary": "Keeping users engaged and reducing churn.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "User Onboarding", "icon": "ph:HandWaving", "iconHue": 55, "summary": "Onboarding flows: checklists, tooltips, product tours, activation milestones, empty states.", "bountyReward": 150 },
+        { "title": "Email Automation", "icon": "ph:EnvelopeSimple", "iconHue": 200, "summary": "Lifecycle emails: welcome sequences, feature announcements, re-engagement, cancellation prevention.", "bountyReward": 150 },
+        { "title": "Customer Support", "icon": "ph:Headset", "iconHue": 180, "summary": "Support strategy: help docs, chatbots, ticketing, live chat, support-driven growth.", "bountyReward": 150 },
+        { "title": "Feature Adoption", "icon": "ph:Sparkle", "iconHue": 260, "summary": "Driving feature adoption: in-app announcements, changelogs, usage analytics, progressive disclosure.", "bountyReward": 150 },
+        { "title": "Churn Reduction", "icon": "ph:TrendDown", "iconHue": 0, "summary": "Fighting churn: exit surveys, cancellation flows, win-back campaigns, identifying at-risk users.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Growth",
+      "icon": "ph:TrendUp",
+      "iconHue": 110,
+      "summary": "Scaling beyond initial traction.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Referral Programs", "icon": "ph:Gift", "iconHue": 340, "summary": "Referral mechanics: incentive structures, viral coefficients, referral tools, measuring program ROI.", "bountyReward": 150 },
+        { "title": "Community Building", "icon": "ph:UsersThree", "iconHue": 310, "summary": "Building a community around your product: Discord, forums, user groups, champions programs.", "bountyReward": 150 },
+        { "title": "Product Led Growth", "icon": "ph:Rocket", "iconHue": 15, "summary": "PLG strategies: self-serve onboarding, viral features, usage-based expansion, PQL scoring.", "bountyReward": 150 },
+        { "title": "Viral Loops", "icon": "ph:ArrowsClockwise", "iconHue": 150, "summary": "Designing virality: invite mechanics, shared workspaces, public profiles, embeddable widgets.", "bountyReward": 150 },
+        { "title": "Expansion Strategy", "icon": "ph:ArrowsOut", "iconHue": 220, "summary": "Expanding TAM: new segments, new geographies, new use cases, platform plays, adjacencies.", "bountyReward": 150 }
+      ]
+    },
+    {
+      "title": "Scaling",
+      "icon": "ph:Ladder",
+      "iconHue": 240,
+      "summary": "Scaling the business beyond founder-led operations.",
+      "bountyReward": 200,
+      "children": [
+        { "title": "Automation", "icon": "ph:Robot", "iconHue": 200, "summary": "Automating operations: billing, support, onboarding, reporting. When to automate vs. when to hire.", "bountyReward": 150 },
+        { "title": "Hiring", "icon": "ph:UserPlus", "iconHue": 170, "summary": "First hires for SaaS: engineer, marketer, support? Hiring playbook, compensation, remote teams.", "bountyReward": 150 },
+        { "title": "Systems", "icon": "ph:GearSix", "iconHue": 240, "summary": "Building systems: SOPs, documentation, knowledge bases, project management, team communication.", "bountyReward": 150 },
+        { "title": "Global Expansion", "icon": "ph:GlobeHemisphereWest", "iconHue": 205, "summary": "Going global: localization, multi-currency billing, compliance (GDPR, etc.), regional marketing.", "bountyReward": 150 },
+        { "title": "Exit Strategy", "icon": "ph:Door", "iconHue": 30, "summary": "Exit options: acquisition, acqui-hire, PE buyout, Micro Acquire, strategic sale, IPO. Preparing for exit.", "bountyReward": 150 }
+      ]
+    }
+  ]
+}
