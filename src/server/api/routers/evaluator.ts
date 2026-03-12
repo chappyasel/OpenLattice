@@ -980,6 +980,52 @@ export const evaluatorRouter = createTRPCRouter({
       });
     }),
 
+  postContentBounties: evaluatorProcedure.mutation(async ({ ctx }) => {
+    // Find published topics with empty content
+    const contentlessTopics = await ctx.db.query.topics.findMany({
+      where: and(
+        eq(topics.status, "published"),
+        sql`(${topics.content} IS NULL OR TRIM(${topics.content}) = '')`,
+      ),
+      columns: { id: true, title: true, summary: true, depth: true, parentTopicId: true, baseId: true, icon: true, iconHue: true },
+    });
+
+    // Find existing open/claimed bounties targeting these topics to avoid duplicates
+    const topicIds = contentlessTopics.map((t) => t.id);
+    const existingBounties = topicIds.length > 0
+      ? await ctx.db.query.bounties.findMany({
+          where: and(
+            inArray(bounties.topicId, topicIds),
+            inArray(bounties.status, ["open", "claimed"]),
+          ),
+          columns: { topicId: true },
+        })
+      : [];
+    const coveredTopicIds = new Set(existingBounties.map((b) => b.topicId));
+
+    let created = 0;
+    for (const topic of contentlessTopics) {
+      if (coveredTopicIds.has(topic.id)) continue;
+
+      const id = await generateUniqueId(ctx.db, bounties, bounties.id, `Write content: ${topic.title}`);
+      await ctx.db.insert(bounties).values({
+        id,
+        title: `Write content: ${topic.title}`,
+        description: `This topic exists but has no content article. Write a comprehensive overview of "${topic.title}".${topic.summary ? ` ${topic.summary}` : ""} Submit an expansion targeting this existing topic — use \`parentTopicSlug: '${topic.parentTopicId ?? ""}'\` and match the title exactly so it merges.`,
+        type: "edit" as const,
+        topicId: topic.id,
+        baseId: topic.baseId,
+        karmaReward: topic.depth === 0 ? 25 : 15,
+        icon: topic.icon,
+        iconHue: topic.iconHue,
+        status: "open",
+      });
+      created++;
+    }
+
+    return { scanned: contentlessTopics.length, alreadyCovered: coveredTopicIds.size, created };
+  }),
+
   recalculateReputation: evaluatorProcedure.mutation(async ({ ctx }) => {
     const allContributors = await ctx.db.query.contributors.findMany({
       with: { submissions: true },
