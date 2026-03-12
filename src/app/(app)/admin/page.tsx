@@ -122,7 +122,7 @@ export default function AdminPage() {
         {/* Actions Row */}
         <div className="mb-8 space-y-4">
           <RunEvaluatorButton />
-          <RunScoutButton />
+          <RunScoutBatchButton />
         </div>
 
         {/* Pending Submissions */}
@@ -188,7 +188,7 @@ function EvaluatorButton({
   title: string;
   description: string;
   streamUrl: string;
-  cancelType: "standard" | "scout";
+  cancelType: "standard";
   icon: React.ComponentType<any>;
 }) {
   const utils = api.useUtils();
@@ -339,15 +339,215 @@ function RunEvaluatorButton() {
   );
 }
 
-function RunScoutButton() {
+function RunScoutBatchButton() {
+  const utils = api.useUtils();
+  const [scoutCount, setScoutCount] = useState(5);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [lines, setLines] = useState<string[]>([]);
+  const [running, setRunning] = useState(false);
+  const [summary, setSummary] = useState<{ done: number; failed: number; total: number } | null>(null);
+  const outputRef = useRef<HTMLPreElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const launchMutation = api.admin.launchScoutBatch.useMutation({
+    onSuccess: (data) => {
+      setBatchId(data.batchId);
+      setSummary({ done: 0, failed: 0, total: data.count });
+      void utils.admin.listAllContributors.invalidate();
+
+      // Connect to SSE stream
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      void (async () => {
+        try {
+          const res = await fetch(`/api/scout-worker/stream/${data.batchId}`, {
+            signal: controller.signal,
+          });
+          if (!res.ok || !res.body) {
+            setLines((prev) => [...prev, `[Error] Stream failed: ${res.status}`]);
+            setRunning(false);
+            return;
+          }
+
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop() ?? "";
+
+            for (const part of parts) {
+              if (!part.trim() || part.trim() === ":") continue;
+
+              // Check for named events
+              const eventMatch = part.match(/^event:\s*(.+)\ndata:\s*(.+)$/m);
+              if (eventMatch) {
+                const [, eventName, eventData] = eventMatch;
+                if (eventName === "scout-done") {
+                  try {
+                    const parsed = JSON.parse(eventData!) as { scoutId: string; status: string };
+                    setSummary((prev) => prev ? {
+                      ...prev,
+                      done: prev.done + 1,
+                      failed: parsed.status === "error" ? prev.failed + 1 : prev.failed,
+                    } : null);
+                  } catch { /* ignore */ }
+                } else if (eventName === "batch-done") {
+                  setRunning(false);
+                  void utils.admin.listPendingSubmissions.invalidate();
+                  void utils.admin.getStats.invalidate();
+                  void utils.activity.getRecent.invalidate();
+                }
+                continue;
+              }
+
+              // Regular data lines
+              const dataMatch = part.match(/^data:\s*(.+)$/m);
+              if (dataMatch) {
+                try {
+                  const parsed = JSON.parse(dataMatch[1]!) as { scoutId: string; line: string };
+                  setLines((prev) => [...prev, `[${parsed.scoutId}] ${parsed.line}`]);
+                } catch {
+                  setLines((prev) => [...prev, dataMatch[1]!]);
+                }
+              }
+            }
+          }
+        } catch (err: unknown) {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setLines((prev) => [...prev, `[Error] ${err instanceof Error ? err.message : String(err)}`]);
+        } finally {
+          setRunning(false);
+        }
+      })();
+    },
+    onError: (err) => {
+      setLines((prev) => [...prev, `[Error] ${err.message}`]);
+      setRunning(false);
+    },
+  });
+
+  const handleLaunch = () => {
+    setLines([]);
+    setSummary(null);
+    setRunning(true);
+    launchMutation.mutate({ count: scoutCount });
+  };
+
+  const handleCancel = async () => {
+    if (!batchId) return;
+    try {
+      await fetch(`/api/scout-worker/cancel/${batchId}`, { method: "POST" });
+    } catch { /* best-effort */ }
+    abortRef.current?.abort();
+    setRunning(false);
+  };
+
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [lines]);
+
+  // Assign colors to scouts for visual distinction
+  const scoutColors: Record<string, string> = {};
+  const colorPalette = [
+    "text-blue-400", "text-emerald-400", "text-yellow-400", "text-violet-400",
+    "text-cyan-400", "text-orange-400", "text-pink-400", "text-teal-400",
+    "text-red-400", "text-lime-400",
+  ];
+
   return (
-    <EvaluatorButton
-      title="Scout"
-      description="Autonomous contributor agent — researches topics & submits expansions"
-      streamUrl="/api/scout/stream"
-      cancelType="scout"
-      icon={RobotIcon}
-    />
+    <div className="rounded-2xl border border-border/50 bg-card p-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold">Scout Batch</h3>
+          <p className="text-sm text-muted-foreground">
+            Launch multiple scout agents in parallel via Fly.io worker
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {!running && (
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-muted-foreground">Scouts:</label>
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={scoutCount}
+                onChange={(e) => setScoutCount(Math.min(50, Math.max(1, parseInt(e.target.value) || 1)))}
+                className="w-14 rounded-lg border border-border/50 bg-background px-2 py-1.5 text-center text-sm focus:border-brand-blue focus:outline-none"
+              />
+            </div>
+          )}
+          {running && (
+            <button
+              onClick={() => void handleCancel()}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20"
+            >
+              <StopCircleIcon weight="bold" className="size-4" />
+              Stop
+            </button>
+          )}
+          <button
+            onClick={handleLaunch}
+            disabled={running}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-blue px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-brand-blue/90 disabled:opacity-50"
+          >
+            {running ? (
+              <SpinnerIcon weight="bold" className="size-4 animate-spin" />
+            ) : (
+              <RobotIcon weight="bold" className="size-4" />
+            )}
+            {running ? "Running…" : "Launch Scouts"}
+          </button>
+        </div>
+      </div>
+      {summary && (
+        <div className="mt-3 flex items-center gap-3 text-xs">
+          <span className="text-muted-foreground">
+            {summary.done}/{summary.total} complete
+          </span>
+          {summary.failed > 0 && (
+            <span className="text-red-400">{summary.failed} failed</span>
+          )}
+          {running && (
+            <span className="flex items-center gap-1 text-brand-blue">
+              <SpinnerIcon weight="bold" className="size-3 animate-spin" />
+              {summary.total - summary.done} running
+            </span>
+          )}
+        </div>
+      )}
+      {lines.length > 0 && (
+        <pre
+          ref={outputRef}
+          className="mt-3 max-h-80 overflow-auto rounded-lg bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap"
+        >
+          {lines.map((line, i) => {
+            // Extract scout ID for coloring
+            const match = line.match(/^\[([^\]]+)\]/);
+            const scoutId = match?.[1] ?? "";
+            if (scoutId && !scoutColors[scoutId]) {
+              scoutColors[scoutId] = colorPalette[Object.keys(scoutColors).length % colorPalette.length]!;
+            }
+            const color = scoutColors[scoutId] ?? "text-muted-foreground";
+            return (
+              <span key={i} className={color}>
+                {line}
+                {"\n"}
+              </span>
+            );
+          })}
+        </pre>
+      )}
+    </div>
   );
 }
 

@@ -7,7 +7,7 @@
  * - Multiple listeners: multiple browser tabs can watch the same run
  */
 
-export type RunType = "standard" | "scout";
+export type RunType = "standard";
 export type RunStatus = "running" | "done" | "error" | "cancelled";
 
 export type RunListener = (line: string) => void;
