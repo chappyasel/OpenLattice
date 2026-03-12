@@ -4,6 +4,110 @@
  * Scores research into tiers that affect karma multiplier.
  */
 
+// ─── Trace Cross-Reference ────────────────────────────────────────────────
+
+export interface TraceCrossReference {
+  traceSteps: number;
+  sessionEvents: number;
+  matchedSteps: number;
+  unmatchedSteps: number;
+  overlapRatio: number;
+  summary: string;
+}
+
+interface TraceStep {
+  tool: string;
+  input: string;
+  finding: string;
+  timestamp?: string;
+}
+
+interface SessionEvent {
+  procedure: string;
+  input: Record<string, unknown> | null;
+  durationMs: number | null;
+  createdAt: string | Date;
+}
+
+const TRACE_TO_SESSION_MAP: Record<string, string[]> = {
+  web_search: ["search", "search_wiki"],
+  mcp_call: ["get_topic", "list_topics", "list_bounties", "get_reputation", "list_recent_activity", "submit_expansion", "submit_resource", "create_edge", "claim_bounty", "list_tags", "list_my_submissions", "list_revision_requests", "resubmit_revision"],
+};
+
+export function computeTraceCrossReference(
+  processTrace: TraceStep[] | undefined,
+  sessionEvents: SessionEvent[] | null,
+): TraceCrossReference {
+  if (!processTrace || processTrace.length === 0) {
+    return {
+      traceSteps: 0,
+      sessionEvents: sessionEvents?.length ?? 0,
+      matchedSteps: 0,
+      unmatchedSteps: 0,
+      overlapRatio: 0,
+      summary: "No process trace to cross-reference.",
+    };
+  }
+
+  if (!sessionEvents || sessionEvents.length === 0) {
+    return {
+      traceSteps: processTrace.length,
+      sessionEvents: 0,
+      matchedSteps: 0,
+      unmatchedSteps: processTrace.length,
+      overlapRatio: 0,
+      summary: `${processTrace.length} trace steps but no session events to verify against.`,
+    };
+  }
+
+  const sessionProcedures = sessionEvents.map((e) => e.procedure.toLowerCase());
+  let matchedSteps = 0;
+
+  for (const step of processTrace) {
+    const tool = step.tool.toLowerCase();
+    const keywords = TRACE_TO_SESSION_MAP[tool];
+
+    if (!keywords) {
+      // Tools like browse_url, file_read, reasoning have no session equivalent — skip
+      continue;
+    }
+
+    const hasMatch = sessionProcedures.some((proc) =>
+      keywords.some((kw) => proc.includes(kw)),
+    );
+    if (hasMatch) matchedSteps++;
+  }
+
+  // Only count matchable steps (those with session mapping)
+  const matchableSteps = processTrace.filter(
+    (step) => TRACE_TO_SESSION_MAP[step.tool.toLowerCase()],
+  ).length;
+  const unmatchedSteps = matchableSteps - matchedSteps;
+  const overlapRatio = matchableSteps > 0 ? matchedSteps / matchableSteps : 1;
+
+  let summary: string;
+  if (matchableSteps === 0) {
+    summary = `All ${processTrace.length} trace steps use tools without session equivalents (browse_url, file_read, reasoning). Cannot cross-reference.`;
+  } else if (overlapRatio >= 0.8) {
+    summary = `Strong corroboration: ${matchedSteps}/${matchableSteps} matchable trace steps confirmed by session events.`;
+  } else if (overlapRatio >= 0.5) {
+    summary = `Partial corroboration: ${matchedSteps}/${matchableSteps} matchable trace steps confirmed. ${unmatchedSteps} steps not found in session.`;
+  } else {
+    summary = `Weak corroboration: only ${matchedSteps}/${matchableSteps} matchable trace steps confirmed. ${unmatchedSteps} steps claimed in trace but absent from session.`;
+  }
+
+  return {
+    traceSteps: processTrace.length,
+    sessionEvents: sessionEvents.length,
+    matchedSteps,
+    unmatchedSteps,
+    overlapRatio,
+    summary,
+  };
+}
+
+// ─── Research Quality Scoring ─────────────────────────────────────────────
+
 export interface ResearchQualityScore {
   tier: "excellent" | "good" | "minimal" | "none";
   multiplier: number;

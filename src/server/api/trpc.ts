@@ -100,7 +100,8 @@ function sanitizeInput(raw: unknown): Record<string, unknown> | null {
 }
 
 /** API key procedure for MCP/agent access — also logs session events if X-Session-Id is present */
-export const apiKeyProcedure = t.procedure.use(async ({ next, ctx, path, rawInput }) => {
+export const apiKeyProcedure = t.procedure.use(async (opts) => {
+  const { next, ctx, path } = opts;
   const authHeader = ctx.headers.get("authorization");
   if (!authHeader) {
     throw new TRPCError({
@@ -169,7 +170,7 @@ export const apiKeyProcedure = t.procedure.use(async ({ next, ctx, path, rawInpu
         id: activityId("evt", validSessionId),
         sessionId: validSessionId,
         procedure: path,
-        input: sanitizeInput(rawInput),
+        input: sanitizeInput(await opts.getRawInput()),
         durationMs,
       })
       .catch(() => {

@@ -235,6 +235,7 @@ export async function reviewExpansion(
     eventCount: number;
     durationMs: number;
     researchQuality: { tier: string; multiplier: number; details: string };
+    traceCrossReference?: { traceSteps: number; sessionEvents: number; matchedSteps: number; unmatchedSteps: number; overlapRatio: number; summary: string };
   } | null,
 ): Promise<{ result: ExpansionReview; durationMs: number; model: string }> {
   const start = Date.now();
@@ -293,6 +294,7 @@ ${sessionData.events.map((e, i) => {
 
 **Research Quality:** ${sessionData.researchQuality.tier.toUpperCase()} (${sessionData.researchQuality.multiplier}x karma) — ${sessionData.researchQuality.details}
 **Total Events:** ${sessionData.eventCount} | **Session Duration:** ${(sessionData.durationMs / 60000).toFixed(1)} minutes
+${sessionData.traceCrossReference ? `**Automated Cross-Reference:** ${sessionData.traceCrossReference.summary} (overlap: ${(sessionData.traceCrossReference.overlapRatio * 100).toFixed(0)}%, matched: ${sessionData.traceCrossReference.matchedSteps}/${sessionData.traceCrossReference.traceSteps} trace steps)` : ""}
 
 ⚠️ IMPORTANT: These server-recorded events are unforgeable ground truth. Cross-reference against the self-reported process trace above:
 - If session events corroborate the trace (similar searches, same topics read) → bonus to toolUseEvidence (+2-3)
