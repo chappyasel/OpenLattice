@@ -200,7 +200,7 @@ export default function TopicPage({
         </div>
 
         {/* Content */}
-        {topic.content && (
+        {topic.content?.trim() && (
           <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6 md:p-8 prose-sm">
             <MarkdownRenderer content={topic.content} />
           </div>
