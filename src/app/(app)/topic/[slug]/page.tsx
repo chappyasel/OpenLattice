@@ -32,6 +32,27 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+// Inline confidence decay computation for client-side rendering
+function getHalfLifeDays(type: string): number {
+  const halfLives: Record<string, number> = {
+    benchmark: 90, config: 90, recommendation: 180,
+    warning: 180, insight: 365, resource_note: 365,
+  };
+  return halfLives[type] ?? 365;
+}
+
+function computeEffectiveConfidence(confidence: number, lastEndorsedAt: string | Date, type: string): number {
+  const halfLifeDays = getHalfLifeDays(type);
+  const daysSince = (Date.now() - new Date(lastEndorsedAt).getTime()) / (1000 * 60 * 60 * 24);
+  return Math.round(confidence * Math.pow(0.5, daysSince / halfLifeDays) * 100) / 100;
+}
+
+function getFreshnessColor(ratio: number): string {
+  if (ratio >= 0.8) return "bg-emerald-500";
+  if (ratio >= 0.5) return "bg-yellow-500";
+  return "bg-red-500";
+}
+
 type Tab = "resources" | "subtopics" | "claims" | "history";
 
 export default function TopicPage({
@@ -314,71 +335,153 @@ export default function TopicPage({
         {activeTab === "claims" && (
           <div className="space-y-3">
             {claimsData && claimsData.length > 0 ? (
-              claimsData.map((claim) => (
-                <div
-                  key={claim.id}
-                  className="rounded-xl border border-border/50 bg-card p-5"
-                >
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span
-                      className={cn(
-                        "rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                        claim.type === "warning"
-                          ? "bg-red-500/10 text-red-500"
-                          : claim.type === "benchmark"
-                            ? "bg-violet-500/10 text-violet-500"
-                            : claim.type === "config"
-                              ? "bg-blue-500/10 text-blue-500"
-                              : "bg-emerald-500/10 text-emerald-500",
-                      )}
+              (() => {
+                // Compute effective confidence and split into active/stale
+                const enriched = claimsData.map((claim) => {
+                  const effective = claim.lastEndorsedAt
+                    ? computeEffectiveConfidence(claim.confidence, claim.lastEndorsedAt, claim.type)
+                    : claim.confidence;
+                  return { ...claim, effectiveConfidence: Math.round(effective) };
+                });
+                const active = enriched
+                  .filter((c) => c.effectiveConfidence >= 20)
+                  .sort((a, b) => b.effectiveConfidence - a.effectiveConfidence);
+                const stale = enriched
+                  .filter((c) => c.effectiveConfidence < 20)
+                  .sort((a, b) => b.effectiveConfidence - a.effectiveConfidence);
+
+                const renderClaim = (claim: typeof enriched[number]) => {
+                  const ratio = claim.confidence > 0 ? claim.effectiveConfidence / claim.confidence : 1;
+                  const freshnessColor = getFreshnessColor(ratio);
+                  const hasDecayed = claim.effectiveConfidence < claim.confidence;
+                  const evidence = claim.groundednessEvidence as { snippet?: string; provenance?: string; discoveryContext?: string } | null;
+
+                  return (
+                    <div
+                      key={claim.id}
+                      className="rounded-xl border border-border/50 bg-card p-5"
                     >
-                      {claim.type}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      confidence: {claim.confidence}%
-                    </span>
-                    {claim.endorsementCount > 0 && (
-                      <span className="text-xs text-emerald-500">
-                        +{claim.endorsementCount} endorsed
-                      </span>
+                      <div className="mb-2 flex flex-wrap items-center gap-2">
+                        {/* Freshness dot */}
+                        <span className={cn("inline-block size-2 rounded-full", freshnessColor)} title={`Freshness: ${Math.round(ratio * 100)}%`} />
+                        {/* Type badge */}
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                            claim.type === "warning"
+                              ? "bg-red-500/10 text-red-500"
+                              : claim.type === "benchmark"
+                                ? "bg-violet-500/10 text-violet-500"
+                                : claim.type === "config"
+                                  ? "bg-blue-500/10 text-blue-500"
+                                  : "bg-emerald-500/10 text-emerald-500",
+                          )}
+                        >
+                          {claim.type}
+                        </span>
+                        {/* Confidence with decay */}
+                        <span className="text-xs text-muted-foreground">
+                          {hasDecayed ? (
+                            <>
+                              <span className="line-through">{claim.confidence}%</span>
+                              <span className="ml-1">&rarr; {claim.effectiveConfidence}%</span>
+                            </>
+                          ) : (
+                            <>{claim.confidence}%</>
+                          )}
+                        </span>
+                        {/* Origin badge */}
+                        {claim.origin && (
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 text-xs",
+                            claim.origin === "expansion"
+                              ? "bg-purple-500/10 text-purple-500"
+                              : "bg-sky-500/10 text-sky-500",
+                          )}>
+                            {claim.origin === "expansion" ? "From expansion" : "Standalone"}
+                          </span>
+                        )}
+                        {claim.endorsementCount > 0 && (
+                          <span className="text-xs text-emerald-500">
+                            +{claim.endorsementCount} endorsed
+                          </span>
+                        )}
+                        {claim.disputeCount > 0 && (
+                          <span className="text-xs text-red-400">
+                            {claim.disputeCount} disputed
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm leading-relaxed">{claim.body}</p>
+                      {/* Evidence section */}
+                      {evidence?.snippet && (
+                        <div className="mt-2 rounded-lg bg-muted/50 p-3">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Evidence snippet</p>
+                          <p className="text-xs text-muted-foreground italic line-clamp-3">&ldquo;{evidence.snippet}&rdquo;</p>
+                        </div>
+                      )}
+                      {/* Supersession */}
+                      {claim.supersededById && (
+                        <p className="mt-2 text-xs text-yellow-500">
+                          Superseded by a newer claim
+                        </p>
+                      )}
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        {claim.contributor && (
+                          <ContributorBadge contributor={claim.contributor} size="sm" />
+                        )}
+                        {/* Provenance badge */}
+                        {evidence?.provenance && evidence.provenance !== "known" && (
+                          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-500">
+                            {evidence.provenance.replace("_", " ")}
+                          </span>
+                        )}
+                        {claim.sourceUrl && (
+                          <a
+                            href={claim.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-brand-blue hover:underline"
+                          >
+                            {claim.sourceTitle ?? "Source"}
+                          </a>
+                        )}
+                        <span>
+                          {formatDistanceToNow(new Date(claim.createdAt), {
+                            addSuffix: true,
+                          })}
+                        </span>
+                        {claim.expiresAt && (
+                          <span className="text-yellow-500">
+                            expires{" "}
+                            {formatDistanceToNow(new Date(claim.expiresAt), {
+                              addSuffix: true,
+                            })}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                };
+
+                return (
+                  <>
+                    {active.map(renderClaim)}
+                    {stale.length > 0 && (
+                      <>
+                        <div className="mt-6 mb-3 flex items-center gap-2">
+                          <div className="h-px flex-1 bg-border" />
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Stale claims — needs fresh verification
+                          </span>
+                          <div className="h-px flex-1 bg-border" />
+                        </div>
+                        {stale.map(renderClaim)}
+                      </>
                     )}
-                    {claim.disputeCount > 0 && (
-                      <span className="text-xs text-red-400">
-                        {claim.disputeCount} disputed
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm leading-relaxed">{claim.body}</p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    {claim.contributor && (
-                      <ContributorBadge contributor={claim.contributor} size="sm" />
-                    )}
-                    {claim.sourceUrl && (
-                      <a
-                        href={claim.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-brand-blue hover:underline"
-                      >
-                        {claim.sourceTitle ?? "Source"}
-                      </a>
-                    )}
-                    <span>
-                      {formatDistanceToNow(new Date(claim.createdAt), {
-                        addSuffix: true,
-                      })}
-                    </span>
-                    {claim.expiresAt && (
-                      <span className="text-yellow-500">
-                        expires{" "}
-                        {formatDistanceToNow(new Date(claim.expiresAt), {
-                          addSuffix: true,
-                        })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))
+                  </>
+                );
+              })()
             ) : (
               <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 text-center">
                 <LightbulbIcon

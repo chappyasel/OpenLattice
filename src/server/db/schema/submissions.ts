@@ -11,6 +11,7 @@ import {
 
 import { contributors } from "./contributors";
 import { bounties } from "./bounties";
+import { researchSessions } from "./sessions";
 
 export const submissionTypeEnum = pgEnum("submission_type", [
   "resource",
@@ -51,6 +52,9 @@ export const submissions = pgTable(
     bountyId: text("bounty_id").references(() => bounties.id, {
       onDelete: "set null",
     }),
+    sessionId: text("session_id").references(() => researchSessions.id, {
+      onDelete: "set null",
+    }),
     reputationDelta: integer("reputation_delta"),
     reviewedByContributorId: text("reviewed_by_contributor_id").references(
       () => contributors.id,
@@ -88,6 +92,10 @@ export const submissionsRelations = relations(submissions, ({ one }) => ({
     fields: [submissions.reviewedByContributorId],
     references: [contributors.id],
     relationName: "reviewedSubmissions",
+  }),
+  session: one(researchSessions, {
+    fields: [submissions.sessionId],
+    references: [researchSessions.id],
   }),
 }));
 

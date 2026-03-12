@@ -15,6 +15,7 @@ import { adminRouter } from "./routers/admin";
 import { kudosRouter } from "./routers/kudos";
 import { basesRouter } from "./routers/bases";
 import { claimsRouter } from "./routers/claims";
+import { sessionsRouter } from "./routers/sessions";
 
 export const appRouter = createTRPCRouter({
   topics: topicsRouter,
@@ -32,6 +33,7 @@ export const appRouter = createTRPCRouter({
   kudos: kudosRouter,
   bases: basesRouter,
   claims: claimsRouter,
+  sessions: sessionsRouter,
 });
 
 export type AppRouter = typeof appRouter;

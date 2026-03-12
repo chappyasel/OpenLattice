@@ -42,6 +42,7 @@ export const expansionReviewSchema = z.object({
     score: z.number().describe("Overall groundedness score (0-10). How grounded is this submission in real, verifiable, local/experiential knowledge vs. generic training-data regurgitation? 0-2: Pure training data — no process trace, no evidence of tool use, generic knowledge any LLM could produce. 3-4: Minimal grounding — process trace exists but is vague or likely fabricated, resources marked 'known' with no discovery context. 5-6: Moderate grounding — some web searches performed, some real URLs found, but content doesn't leverage specific findings. 7-8: Well-grounded — clear process trace showing real tool usage (web search, file reads), resources have discovery context and snippets, content references specific findings. 9-10: Deeply grounded — local/experiential knowledge with specific stacks, outcomes, timestamps. Content that could only come from someone who actually did the work."),
     hasProcessTrace: z.boolean().describe("Did the submission include a meaningful process trace?"),
     toolUseEvidence: z.number().describe("Evidence of real tool usage in the process trace (0-10). 0 = no trace, 5 = generic traces, 10 = detailed traces with specific queries/results"),
+    sessionVerification: z.number().nullable().describe("If a server-verified research session was attached: how well does it corroborate the self-reported process trace? (0-10). null if no session. 0 = contradicts trace, 5 = partial match, 10 = strong corroboration"),
     localContext: z.number().describe("Evidence of local/experiential context — specific stacks, outcomes, time-bound claims (0-10). 0 = purely generic, 10 = deeply specific to a particular environment"),
     summary: z.string().describe("1-2 sentence assessment of how grounded this submission is"),
   }),
@@ -220,6 +221,12 @@ export async function reviewExpansion(
     contributorAcceptanceRate?: number;
     urlVerification?: UrlVerificationResult[];
   },
+  sessionData?: {
+    events: Array<{ procedure: string; input: Record<string, unknown> | null; durationMs: number | null; createdAt: string | Date }>;
+    eventCount: number;
+    durationMs: number;
+    researchQuality: { tier: string; multiplier: number; details: string };
+  } | null,
 ): Promise<{ result: ExpansionReview; durationMs: number; model: string }> {
   const start = Date.now();
 
@@ -264,6 +271,25 @@ ${context.urlVerification && context.urlVerification.length > 0
 ### Process Trace (${hasTrace ? `${processTrace.length} steps` : "NONE PROVIDED"}):
 ${hasTrace ? processTrace.map((step, i) => `${i + 1}. [${step.tool}] ${step.input}\n   → ${step.finding}${step.timestamp ? ` (${step.timestamp})` : ""}`).join("\n") : "⚠️ NO PROCESS TRACE — the agent did not document its research process. This is a significant red flag for groundedness."}
 
+${sessionData ? `
+### Server-Verified Research Session
+The system recorded the following tool calls server-side (UNFORGEABLE — these are ground truth):
+
+| # | Procedure | Duration | Input (summary) |
+|---|-----------|----------|-----------------|
+${sessionData.events.map((e, i) => {
+  const inputSummary = e.input ? Object.entries(e.input).map(([k, v]) => `${k}=${typeof v === "string" ? v.slice(0, 50) : JSON.stringify(v)}`).join(", ") : "(none)";
+  return `| ${i + 1} | ${e.procedure} | ${e.durationMs ?? "?"}ms | ${inputSummary} |`;
+}).join("\n")}
+
+**Research Quality:** ${sessionData.researchQuality.tier.toUpperCase()} (${sessionData.researchQuality.multiplier}x karma) — ${sessionData.researchQuality.details}
+**Total Events:** ${sessionData.eventCount} | **Session Duration:** ${(sessionData.durationMs / 60000).toFixed(1)} minutes
+
+⚠️ IMPORTANT: These server-recorded events are unforgeable ground truth. Cross-reference against the self-reported process trace above:
+- If session events corroborate the trace (similar searches, same topics read) → bonus to toolUseEvidence (+2-3)
+- If session events contradict the trace (trace claims searches not in session) → penalty to toolUseEvidence (-3-5)
+- If no session was attached → no change to scoring
+` : ""}
 ### Findings (${expansion.findings?.length ?? 0}):
 ${(expansion.findings ?? []).length > 0
   ? (expansion.findings ?? []).map((f, i) => `${i + 1}. [${f.type}] "${f.body}"${f.sourceUrl ? ` — source: ${f.sourceUrl}` : ""}${f.expiresAt ? ` (expires: ${f.expiresAt})` : ""} (confidence: ${f.confidence ?? 80}%)`).join("\n")

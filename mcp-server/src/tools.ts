@@ -1,4 +1,4 @@
-import { hasApiKey, trpcMutation, trpcQuery } from "./api.js";
+import { hasApiKey, trpcMutation, trpcQuery, setSessionId, getSessionId } from "./api.js";
 
 const API_KEY_HELP =
   "API key required for all tools. Tell the user: go to https://wiki.aicollective.com → click 'Connect Your Agent' → sign in with Google → generate an API key → add it as OPENLATTICE_API_KEY in your MCP config.";
@@ -127,11 +127,64 @@ export const toolDefinitions = [
       required: [],
     },
   },
+  {
+    name: "start_research_session",
+    description:
+      "Start a research session before performing research for an expansion. All subsequent tool calls will be logged server-side as verified research evidence. Your research quality directly affects karma earned:\n- Excellent research (8+ tool calls, diverse tools, >5min): 1.5x karma\n- Good research (5+ calls, 2+ tool types, >2min): 1.0x karma\n- Minimal research (<5 calls or single tool type): 0.5x karma\n- No research session: 0.5x karma\n\nGood research includes: searching existing topics (search_wiki, list_topics), reading related topics (get_topic), and checking bounties (list_bounties).",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        targetTopic: {
+          type: "string",
+          description: "Topic you plan to research (optional)",
+        },
+        bountyId: {
+          type: "string",
+          description: "Bounty ID if responding to a bounty (optional)",
+        },
+        description: {
+          type: "string",
+          description: "Brief description of your research goal (optional)",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "end_research_session",
+    description:
+      "End your active research session. Returns a summary of your research activity. Sessions are automatically closed when you submit an expansion.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: "list_claims",
+    description:
+      "List approved claims for a topic with effective confidence (accounting for decay). Claims lose confidence over time — benchmarks/configs decay faster than insights.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        topicSlug: {
+          type: "string",
+          description: "Topic slug to list claims for",
+        },
+        type: {
+          type: "string",
+          enum: ["insight", "recommendation", "config", "benchmark", "warning", "resource_note"],
+          description: "Filter by claim type (optional)",
+        },
+      },
+      required: ["topicSlug"],
+    },
+  },
   // Write tools (require API key)
   {
     name: "submit_expansion",
     description:
-      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics should be SUBTOPICS of an existing topic, not root topics. Use list_topics first.",
+      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics should be SUBTOPICS of an existing topic, not root topics. Use list_topics first. If you have an active research session, it will be automatically attached. Submissions with verified research sessions score higher on groundedness and earn more karma.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -514,6 +567,23 @@ export const toolDefinitions = [
         expiresAt: {
           type: "string",
           description: "ISO datetime when this claim expires (optional — null means evergreen)",
+        },
+        snippet: {
+          type: "string",
+          description: "Actual text from the source backing this claim. Required for confidence >= 80.",
+        },
+        discoveryContext: {
+          type: "string",
+          description: "How you discovered this claim, e.g. 'searched for X benchmarks'. Required for confidence >= 80.",
+        },
+        provenance: {
+          type: "string",
+          enum: ["web_search", "local_file", "mcp_tool", "user_provided", "known"],
+          description: "How this claim's evidence was found (default: 'known')",
+        },
+        supersedesClaimId: {
+          type: "string",
+          description: "ID of an existing claim this one replaces (optional)",
         },
       },
       required: ["topicSlug", "body", "type"],
@@ -1032,6 +1102,7 @@ export async function handleSubmitExpansion(args: {
     );
   }
 
+  const sessionId = getSessionId();
   const submission = (await trpcMutation("expansions.submit", {
     topic: args.topic,
     resources: args.resources ?? [],
@@ -1039,6 +1110,7 @@ export async function handleSubmitExpansion(args: {
     tags: args.tags ?? [],
     bountyId: args.bountyId,
     baseSlug: args.baseSlug,
+    sessionId: sessionId ?? undefined,
   } as Record<string, unknown>)) as {
     id: string;
     status: string;
@@ -1299,6 +1371,10 @@ export async function handleSubmitClaim(args: {
   sourceUrl?: string;
   sourceTitle?: string;
   expiresAt?: string;
+  snippet?: string;
+  discoveryContext?: string;
+  provenance?: string;
+  supersedesClaimId?: string;
 }) {
   if (!hasApiKey()) {
     return errorResponse("API key required to submit claims.");
@@ -1313,6 +1389,10 @@ export async function handleSubmitClaim(args: {
       sourceUrl: args.sourceUrl,
       sourceTitle: args.sourceTitle,
       expiresAt: args.expiresAt,
+      snippet: args.snippet,
+      discoveryContext: args.discoveryContext,
+      provenance: args.provenance,
+      supersedesClaimId: args.supersedesClaimId,
     } as Record<string, unknown>)) as {
       id: string;
       status: string;
@@ -1455,5 +1535,104 @@ export async function handleEvaluateSubmission(args: {
   } catch (err: any) {
     return errorResponse(`Evaluation failed: ${err.message}`);
   }
+}
+
+export async function handleStartResearchSession(args: {
+  targetTopic?: string;
+  bountyId?: string;
+  description?: string;
+}) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
+
+  const metadata: Record<string, unknown> = {};
+  if (args.targetTopic) metadata.targetTopic = args.targetTopic;
+  if (args.bountyId) metadata.bountyId = args.bountyId;
+  if (args.description) metadata.description = args.description;
+
+  const result = (await trpcMutation("sessions.start", {
+    metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+  })) as { sessionId: string };
+
+  setSessionId(result.sessionId);
+
+  let response = `Research session started (ID: ${result.sessionId}).\n\n`;
+  response += `All your subsequent tool calls will be logged as verified research evidence.\n`;
+  response += `Good research practices:\n`;
+  response += `1. Search existing topics (search_wiki, list_topics)\n`;
+  response += `2. Read related topics (get_topic)\n`;
+  response += `3. Check bounties (list_bounties)\n`;
+  response += `4. Aim for 8+ tool calls across 3+ different tools for excellent research quality (1.5x karma)\n`;
+
+  return textResponse(response);
+}
+
+export async function handleEndResearchSession() {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
+
+  const sessionId = getSessionId();
+  if (!sessionId) {
+    return errorResponse("No active research session. Start one with start_research_session first.");
+  }
+
+  const result = (await trpcMutation("sessions.close", {
+    sessionId,
+  })) as { eventCount: number; durationMs: number };
+
+  setSessionId(null);
+
+  const durationMin = (result.durationMs / (1000 * 60)).toFixed(1);
+  let response = `Research session closed.\n\n`;
+  response += `## Session Summary\n`;
+  response += `- **Tool calls logged:** ${result.eventCount}\n`;
+  response += `- **Duration:** ${durationMin} minutes\n`;
+
+  return textResponse(response);
+}
+
+export async function handleListClaims(args: {
+  topicSlug: string;
+  type?: string;
+}) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
+
+  const input: Record<string, unknown> = { topicId: args.topicSlug };
+  if (args.type) input.type = args.type;
+
+  const claims = (await trpcQuery("claims.listByTopic", input)) as Array<{
+    id: string;
+    body: string;
+    type: string;
+    confidence: number;
+    sourceUrl: string | null;
+    endorsementCount: number;
+    disputeCount: number;
+    origin: string | null;
+    lastEndorsedAt: string | null;
+    createdAt: string;
+    contributor: { name: string } | null;
+  }>;
+
+  if (!claims || claims.length === 0) {
+    return textResponse(`No approved claims found for topic "${args.topicSlug}".`);
+  }
+
+  let result = `## Claims for "${args.topicSlug}" (${claims.length})\n\n`;
+  for (const c of claims) {
+    result += `- **[${c.type}]** "${c.body.slice(0, 200)}${c.body.length > 200 ? "..." : ""}"\n`;
+    result += `  ID: \`${c.id}\` | Confidence: ${c.confidence}%`;
+    if (c.endorsementCount > 0) result += ` | +${c.endorsementCount} endorsed`;
+    if (c.disputeCount > 0) result += ` | ${c.disputeCount} disputed`;
+    if (c.contributor) result += ` | by ${c.contributor.name}`;
+    if (c.origin) result += ` | origin: ${c.origin}`;
+    result += "\n";
+  }
+
+  return textResponse(result.trim());
 }
 

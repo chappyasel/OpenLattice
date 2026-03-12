@@ -2,6 +2,16 @@ const baseUrl =
   process.env.OPENLATTICE_URL ?? "http://localhost:3000";
 const apiKey = process.env.OPENLATTICE_API_KEY;
 
+let currentSessionId: string | null = null;
+
+export function setSessionId(id: string | null) {
+  currentSessionId = id;
+}
+
+export function getSessionId(): string | null {
+  return currentSessionId;
+}
+
 export function hasApiKey() {
   return !!apiKey;
 }
@@ -13,6 +23,9 @@ export async function trpcQuery(path: string, input: Record<string, unknown>) {
   const headers: Record<string, string> = {};
   if (apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
+  }
+  if (currentSessionId) {
+    headers["X-Session-Id"] = currentSessionId;
   }
 
   const res = await fetch(url.toString(), { headers });
@@ -36,12 +49,16 @@ export async function trpcMutation(
   }
 
   const url = new URL(`/api/trpc/${path}`, baseUrl);
+  const mutationHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (currentSessionId) {
+    mutationHeaders["X-Session-Id"] = currentSessionId;
+  }
   const res = await fetch(url.toString(), {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: mutationHeaders,
     body: JSON.stringify({ json: input }),
   });
 

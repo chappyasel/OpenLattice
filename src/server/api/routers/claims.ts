@@ -11,6 +11,8 @@ import {
 import { claims, claimVerifications, topics } from "@/server/db/schema";
 import { generateUniqueId } from "@/lib/utils";
 import { recordKarma } from "@/lib/karma";
+import { reviewClaim } from "@/lib/evaluator/claim-evaluator";
+import { computeEffectiveConfidence } from "@/lib/claims/decay";
 import { publicContributorColumns } from "./contributors";
 
 const claimTypeValues = ["insight", "recommendation", "config", "benchmark", "warning", "resource_note"] as const;
@@ -35,7 +37,7 @@ export const claimsRouter = createTRPCRouter({
         conditions.push(eq(claims.type, input.type));
       }
 
-      return ctx.db.query.claims.findMany({
+      const results = await ctx.db.query.claims.findMany({
         where: and(...conditions),
         with: {
           contributor: { columns: publicContributorColumns },
@@ -43,6 +45,13 @@ export const claimsRouter = createTRPCRouter({
         orderBy: [desc(claims.confidence), desc(claims.createdAt)],
         limit: input.limit,
       });
+
+      return results.map((claim) => ({
+        ...claim,
+        effectiveConfidence: claim.lastEndorsedAt
+          ? computeEffectiveConfidence(claim.confidence, claim.lastEndorsedAt, claim.type)
+          : claim.confidence,
+      })).sort((a, b) => b.effectiveConfidence - a.effectiveConfidence);
     }),
 
   submit: apiKeyProcedure
@@ -55,6 +64,10 @@ export const claimsRouter = createTRPCRouter({
         sourceUrl: z.string().url().optional(),
         sourceTitle: z.string().optional(),
         expiresAt: z.string().datetime().optional(),
+        snippet: z.string().optional(),
+        discoveryContext: z.string().optional(),
+        provenance: z.enum(["web_search", "local_file", "mcp_tool", "user_provided", "known"]).optional(),
+        supersedesClaimId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -94,6 +107,60 @@ export const claimsRouter = createTRPCRouter({
 
       const id = await generateUniqueId(ctx.db, claims, claims.id, `claim-${ctx.contributor.id}`);
 
+      // Evidence tier validation
+      if (confidence >= 80) {
+        if (!input.sourceUrl || !input.snippet || !input.discoveryContext) {
+          throw new Error("High-confidence claims (80+) require sourceUrl, snippet, and discoveryContext");
+        }
+      } else if (confidence >= 60) {
+        if (!input.sourceUrl && !input.snippet) {
+          throw new Error("Medium-confidence claims (60-79) require sourceUrl or snippet");
+        }
+      }
+
+      // Build groundedness evidence
+      const groundednessEvidence = (input.snippet || input.discoveryContext || input.provenance)
+        ? {
+            snippet: input.snippet,
+            discoveryContext: input.discoveryContext,
+            provenance: input.provenance,
+            sessionId: (ctx as any).sessionId ?? undefined,
+          }
+        : (ctx as any).sessionId
+          ? { sessionId: (ctx as any).sessionId }
+          : null;
+
+      // Lightweight AI evaluation for non-auto-approved claims
+      let evaluationScore: number | null = null;
+      let evaluationReasoning: string | null = null;
+      let claimStatus: "pending" | "approved" | "rejected" = autoApprove ? "approved" : "pending";
+
+      if (!autoApprove) {
+        try {
+          const { result: review } = await reviewClaim(
+            {
+              body: input.body,
+              type: input.type,
+              confidence,
+              sourceUrl: input.sourceUrl,
+              sourceTitle: input.sourceTitle,
+              environmentContext: input.environmentContext as Record<string, unknown> | undefined,
+              groundednessEvidence,
+            },
+            {
+              topicTitle: topic.title ?? input.topicSlug,
+              contributorName: ctx.contributor.name,
+              contributorTrustLevel: ctx.contributor.trustLevel,
+            },
+          );
+          evaluationScore = review.score;
+          evaluationReasoning = review.reasoning;
+          claimStatus = review.verdict === "approve" ? "approved" : "rejected";
+        } catch {
+          // Evaluation failed — leave as pending for admin review
+        }
+      }
+
       const [claim] = await ctx.db
         .insert(claims)
         .values({
@@ -101,23 +168,45 @@ export const claimsRouter = createTRPCRouter({
           topicId: topic.id,
           contributorId: ctx.contributor.id,
           type: input.type,
-          status: autoApprove ? "approved" : "pending",
+          status: claimStatus,
           body: input.body,
           sourceUrl: input.sourceUrl ?? null,
           sourceTitle: input.sourceTitle ?? null,
           environmentContext: input.environmentContext as Record<string, string> | undefined ?? null,
           confidence,
           expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+          origin: "standalone",
+          groundednessEvidence: groundednessEvidence as any,
+          evaluationScore,
+          evaluationReasoning,
+          supersedesClaimId: input.supersedesClaimId ?? null,
         })
         .returning();
 
-      // Award karma immediately for auto-approved claims
-      if (autoApprove) {
+      // Handle supersession
+      if (claimStatus === "approved" && input.supersedesClaimId) {
+        const oldClaim = await ctx.db.query.claims.findFirst({
+          where: and(eq(claims.id, input.supersedesClaimId), eq(claims.status, "approved")),
+        });
+        if (oldClaim) {
+          await ctx.db
+            .update(claims)
+            .set({ status: "superseded", supersededById: id })
+            .where(eq(claims.id, input.supersedesClaimId));
+        }
+      }
+
+      // Award karma for approved claims
+      if (claimStatus === "approved") {
+        let karmaDelta = 5;
+        if (input.supersedesClaimId) karmaDelta += 3;
+        if ((ctx as any).sessionId) karmaDelta += 2;
+
         await recordKarma(ctx.db, {
           contributorId: ctx.contributor.id,
-          delta: 5,
+          delta: karmaDelta,
           eventType: "submission_approved",
-          description: `Claim auto-approved: "${input.body.slice(0, 60)}..."`,
+          description: `Claim ${autoApprove ? "auto-" : ""}approved: "${input.body.slice(0, 60)}..."`,
           topicId: topic.id,
         });
 
@@ -129,6 +218,14 @@ export const claimsRouter = createTRPCRouter({
             contributorCount: sql`${topics.contributorCount} + 1`,
           })
           .where(eq(topics.id, topic.id));
+      } else if (claimStatus === "rejected") {
+        await recordKarma(ctx.db, {
+          contributorId: ctx.contributor.id,
+          delta: -3,
+          eventType: "submission_rejected",
+          description: `Claim rejected: "${input.body.slice(0, 60)}..."`,
+          topicId: topic.id,
+        });
       }
 
       return claim!;
