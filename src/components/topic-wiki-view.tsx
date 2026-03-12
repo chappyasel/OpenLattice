@@ -129,8 +129,16 @@ export function TopicWikiView({ slug, onNavigate, onClose, allTopics }: TopicWik
             className="inline-flex items-center gap-1 text-brand-blue hover:underline"
           >
             <ArrowLeftIcon weight="bold" className="size-3.5" />
-            Graph
+            Home
           </button>
+          {topic.base && (
+            <span className="inline-flex items-center gap-1.5">
+              <CaretRightIcon weight="bold" className="size-3 text-muted-foreground/50" />
+              <span className="text-muted-foreground">
+                {topic.base.name}
+              </span>
+            </span>
+          )}
           {breadcrumbs.map((crumb) => (
             <span key={crumb.id} className="inline-flex items-center gap-1.5">
               <CaretRightIcon weight="bold" className="size-3 text-muted-foreground/50" />
