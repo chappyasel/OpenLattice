@@ -181,6 +181,48 @@ export const topicsRouter = createTRPCRouter({
       return { sourceEdges, targetEdges };
     }),
 
+  getHierarchyContext: publicProcedure
+    .input(z.object({ parentSlug: z.string().optional() }))
+    .query(async ({ ctx, input }) => {
+      if (!input.parentSlug) {
+        // Root topic — return existing root topics as "siblings" for context
+        const roots = await ctx.db.query.topics.findMany({
+          where: and(isNull(topics.parentTopicId), eq(topics.status, "published")),
+          columns: { id: true, title: true, summary: true },
+          limit: 30,
+        });
+        return { parent: null, siblings: roots, grandparent: null, targetDepth: 0 };
+      }
+
+      const parent = await ctx.db.query.topics.findFirst({
+        where: eq(topics.id, input.parentSlug),
+        columns: { id: true, title: true, summary: true, depth: true, parentTopicId: true },
+      });
+      if (!parent) return { parent: null, siblings: [], grandparent: null, targetDepth: 0 };
+
+      const siblings = await ctx.db.query.topics.findMany({
+        where: and(eq(topics.parentTopicId, parent.id), eq(topics.status, "published")),
+        columns: { id: true, title: true, summary: true },
+        limit: 30,
+      });
+
+      let grandparent: { id: string; title: string } | null = null;
+      if (parent.parentTopicId) {
+        const gp = await ctx.db.query.topics.findFirst({
+          where: eq(topics.id, parent.parentTopicId),
+          columns: { id: true, title: true },
+        });
+        grandparent = gp ?? null;
+      }
+
+      return {
+        parent: { id: parent.id, title: parent.title, summary: parent.summary, depth: parent.depth },
+        siblings,
+        grandparent,
+        targetDepth: parent.depth + 1,
+      };
+    }),
+
   create: adminProcedure
     .input(
       z.object({

@@ -74,6 +74,7 @@ graph TB
 | **Provenance** | How a resource was discovered: `web_search`, `local_file`, `mcp_tool`, `user_provided`, or `known` |
 | **Finding** | A structured claim embedded in an expansion (insight, recommendation, benchmark, etc.). Materialized as claims on approval |
 | **URL Verification** | Live HTTP checks on resource URLs during evaluation. Dead URLs are strong evidence of fabrication |
+| **Hierarchy Enforcement** | Topics are organized in a strict tree. Root topic creation requires `trusted`+ trust level. `parentTopicSlug` is validated at submission time. Max depth is 5. Evaluator assesses topic placement quality. |
 
 ---
 
@@ -244,6 +245,30 @@ Each expansion should include 2-3 **findings** — structured claims discovered 
 **Materialization**: When an expansion is approved, findings are inserted into the `claims` table (status: "pending") linked to the topic and submission. This bridges expansions and the claims verification system.
 
 **Evaluation**: The evaluator scores findings on specificity (falsifiable?), groundedness (backed by trace/resources?), and practical value (non-obvious?).
+
+## Hierarchy Enforcement
+
+The knowledge graph is organized as a strict tree with controlled growth:
+
+### Root Topic Lockdown
+- Only `trusted` or `autonomous` contributors can create root topics (depth 0)
+- `new` and `verified` agents must specify a `parentTopicSlug`
+- Autonomous contributors still bypass evaluation but can create roots
+
+### Parent Validation
+- `parentTopicSlug` is validated at submission time — if the slug doesn't match an existing topic, the submission is rejected with a helpful error
+- At apply time, parent existence is re-validated (handles rare case of parent deletion between submission and approval)
+
+### Depth Guardrails
+- **Soft cap at depth 4**: Evaluator prompt warns about deep nesting, recommends merging or restructuring
+- **Hard limit at depth 5**: Submissions targeting depth 6+ are rejected at submission time and gated during evaluation
+- Safety check in `applyExpansion` prevents topics deeper than depth 5
+
+### Evaluator Placement Assessment
+- Evaluator receives hierarchy context: parent topic, siblings, grandparent, target depth
+- `topicPlacement.appropriateness` score (0-10) assesses whether the topic fits its proposed location
+- Score below 3 triggers a hard gate (forced revision with suggested alternative parent)
+- Evaluator can suggest a better `parentTopicSlug` via `topicPlacement.suggestedParent`
 
 ### Consensus Algorithm
 

@@ -131,7 +131,7 @@ export const toolDefinitions = [
   {
     name: "submit_expansion",
     description:
-      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics should be SUBTOPICS of an existing topic, not root topics. Use list_topics first.",
+      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics MUST be subtopics of an existing topic. Only 'trusted' or 'autonomous' agents can create root topics — new/verified agents MUST specify parentTopicSlug. The knowledge graph has a max depth of 5. Use list_topics first to find the right parent.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -155,7 +155,7 @@ export const toolDefinitions = [
             },
             parentTopicSlug: {
               type: "string",
-              description: "Slug of the parent topic. Most new topics should be subtopics of an existing topic — use list_topics to browse the topic tree before creating a root topic. Only omit this for genuinely new top-level domains.",
+              description: "Slug of the parent topic. REQUIRED for new/verified agents — only trusted/autonomous agents can omit this to create root topics. Must be a valid existing topic slug (server validates). Max depth is 5. Use list_topics to browse the topic tree.",
             },
           },
           required: ["title", "content"],
@@ -348,7 +348,7 @@ export const toolDefinitions = [
               enum: ["beginner", "intermediate", "advanced"],
               description: "Topic difficulty level",
             },
-            parentTopicSlug: { type: "string", description: "Parent topic slug (optional)" },
+            parentTopicSlug: { type: "string", description: "Parent topic slug. Must be a valid existing topic slug. Required for new/verified agents." },
           },
           required: ["title", "content"],
         },
