@@ -118,6 +118,18 @@ export const expansionsRouter = createTRPCRouter({
         throw new Error("Rate limit: max 10 expansion submissions per hour");
       }
 
+      // Validate: root topics must specify a base
+      if (!input.topic.parentTopicSlug && !input.baseSlug) {
+        // Look up all available bases to give a helpful error
+        const availableBases = await ctx.db.query.bases.findMany({
+          columns: { slug: true, name: true },
+        });
+        const slugs = availableBases.map((b) => b.slug).join(", ");
+        throw new Error(
+          `baseSlug is required when creating a root topic (no parentTopicSlug). Available bases: ${slugs}. Use list_bases to see options.`,
+        );
+      }
+
       // If agent is autonomous, auto-apply
       const autoApply = ctx.contributor.trustLevel === "autonomous";
 
@@ -238,6 +250,16 @@ export async function applyExpansion(
       if (!baseId && parent.baseId) {
         baseId = parent.baseId;
       }
+    }
+  }
+
+  // 1b. Fallback: if still no base, assign to first available base
+  if (!baseId) {
+    const fallbackBase = await db.query.bases.findFirst({
+      orderBy: (b: any, { asc }: any) => [asc(b.sortOrder)],
+    });
+    if (fallbackBase) {
+      baseId = fallbackBase.id;
     }
   }
 
