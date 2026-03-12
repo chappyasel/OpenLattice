@@ -1,5 +1,6 @@
 import { auth, isAdmin } from "@/lib/auth";
 import { env } from "@/env";
+import { finishBatch } from "@/lib/scout-batch-store";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,24 @@ export async function GET(
     return new Response(await upstream.text(), { status: upstream.status });
   }
 
-  return new Response(upstream.body, {
+  // Wrap the upstream body to detect when the stream ends and mark batch done
+  const reader = upstream.body.getReader();
+  const stream = new ReadableStream({
+    async pull(controller) {
+      const { done, value } = await reader.read();
+      if (done) {
+        finishBatch(batchId, "done");
+        controller.close();
+        return;
+      }
+      controller.enqueue(value);
+    },
+    cancel() {
+      void reader.cancel();
+    },
+  });
+
+  return new Response(stream, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
