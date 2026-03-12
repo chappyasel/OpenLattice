@@ -212,7 +212,7 @@ async function reviewPendingSubmissions(
 
   const allTopics = await trpc.query<
     Array<{ id: string; title: string; summary: string | null; iconHue: number | null }>
-  >("topics.list", { status: "published" });
+  >("topics.listSummary", { status: "published" });
   const existingTopics = (allTopics ?? []).map((t) => ({ id: t.id, title: t.title, summary: t.summary }));
   const topicHues = (allTopics ?? []).map((t) => t.iconHue).filter((h): h is number => h != null);
 
@@ -1072,19 +1072,20 @@ async function doGraphRestructuring(
   const MAX_RESTRUCTURING_BOUNTIES = 5;
 
   try {
+    // Use lightweight listSummary — no content, no relations, just computed counts
     const topics = await trpc.query<
       Array<{
         id: string;
         title: string;
         summary: string | null;
-        content: string;
         parentTopicId: string | null;
         depth: number;
         baseId: string | null;
-        topicResources: Array<{ resource: { type: string } }>;
-        childTopics: Array<{ id: string }>;
+        contentLength: number;
+        resourceCount: number;
+        childCount: number;
       }>
-    >("topics.list", { status: "published" });
+    >("topics.listSummary", { status: "published" });
 
     if (!topics?.length || topics.length < 10) {
       log("  [restructure] Not enough topics for restructuring analysis (need 10+)");
@@ -1097,9 +1098,9 @@ async function doGraphRestructuring(
       summary: t.summary,
       parentTopicId: t.parentTopicId,
       depth: t.depth ?? 0,
-      childCount: t.childTopics?.length ?? 0,
-      resourceCount: t.topicResources?.length ?? 0,
-      contentLength: t.content?.length ?? 0,
+      childCount: t.childCount ?? 0,
+      resourceCount: t.resourceCount ?? 0,
+      contentLength: t.contentLength ?? 0,
       baseSlug: t.baseId,
     }));
 

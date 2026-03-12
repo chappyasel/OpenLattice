@@ -12,8 +12,14 @@
     "fix": "eslint --fix \"src/**/*.{js,jsx,ts,tsx}\"",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:migrate:dev": "dotenv -e .env.development.local -- drizzle-kit migrate",
+    "db:migrate:prod": "dotenv -e .env -- drizzle-kit migrate",
     "db:push": "drizzle-kit push",
+    "db:push:dev": "dotenv -e .env.development.local -- drizzle-kit push",
+    "db:push:prod": "dotenv -e .env -- drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:studio:dev": "dotenv -e .env.development.local -- drizzle-kit studio",
+    "db:studio:prod": "dotenv -e .env -- drizzle-kit studio",
     "db:seed": "npx tsx ./scripts/seed.ts"
   },
   "dependencies": {
@@ -74,6 +80,7 @@
     "@types/react-dom": "19.2.3",
     "autoprefixer": "^10.4.19",
     "dotenv": "^16.4.5",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
     "postcss": "^8.4.38",
