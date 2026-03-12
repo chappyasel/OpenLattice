@@ -201,7 +201,16 @@ async function reviewPendingSubmissions(
       "evaluator.listPendingSubmissions",
       { type: "bounty_response" },
     );
-    submissions = [...(expansions ?? []), ...(bountyResponses ?? [])];
+    // Interleave expansions and bounty responses to prevent starvation
+    // when maxSubmissions caps the batch size
+    const a = expansions ?? [];
+    const b = bountyResponses ?? [];
+    submissions = [];
+    const maxLen = Math.max(a.length, b.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (i < a.length) submissions.push(a[i]!);
+      if (i < b.length) submissions.push(b[i]!);
+    }
   }
 
   if (!submissions.length) return 0;
@@ -224,7 +233,7 @@ async function reviewPendingSubmissions(
       const expansion = submission.data as any;
       if (!expansion?.topic?.title || !expansion?.topic?.content) {
         log(
-          `  [review] Skipping ${submission.id.slice(0, 8)}... — invalid expansion data`,
+          `  [review] Skipping ${submission.id.slice(0, 8)}... (type: ${submission.type}) — missing topic.title or topic.content`,
         );
         continue;
       }
