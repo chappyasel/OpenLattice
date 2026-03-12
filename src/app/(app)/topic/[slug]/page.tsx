@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useRef } from "react";
+import { use, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useQueryState } from "nuqs";
 import { motion } from "framer-motion";
@@ -54,6 +54,47 @@ function getFreshnessColor(ratio: number): string {
   return "bg-red-500";
 }
 
+/** Composite resource ranking: blends relevance, evaluator score, and recency */
+function computeResourceRank(tr: {
+  relevanceScore: number;
+  createdAt: string | Date;
+  resource: { score: number };
+}): number {
+  // Normalize relevance (0-100) — weight 0.4
+  const relevance = tr.relevanceScore / 100;
+  // Normalize evaluator score (0-100) — weight 0.35
+  const evalScore = tr.resource.score / 100;
+  // Recency: half-life of 180 days — weight 0.25
+  const daysSince =
+    (Date.now() - new Date(tr.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  const recency = Math.pow(0.5, daysSince / 180);
+  return relevance * 0.4 + evalScore * 0.35 + recency * 0.25;
+}
+
+/** Composite subtopic ranking: content richness + recent activity */
+function computeSubtopicRank(child: {
+  sourceCount: number;
+  contributorCount: number;
+  lastContributedAt: string | Date | null;
+  sortOrder: number;
+}): number {
+  // Manual sort order takes priority (lower = first, inverted so higher rank = first)
+  const manualBoost = -child.sortOrder * 1000;
+  // Resource count (log scale to avoid one mega-topic dominating)
+  const contentScore = Math.log2(1 + child.sourceCount) * 3;
+  // Contributor diversity
+  const diversityScore = Math.log2(1 + child.contributorCount) * 2;
+  // Recency of last contribution (half-life 90 days)
+  let recencyScore = 0;
+  if (child.lastContributedAt) {
+    const daysSince =
+      (Date.now() - new Date(child.lastContributedAt).getTime()) /
+      (1000 * 60 * 60 * 24);
+    recencyScore = Math.pow(0.5, daysSince / 90) * 2;
+  }
+  return manualBoost + contentScore + diversityScore + recencyScore;
+}
+
 type Tab = "resources" | "subtopics" | "claims" | "history";
 
 export default function TopicPage({
@@ -78,6 +119,22 @@ export default function TopicPage({
     { topicId: slug },
     { enabled: !!slug },
   );
+
+  // Composite-ranked resources: relevance + evaluator score + recency
+  const rankedResources = useMemo(() => {
+    if (!topic?.topicResources) return [];
+    return [...topic.topicResources].sort(
+      (a, b) => computeResourceRank(b) - computeResourceRank(a),
+    );
+  }, [topic?.topicResources]);
+
+  // Composite-ranked subtopics: manual order + content richness + activity
+  const rankedSubtopics = useMemo(() => {
+    if (!topic?.childTopics) return [];
+    return [...topic.childTopics].sort(
+      (a, b) => computeSubtopicRank(b) - computeSubtopicRank(a),
+    );
+  }, [topic?.childTopics]);
 
   if (isLoading) {
     return (
@@ -238,8 +295,8 @@ export default function TopicPage({
         {/* Resources tab */}
         {activeTab === "resources" && (
           <div className="grid gap-4 md:grid-cols-2">
-            {topic.topicResources && topic.topicResources.length > 0 ? (
-              topic.topicResources.map((tr) => (
+            {rankedResources.length > 0 ? (
+              rankedResources.map((tr) => (
                 <motion.div
                   key={tr.resource.id}
                   onClick={() => void setSelectedResourceId(tr.resource.id)}
@@ -304,8 +361,8 @@ export default function TopicPage({
         {/* Subtopics tab */}
         {activeTab === "subtopics" && (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {topic.childTopics && topic.childTopics.length > 0 ? (
-              topic.childTopics.map((child) => (
+            {rankedSubtopics.length > 0 ? (
+              rankedSubtopics.map((child) => (
                 <motion.div
                   key={child.id}
                   whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
