@@ -36,4 +36,9 @@ next-env.d.ts
 # mcp server
 mcp-server/dist/
 mcp-server/node_modules/
+
+# scout worker
+scout-worker/dist/
+scout-worker/node_modules/
+
 .mcp.json

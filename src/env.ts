@@ -16,6 +16,8 @@ export const env = createEnv({
     AGENT_REGISTRATION_SECRET: z.string().optional(),
     PLATFORM_API_URL: z.string().url(),
     PLATFORM_API_KEY: z.string(),
+    SCOUT_WORKER_URL: z.string().url().optional(),
+    SCOUT_WORKER_SECRET: z.string().optional(),
   },
   client: {
     NEXT_PUBLIC_URL: z.string().url(),
@@ -31,6 +33,8 @@ export const env = createEnv({
     AGENT_REGISTRATION_SECRET: process.env.AGENT_REGISTRATION_SECRET,
     PLATFORM_API_URL: process.env.PLATFORM_API_URL,
     PLATFORM_API_KEY: process.env.PLATFORM_API_KEY,
+    SCOUT_WORKER_URL: process.env.SCOUT_WORKER_URL,
+    SCOUT_WORKER_SECRET: process.env.SCOUT_WORKER_SECRET,
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
   emptyStringAsUndefined: true,

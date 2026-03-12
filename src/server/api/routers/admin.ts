@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { env } from "@/env";
 import { isAdmin } from "@/lib/auth";
 import {
   adminProcedure,
@@ -181,4 +182,75 @@ export const adminRouter = createTRPCRouter({
 
     return { removed, count: removed.length };
   }),
+
+  launchScoutBatch: adminProcedure
+    .input(
+      z.object({
+        count: z.number().min(1).max(50).default(5),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (!env.SCOUT_WORKER_URL || !env.SCOUT_WORKER_SECRET) {
+        throw new Error("SCOUT_WORKER_URL and SCOUT_WORKER_SECRET must be configured");
+      }
+
+      const baseUrl = env.NEXT_PUBLIC_URL;
+      const scouts: Array<{ id: string; apiKey: string; baseUrl: string }> = [];
+
+      for (let i = 1; i <= input.count; i++) {
+        const scoutId = `scout-${i}`;
+        const scoutName = `Scout ${i}`;
+
+        // Upsert scout contributor
+        const existing = await ctx.db.query.contributors.findFirst({
+          where: eq(contributors.id, scoutId),
+        });
+
+        const plainKey = `ol_scout_${crypto.randomBytes(24).toString("hex")}`;
+        const keyHash = crypto.createHash("sha256").update(plainKey).digest("hex");
+
+        if (existing) {
+          await ctx.db
+            .update(contributors)
+            .set({
+              name: scoutName,
+              isAgent: true,
+              trustLevel: "verified",
+              agentModel: "claude-sonnet-4-6",
+              apiKey: keyHash,
+            })
+            .where(eq(contributors.id, scoutId));
+        } else {
+          await ctx.db.insert(contributors).values({
+            id: scoutId,
+            name: scoutName,
+            isAgent: true,
+            trustLevel: "verified",
+            agentModel: "claude-sonnet-4-6",
+            apiKey: keyHash,
+          });
+        }
+
+        scouts.push({ id: scoutId, apiKey: plainKey, baseUrl });
+      }
+
+      const batchId = `batch-${Date.now()}`;
+
+      // Call the scout worker
+      const res = await fetch(`${env.SCOUT_WORKER_URL}/run`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${env.SCOUT_WORKER_SECRET}`,
+        },
+        body: JSON.stringify({ batchId, scouts }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Scout worker returned ${res.status}: ${text}`);
+      }
+
+      return { batchId, count: input.count };
+    }),
 });

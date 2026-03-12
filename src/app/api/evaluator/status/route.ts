@@ -10,14 +10,10 @@ export async function GET() {
   }
 
   const standard = getActiveRun("standard");
-  const scout = getActiveRun("scout");
 
   return Response.json({
     standard: standard
       ? { id: standard.id, status: standard.status, logCount: standard.logs.length }
-      : null,
-    scout: scout
-      ? { id: scout.id, status: scout.status, logCount: scout.logs.length }
       : null,
   });
 }
