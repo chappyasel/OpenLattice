@@ -31,6 +31,7 @@ import {
   handleStartResearchSession,
   handleEndResearchSession,
   handleListClaims,
+  handleFlagIssue,
 } from "./tools.js";
 
 // Log mode
@@ -224,6 +225,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           suggestedReputationDelta: number;
           improvementSuggestions: string[];
           duplicateOf?: string | null;
+        },
+      );
+
+    case "flag_issue":
+      return handleFlagIssue(
+        args as {
+          targetType: string;
+          targetId: string;
+          signalType: string;
+          evidence?: string;
+          suggestedFix?: string;
         },
       );
 

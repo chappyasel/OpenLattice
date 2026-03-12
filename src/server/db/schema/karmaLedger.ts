@@ -22,6 +22,7 @@ export const karmaEventTypeEnum = pgEnum("karma_event_type", [
   "query_cost",
   "wallet_deposit",
   "wallet_withdrawal",
+  "signal_reward",
 ]);
 
 export const karmaLedger = pgTable(

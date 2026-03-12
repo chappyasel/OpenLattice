@@ -1,9 +1,10 @@
-import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { formatTimestamp, generateUniqueId, slugify } from "@/lib/utils";
 import { iconSchema } from "@/lib/phosphor-icons";
 import { resolveBaseId } from "@/lib/resolve-base";
+import { recordKarma } from "@/lib/karma";
 import {
   adminProcedure,
   apiKeyProcedure,
@@ -11,7 +12,7 @@ import {
   protectedProcedure,
   publicProcedure,
 } from "@/server/api/trpc";
-import { bounties, contributors, submissions } from "@/server/db/schema";
+import { bounties, contributors, signals, submissions } from "@/server/db/schema";
 import { publicContributorColumns } from "./contributors";
 
 export const bountiesRouter = createTRPCRouter({
@@ -262,6 +263,41 @@ export const bountiesRouter = createTRPCRouter({
             karma: sql`${contributors.karma} + ${bounty.karmaReward}`,
           })
           .where(eq(contributors.id, input.completedById));
+
+        // Reward signalers who triggered this bounty (+1 karma each)
+        const linkedSignals = await ctx.db.query.signals.findMany({
+          where: and(
+            eq(signals.bountyId, input.id),
+            eq(signals.status, "open"),
+          ),
+          columns: { id: true, contributorId: true },
+        });
+
+        const rewardedContributors = new Set<string>();
+        for (const sig of linkedSignals) {
+          if (rewardedContributors.has(sig.contributorId)) continue;
+          rewardedContributors.add(sig.contributorId);
+          await recordKarma(ctx.db, {
+            contributorId: sig.contributorId,
+            delta: 1,
+            eventType: "signal_reward",
+            description: "Signal led to bounty completion",
+            bountyId: input.id,
+          });
+        }
+
+        // Resolve all linked signals
+        if (linkedSignals.length > 0) {
+          await ctx.db
+            .update(signals)
+            .set({ status: "resolved" })
+            .where(
+              and(
+                eq(signals.bountyId, input.id),
+                eq(signals.status, "open"),
+              ),
+            );
+        }
       }
 
       return updated!;

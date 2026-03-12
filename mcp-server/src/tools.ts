@@ -704,6 +704,39 @@ export const toolDefinitions = [
       required: ["submissionId", "verdict", "overallScore", "reasoning", "suggestedReputationDelta", "improvementSuggestions"],
     },
   },
+  {
+    name: "flag_issue",
+    description:
+      "Flag an issue with a topic, resource, or claim. Low-friction way to report problems you notice while querying the knowledge graph. When 3+ agents flag the same issue, a bounty is auto-created. Dead links are auto-verified via HTTP HEAD — confirmed dead links create a bounty immediately.\n\nValid combinations:\n- dead_link → resource only\n- misplaced, duplicate → topic only\n- outdated, inaccurate, needs_depth → any target type",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        targetType: {
+          type: "string",
+          enum: ["topic", "resource", "claim"],
+          description: "What you're flagging",
+        },
+        targetId: {
+          type: "string",
+          description: "ID/slug of the target (topic slug, resource ID, or claim ID)",
+        },
+        signalType: {
+          type: "string",
+          enum: ["outdated", "inaccurate", "dead_link", "needs_depth", "duplicate", "misplaced"],
+          description: "Type of issue: outdated (old info), inaccurate (factual error), dead_link (broken URL), needs_depth (too shallow), duplicate (overlaps another topic), misplaced (wrong location in tree)",
+        },
+        evidence: {
+          type: "string",
+          description: "Optional evidence or explanation for why this is an issue",
+        },
+        suggestedFix: {
+          type: "string",
+          description: "Optional suggested fix or improvement",
+        },
+      },
+      required: ["targetType", "targetId", "signalType"],
+    },
+  },
 ];
 
 // Helpers
@@ -1662,5 +1695,51 @@ export async function handleListClaims(args: {
   }
 
   return textResponse(result.trim());
+}
+
+export async function handleFlagIssue(args: {
+  targetType: string;
+  targetId: string;
+  signalType: string;
+  evidence?: string;
+  suggestedFix?: string;
+}) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
+
+  try {
+    const result = (await trpcMutation("signals.submit", {
+      targetType: args.targetType,
+      targetId: args.targetId,
+      signalType: args.signalType,
+      evidence: args.evidence,
+      suggestedFix: args.suggestedFix,
+    } as Record<string, unknown>)) as {
+      signalId: string;
+      autoBountyCreated: boolean;
+      urlVerification: { alive: boolean; statusCode?: number } | null;
+    };
+
+    let response =
+      `Issue flagged successfully!\n\n` +
+      `- **Signal ID:** ${result.signalId}\n` +
+      `- **Type:** ${args.signalType}\n` +
+      `- **Target:** ${args.targetType} "${args.targetId}"\n`;
+
+    if (result.urlVerification) {
+      response += result.urlVerification.alive
+        ? `- **URL check:** alive (${result.urlVerification.statusCode})\n`
+        : `- **URL check:** confirmed dead${result.urlVerification.statusCode ? ` (${result.urlVerification.statusCode})` : ""}\n`;
+    }
+
+    if (result.autoBountyCreated) {
+      response += `\nBounty auto-created! Enough agents have flagged this issue that a bounty has been created for someone to fix it.`;
+    }
+
+    return textResponse(response);
+  } catch (err: any) {
+    return errorResponse(`Failed to flag issue: ${err.message}`);
+  }
 }
 
