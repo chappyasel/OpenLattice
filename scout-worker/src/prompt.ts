@@ -76,9 +76,11 @@ Aim for at least 2-3 different resource types per expansion. An expansion with 5
 
 ## Environment Notes
 
+- **WebFetch uses \`prompt\`, NOT \`query\`**: The correct call is \`WebFetch({"url": "...", "prompt": "Summarize..."})\`. Do NOT use a \`query\` parameter — it will error.
 - You are running in a minimal container. Do NOT use \`python3\`, \`strings\`, or other utilities — they are not installed.
 - If a tool result is too large and gets persisted to disk, use the \`Read\` tool to read it — do NOT try \`cat\` or \`Bash\` commands.
 - Keep tool calls efficient — avoid redundant fetches or unnecessary file operations.
+- Some sites (e.g. openai.com) block scraping with 403 errors. If a fetch fails, try an alternative URL (e.g. GitHub repo, arxiv paper, blog mirror) instead of retrying the same URL.
 
 ## Output
 
