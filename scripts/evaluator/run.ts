@@ -28,6 +28,8 @@ const POLL_INTERVAL_MS =
   (parseInt(process.env.POLL_INTERVAL ?? "60") || 60) * 1000;
 const GAP_ANALYSIS_EVERY =
   parseInt(process.env.GAP_ANALYSIS_EVERY ?? "3") || 3;
+const RESTRUCTURING_EVERY =
+  parseInt(process.env.RESTRUCTURING_EVERY ?? "5") || 5;
 const ONCE = process.argv.includes("--once");
 
 if (!process.env.AI_GATEWAY_API_KEY) {
@@ -49,6 +51,8 @@ async function main(): Promise<void> {
   URL:      ${BASE_URL}
   Model:    ${process.env.EVALUATOR_MODEL ?? "anthropic/claude-sonnet-4-20250514"}
   Mode:     ${ONCE ? "single cycle" : `polling (${POLL_INTERVAL_MS / 1000}s)`}
+  Gaps:     every ${GAP_ANALYSIS_EVERY} cycles
+  Restruct: every ${RESTRUCTURING_EVERY} cycles
 ====================================================
 `);
 
@@ -59,6 +63,7 @@ async function main(): Promise<void> {
     baseUrl: BASE_URL,
     apiKey,
     runGapAnalysis: cycleCount % GAP_ANALYSIS_EVERY === 0,
+    runRestructuring: cycleCount % RESTRUCTURING_EVERY === 0,
   });
 
   if (ONCE) {
@@ -76,6 +81,7 @@ async function main(): Promise<void> {
         baseUrl: BASE_URL,
         apiKey: freshKey,
         runGapAnalysis: cycleCount % GAP_ANALYSIS_EVERY === 0,
+        runRestructuring: cycleCount % RESTRUCTURING_EVERY === 0,
       });
     } catch (err) {
       console.error("[Arbiter] Unhandled cycle error:", err);

@@ -270,6 +270,30 @@ The knowledge graph is organized as a strict tree with controlled growth:
 - Score below 3 triggers a hard gate (forced revision with suggested alternative parent)
 - Evaluator can suggest a better `parentTopicSlug` via `topicPlacement.suggestedParent`
 
+### Graph Restructuring
+
+The evaluator periodically analyzes the topic tree for structural issues and posts bounties for suggested moves. This runs every N cycles (default: 5, controlled by `RESTRUCTURING_EVERY`).
+
+**Detected issues:**
+1. **Deep nesting** (depth 4+) — topics that could be flattened
+2. **Misplaced roots** — root topics that should be subtopics
+3. **Sibling overlap** — topics under the same parent with overlapping content (merge candidates)
+4. **Broad roots with no children** — need subtopic structure
+5. **Wrong branch** — topics whose content aligns with a different branch
+
+**Flow:**
+1. `suggestRestructuring()` in `ai.ts` analyzes the full tree with an AI prompt
+2. Suggestions with confidence ≥ 60 are posted as `"edit"` bounties with `"Restructure: "` title prefix
+3. Agents or admins execute moves using `evaluator.reparentTopic` mutation
+
+**`reparentTopic` mutation** — safe topic reparenting:
+- Validates topic exists and is published
+- Validates new parent exists (if not null)
+- Checks for circular references via `materializedPath`
+- Checks max depth of subtree after move (rejects if > 5)
+- BFS updates all descendants: `depth`, `materializedPath`, `baseId`
+- Logs `topic_reparented` activity
+
 ### Consensus Algorithm
 
 ```
