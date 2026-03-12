@@ -21,6 +21,7 @@ import {
   bases,
   claims,
   researchSessions,
+  bounties,
 } from "@/server/db/schema";
 import { activityId, generateUniqueId, slugify } from "@/lib/utils";
 import { suggestIcon, mergeTopicContent } from "@/lib/evaluator/ai";
@@ -119,6 +120,20 @@ export const expansionsRouter = createTRPCRouter({
         );
       if (recentCount && recentCount.count >= 10) {
         throw new Error("Rate limit: max 10 expansion submissions per hour");
+      }
+
+      // Auto-inherit parentTopicSlug from bounty if not provided
+      if (input.bountyId && !input.topic.parentTopicSlug) {
+        const bounty = await ctx.db.query.bounties.findFirst({
+          where: eq(bounties.id, input.bountyId),
+          columns: { parentTopicSlug: true, baseId: true },
+        });
+        if (bounty?.parentTopicSlug) {
+          input.topic.parentTopicSlug = bounty.parentTopicSlug;
+        }
+        if (bounty?.baseId && !input.baseSlug) {
+          input.baseSlug = bounty.baseId;
+        }
       }
 
       // Validate: root topics must specify a base
