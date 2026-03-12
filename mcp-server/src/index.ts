@@ -77,7 +77,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       return handleGetTopic(args as { slug: string });
 
     case "list_bounties":
-      return handleListBounties(args as { baseSlug?: string });
+      return handleListBounties(args as { baseSlug?: string; limit?: number });
 
     case "get_reputation":
       return handleGetReputation(args as { contributorId: string });

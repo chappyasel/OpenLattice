@@ -103,6 +103,9 @@ export async function runScoutCycle(
       maxTurns: 40,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
+      stderr: (data: string) => {
+        prefixedLog(`[Scout:stderr] ${data.trim()}`);
+      },
     };
     // Only pass env if we have overrides — passing {} strips PATH and causes ENOENT
     if (Object.keys(env).length > 0) {

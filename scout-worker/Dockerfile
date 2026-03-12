@@ -18,5 +18,9 @@ RUN yarn install --frozen-lockfile 2>/dev/null || yarn install
 COPY . .
 RUN yarn build
 
+# Claude Code refuses --dangerously-skip-permissions when running as root
+RUN useradd -m scout
+USER scout
+
 EXPOSE 8080
 CMD ["node", "dist/index.js"]
