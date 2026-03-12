@@ -8,6 +8,7 @@
 import {
   reviewExpansion,
   suggestEdges,
+  evaluateEdges,
   suggestTags,
   suggestIcon,
   scoreResource,
@@ -527,7 +528,7 @@ async function reviewPendingSubmissions(
         log(`  [review] Override: approve→revise (sessionVerification ${result.groundedness.sessionVerification} < 3 threshold)`);
       }
 
-      // 2. Edge suggestion + diff
+      // 2. Edge evaluation
       let edgeDiff: {
         submittedEdges: Array<{
           targetTopicSlug: string;
@@ -546,91 +547,143 @@ async function reviewPendingSubmissions(
         karmaDelta: number;
       } | null = null;
 
+      const submittedEdges: Array<{
+        targetTopicSlug: string;
+        relationType: string;
+      }> = expansion.edges ?? [];
+
       if (allTopics?.length && allTopics.length > 0) {
         try {
-          const { result: edgeResult, durationMs: edgeDurationMs } =
-            await suggestEdges(
-              {
-                title: expansion.topic.title,
-                content: expansion.topic.content,
-                summary: expansion.topic.summary,
-              },
-              (allTopics ?? []).map((t) => ({
-                id: t.id,
-                title: t.title,
-                summary: t.summary ?? undefined,
-              })),
-            );
-
-          const submittedEdges: Array<{
-            targetTopicSlug: string;
-            relationType: string;
-          }> = expansion.edges ?? [];
-          const evaluatorEdges = edgeResult.suggestedEdges;
-
-          const evaluatorTargets = new Set(
-            evaluatorEdges.map((e) => e.targetTopicSlug),
-          );
-          const submittedTargets = new Set(
-            submittedEdges.map((e) => e.targetTopicSlug),
-          );
-
-          let matchedTargets = 0;
-          let matchedExact = 0;
-          for (const evalEdge of evaluatorEdges) {
-            if (submittedTargets.has(evalEdge.targetTopicSlug)) {
-              matchedTargets++;
-              const submittedMatch = submittedEdges.find(
-                (e) => e.targetTopicSlug === evalEdge.targetTopicSlug,
+          if (submittedEdges.length > 0) {
+            // Evaluate submitted edges directly instead of independently suggesting
+            const { result: evalResult, durationMs: edgeDurationMs } =
+              await evaluateEdges(
+                {
+                  title: expansion.topic.title,
+                  content: expansion.topic.content,
+                  summary: expansion.topic.summary,
+                },
+                submittedEdges,
+                (allTopics ?? []).map((t) => ({
+                  id: t.id,
+                  title: t.title,
+                  summary: t.summary ?? undefined,
+                })),
               );
-              if (submittedMatch?.relationType === evalEdge.relationType) {
-                matchedExact++;
+
+            const validCount = evalResult.submittedEdgeReviews.filter(
+              (r) => r.verdict === "valid",
+            ).length;
+            const wrongTypeCount = evalResult.submittedEdgeReviews.filter(
+              (r) => r.verdict === "wrong_type",
+            ).length;
+            const invalidCount = evalResult.submittedEdgeReviews.filter(
+              (r) => r.verdict === "invalid",
+            ).length;
+            const totalSubmitted = submittedEdges.length;
+            const missingCount = evalResult.missingEdges.length;
+
+            // Accuracy: valid edges count fully, wrong_type count as half (right target, wrong type)
+            const accuracy =
+              totalSubmitted > 0
+                ? (validCount + wrongTypeCount * 0.5) / totalSubmitted
+                : 1;
+
+            // Build resolved edges: valid submitted + corrected wrong_type + missing
+            const resolvedEdges: Array<{
+              targetTopicSlug: string;
+              relationType: string;
+              reasoning: string;
+            }> = [];
+
+            for (const review of evalResult.submittedEdgeReviews) {
+              if (review.verdict === "valid") {
+                const submitted = submittedEdges.find(
+                  (e) => e.targetTopicSlug === review.targetTopicSlug,
+                );
+                resolvedEdges.push({
+                  targetTopicSlug: review.targetTopicSlug,
+                  relationType: submitted?.relationType ?? review.correctedRelationType ?? "related",
+                  reasoning: review.reasoning,
+                });
+              } else if (review.verdict === "wrong_type" && review.correctedRelationType) {
+                resolvedEdges.push({
+                  targetTopicSlug: review.targetTopicSlug,
+                  relationType: review.correctedRelationType,
+                  reasoning: review.reasoning,
+                });
               }
+              // invalid edges are dropped
             }
-          }
 
-          let extraEdges = 0;
-          for (const slug of submittedTargets) {
-            if (!evaluatorTargets.has(slug)) extraEdges++;
-          }
+            for (const missing of evalResult.missingEdges) {
+              resolvedEdges.push({
+                targetTopicSlug: missing.targetTopicSlug,
+                relationType: missing.relationType,
+                reasoning: missing.reasoning,
+              });
+            }
 
-          const missingEdges = evaluatorEdges.length - matchedTargets;
-          const totalUnique = new Set([
-            ...evaluatorTargets,
-            ...submittedTargets,
-          ]).size;
-          const accuracy =
-            totalUnique > 0 ? matchedExact / totalUnique : 1;
+            let karmaDelta = 0;
+            if (totalSubmitted === 0) {
+              karmaDelta = 0;
+            } else if (accuracy >= 0.8) {
+              karmaDelta = missingCount > 1 ? 20 : 50;
+            } else if (accuracy >= 0.5) {
+              karmaDelta = 10;
+            } else if (accuracy >= 0.25) {
+              karmaDelta = -10;
+            } else {
+              karmaDelta = -25;
+            }
 
-          let karmaDelta = 0;
-          if (totalUnique === 0) {
-            karmaDelta = 0;
-          } else if (accuracy >= 0.8) {
-            karmaDelta = 50;
-          } else if (accuracy >= 0.5) {
-            karmaDelta = 20;
-          } else if (accuracy >= 0.2) {
-            karmaDelta = -20;
+            edgeDiff = {
+              submittedEdges,
+              evaluatorEdges: resolvedEdges,
+              matchedTargets: validCount + wrongTypeCount,
+              matchedExact: validCount,
+              missingEdges: missingCount,
+              extraEdges: invalidCount,
+              accuracy,
+              karmaDelta,
+            };
+
+            log(
+              `  [review] Edge eval: ${validCount} valid, ${wrongTypeCount} wrong type, ${invalidCount} invalid / ${totalSubmitted} submitted (+${missingCount} missing) (accuracy: ${(accuracy * 100).toFixed(0)}%, karma: ${karmaDelta > 0 ? "+" : ""}${karmaDelta}) [${edgeDurationMs}ms]`,
+            );
           } else {
-            karmaDelta = -50;
+            // No submitted edges — use independent suggestion as fallback
+            const { result: edgeResult, durationMs: edgeDurationMs } =
+              await suggestEdges(
+                {
+                  title: expansion.topic.title,
+                  content: expansion.topic.content,
+                  summary: expansion.topic.summary,
+                },
+                (allTopics ?? []).map((t) => ({
+                  id: t.id,
+                  title: t.title,
+                  summary: t.summary ?? undefined,
+                })),
+              );
+
+            edgeDiff = {
+              submittedEdges: [],
+              evaluatorEdges: edgeResult.suggestedEdges,
+              matchedTargets: 0,
+              matchedExact: 0,
+              missingEdges: edgeResult.suggestedEdges.length,
+              extraEdges: 0,
+              accuracy: 0,
+              karmaDelta: 0, // No penalty when none submitted — edges are optional
+            };
+
+            log(
+              `  [review] Edge suggest (none submitted): ${edgeResult.suggestedEdges.length} suggested [${edgeDurationMs}ms]`,
+            );
           }
-
-          edgeDiff = {
-            submittedEdges,
-            evaluatorEdges,
-            matchedTargets,
-            matchedExact,
-            missingEdges,
-            extraEdges,
-            accuracy,
-            karmaDelta,
-          };
-
-          log(
-            `  [review] Edge diff: ${matchedExact}/${totalUnique} exact match (accuracy: ${(accuracy * 100).toFixed(0)}%, karma: ${karmaDelta > 0 ? "+" : ""}${karmaDelta}) [${edgeDurationMs}ms]`,
-          );
         } catch (err: any) {
-          log(`  [review] Edge suggestion failed: ${err.message}`);
+          log(`  [review] Edge evaluation failed: ${err.message}`);
         }
       }
 
