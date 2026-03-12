@@ -35,6 +35,20 @@ const GraphViewer = dynamic(() => import("@/components/graph-viewer").then((m) =
     ssr: false,
 });
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatTimeAgo(date: Date): string {
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 60) return "just now";
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 // ─── Debounce Hook ───────────────────────────────────────────────────────────
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -504,12 +518,33 @@ export default function HomePage() {
                                         };
                                         const Icon = iconMap[item.type] ?? GraphIcon;
                                         const color = colorMap[item.type] ?? "text-muted-foreground";
+                                        const timeAgo = formatTimeAgo(new Date(item.createdAt));
                                         return (
                                             <span
                                                 key={`${item.id}-${idx}`}
                                                 className="inline-flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
                                             >
                                                 <Icon weight="bold" className={`size-3.5 ${color}`} />
+                                                {item.contributor && (
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        {item.contributor.image ? (
+                                                            <Image
+                                                                src={item.contributor.image}
+                                                                alt=""
+                                                                width={16}
+                                                                height={16}
+                                                                className="size-4 rounded-full"
+                                                            />
+                                                        ) : (
+                                                            <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
+                                                                {(item.contributor.name ?? "?")[0]?.toUpperCase()}
+                                                            </span>
+                                                        )}
+                                                        <span className="font-medium text-foreground">
+                                                            {item.contributor.name ?? "Agent"}
+                                                        </span>
+                                                    </span>
+                                                )}
                                                 <span className="max-w-[280px] truncate">
                                                     {item.description}
                                                 </span>
@@ -521,6 +556,9 @@ export default function HomePage() {
                                                         {item.topic.title}
                                                     </button>
                                                 )}
+                                                <span className="text-muted-foreground/60">
+                                                    {timeAgo}
+                                                </span>
                                             </span>
                                         );
                                     })}
