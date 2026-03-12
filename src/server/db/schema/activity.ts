@@ -27,6 +27,7 @@ export const activityTypeEnum = pgEnum("activity_type", [
   "consensus_reached",
   "trust_level_changed",
   "topic_reparented",
+  "signal_submitted",
 ]);
 
 export const activity = pgTable(
