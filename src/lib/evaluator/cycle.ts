@@ -12,6 +12,7 @@ import {
   suggestIcon,
   scoreResource,
   analyzeGaps,
+  suggestRestructuring,
 } from "./ai";
 import { verifyUrls, type UrlVerificationResult } from "./url-verify";
 import { scoreResearchQuality } from "../research-quality";
@@ -25,6 +26,8 @@ export interface EvaluatorConfig {
   maxSubmissions?: number;
   /** Run gap analysis this cycle? */
   runGapAnalysis?: boolean;
+  /** Run graph restructuring analysis this cycle? */
+  runRestructuring?: boolean;
   /** Signal to abort the cycle early */
   signal?: AbortSignal;
 }
@@ -70,6 +73,7 @@ export interface CycleResult {
   resourcesReviewed: number;
   scored: number;
   bountiesPosted: number;
+  restructuringBounties: number;
   durationMs: number;
 }
 
@@ -301,6 +305,31 @@ async function reviewPendingSubmissions(
         }
       }
 
+      // 0b. Fetch hierarchy context for topic placement assessment
+      let parentTopic: { id: string; title: string; summary: string | null; depth: number } | null = null;
+      let siblings: Array<{ id: string; title: string; summary: string | null }> = [];
+      let grandparent: { id: string; title: string } | null = null;
+      let targetDepth = 0;
+
+      try {
+        const hierarchyContext = await trpc.query<{
+          parent: { id: string; title: string; summary: string | null; depth: number } | null;
+          siblings: Array<{ id: string; title: string; summary: string | null }>;
+          grandparent: { id: string; title: string } | null;
+          targetDepth: number;
+        }>("topics.getHierarchyContext", {
+          parentSlug: expansion.topic.parentTopicSlug,
+        });
+        if (hierarchyContext) {
+          parentTopic = hierarchyContext.parent;
+          siblings = hierarchyContext.siblings;
+          grandparent = hierarchyContext.grandparent;
+          targetDepth = hierarchyContext.targetDepth;
+        }
+      } catch (err: any) {
+        log(`  [review] Hierarchy context fetch failed: ${err.message}`);
+      }
+
       // 1. Content review
       const { result, durationMs, model } = await reviewExpansion(expansion, {
         existingTopics,
@@ -308,6 +337,10 @@ async function reviewPendingSubmissions(
         contributorTrustLevel: contributor?.trustLevel ?? "new",
         contributorAcceptanceRate: acceptanceRate,
         urlVerification: urlVerification ?? undefined,
+        parentTopic,
+        siblings,
+        grandparent,
+        targetDepth,
       }, sessionData);
 
       // 1b. Hard guardrails — override AI verdict when minimum standards aren't met
@@ -436,6 +469,30 @@ async function reviewPendingSubmissions(
           ...result.improvementSuggestions,
         ];
         log(`  [review] Override: approve→revise (${thinSummaryResources.length} resources with thin summaries)`);
+      }
+
+      // 1h. Topic placement hard gate — reject very poor placements
+      if (result.verdict === "approve" && result.topicPlacement.appropriateness < 3) {
+        result.verdict = "revise";
+        result.reasoning = `Topic placement score ${result.topicPlacement.appropriateness}/10 is too low — this topic doesn't fit under its proposed parent. ${result.topicPlacement.suggestedParent ? `Consider placing under '${result.topicPlacement.suggestedParent}' instead. ` : ""}${result.reasoning}`;
+        result.improvementSuggestions = [
+          result.topicPlacement.suggestedParent
+            ? `Move this topic under '${result.topicPlacement.suggestedParent}' by setting parentTopicSlug to '${result.topicPlacement.suggestedParent}'.`
+            : `Reconsider the placement of this topic. ${result.topicPlacement.reasoning}`,
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (placement ${result.topicPlacement.appropriateness} < 3 minimum)`);
+      }
+
+      // 1i. Depth hard gate — block topics at depth 5+
+      if (result.verdict === "approve" && targetDepth > 5) {
+        result.verdict = "revise";
+        result.reasoning = `Target depth ${targetDepth} exceeds maximum allowed depth of 5. ${result.reasoning}`;
+        result.improvementSuggestions = [
+          `This topic targets depth ${targetDepth}, which exceeds the maximum of 5. Merge this content into the parent topic or restructure under a shallower parent.`,
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (depth ${targetDepth} > 5 hard limit)`);
       }
 
       // 2. Edge suggestion + diff
@@ -628,6 +685,7 @@ async function reviewPendingSubmissions(
             findingsAssessment: result.findingsAssessment,
             edgeAssessment: result.edgeAssessment,
             groundedness: result.groundedness,
+            topicPlacement: result.topicPlacement,
           },
           reasoning: result.reasoning,
           suggestedReputationDelta: totalReputationDelta,
@@ -667,6 +725,7 @@ async function reviewPendingSubmissions(
             edgeAssessment: result.edgeAssessment,
             groundedness: result.groundedness,
             findingsAssessment: result.findingsAssessment,
+            topicPlacement: result.topicPlacement,
             improvementSuggestions: result.improvementSuggestions,
             verdict: result.verdict,
             topicTitle: expansion.topic.title,
@@ -981,6 +1040,95 @@ async function doGapAnalysis(
   }
 }
 
+async function doGraphRestructuring(
+  trpc: ReturnType<typeof createTrpcClient>,
+  log: Logger,
+): Promise<number> {
+  const MAX_RESTRUCTURING_BOUNTIES = 5;
+
+  try {
+    const topics = await trpc.query<
+      Array<{
+        id: string;
+        title: string;
+        summary: string | null;
+        content: string;
+        parentTopicId: string | null;
+        depth: number;
+        baseId: string | null;
+        topicResources: Array<{ resource: { type: string } }>;
+        childTopics: Array<{ id: string }>;
+      }>
+    >("topics.list", { status: "published" });
+
+    if (!topics?.length || topics.length < 10) {
+      log("  [restructure] Not enough topics for restructuring analysis (need 10+)");
+      return 0;
+    }
+
+    const treeStats = topics.map((t) => ({
+      id: t.id,
+      title: t.title,
+      summary: t.summary,
+      parentTopicId: t.parentTopicId,
+      depth: t.depth ?? 0,
+      childCount: t.childTopics?.length ?? 0,
+      resourceCount: t.topicResources?.length ?? 0,
+      contentLength: t.content?.length ?? 0,
+      baseSlug: t.baseId,
+    }));
+
+    log(`  [restructure] Analyzing ${treeStats.length} topics for structural issues...`);
+
+    const { result, durationMs } = await suggestRestructuring(treeStats);
+
+    // Fetch existing bounties for dedup
+    const openBounties = await trpc.query<
+      Array<{ id: string; title: string; status: string }>
+    >("bounties.listOpen", {});
+    const existingTitles = new Set(
+      (openBounties ?? []).map((b) => b.title.toLowerCase()),
+    );
+
+    let posted = 0;
+    for (const suggestion of result.suggestions) {
+      if (posted >= MAX_RESTRUCTURING_BOUNTIES) break;
+      if (suggestion.confidence < 60) {
+        log(`  [restructure] Skipped "${suggestion.suggestedBounty.title}" (confidence ${suggestion.confidence} < 60)`);
+        continue;
+      }
+
+      // Dedup by title prefix match
+      const titleLower = suggestion.suggestedBounty.title.toLowerCase();
+      if (existingTitles.has(titleLower)) {
+        log(`  [restructure] Skipped "${suggestion.suggestedBounty.title}" — similar bounty exists`);
+        continue;
+      }
+
+      try {
+        await trpc.mutation("evaluator.postBounty", {
+          title: suggestion.suggestedBounty.title,
+          description: `${suggestion.suggestedBounty.description}\n\n**Type:** ${suggestion.type}\n**Reasoning:** ${suggestion.reasoning}${suggestion.targetParentSlug ? `\n**Target parent:** ${suggestion.targetParentSlug}` : ""}${suggestion.mergeWithSlug ? `\n**Merge with:** ${suggestion.mergeWithSlug}` : ""}`,
+          type: "edit" as const,
+          topicSlug: suggestion.topicSlug,
+          karmaReward: suggestion.suggestedBounty.karmaReward,
+        });
+        posted++;
+        existingTitles.add(titleLower);
+        log(`  [restructure] Posted bounty: "${suggestion.suggestedBounty.title}" (${suggestion.type}, confidence: ${suggestion.confidence})`);
+      } catch (err: any) {
+        log(`  [restructure] Failed to post bounty: ${err.message}`);
+      }
+    }
+
+    log(`  [restructure] Analysis complete (${durationMs}ms), posted ${posted} restructuring bounties`);
+    return posted;
+  } catch (err: any) {
+    log(`  [restructure] Graph restructuring failed: ${err.message}`);
+    return 0;
+  }
+}
+
 async function recalculateReputation(
   trpc: ReturnType<typeof createTrpcClient>,
   log: Logger,
@@ -1011,7 +1159,8 @@ export async function runEvaluationCycle(
   let reviewed = 0,
     resourcesReviewed = 0,
     scored = 0,
-    bountiesPosted = 0;
+    bountiesPosted = 0,
+    restructuringBounties = 0;
 
   try {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -1022,7 +1171,7 @@ export async function runEvaluationCycle(
       consensusMode,
     );
   } catch (err: any) {
-    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
     log(`[Arbiter] reviewPendingSubmissions failed: ${err.message}`);
   }
 
@@ -1034,7 +1183,7 @@ export async function runEvaluationCycle(
       config.maxSubmissions,
     );
   } catch (err: any) {
-    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
     log(`[Arbiter] reviewPendingResources failed: ${err.message}`);
   }
 
@@ -1042,7 +1191,7 @@ export async function runEvaluationCycle(
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     scored = await scoreUnscoredResources(trpc, log);
   } catch (err: any) {
-    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
     log(`[Arbiter] scoreUnscoredResources failed: ${err.message}`);
   }
 
@@ -1051,8 +1200,18 @@ export async function runEvaluationCycle(
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       bountiesPosted = await doGapAnalysis(trpc, log);
     } catch (err: any) {
-      if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+      if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
       log(`[Arbiter] runGapAnalysis failed: ${err.message}`);
+    }
+  }
+
+  if (config.runRestructuring) {
+    try {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      restructuringBounties = await doGraphRestructuring(trpc, log);
+    } catch (err: any) {
+      if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
+      log(`[Arbiter] runRestructuring failed: ${err.message}`);
     }
   }
 
@@ -1060,7 +1219,7 @@ export async function runEvaluationCycle(
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     await recalculateReputation(trpc, log);
   } catch (err: any) {
-    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
     log(`[Arbiter] recalculateReputation failed: ${err.message}`);
   }
 
@@ -1069,8 +1228,9 @@ export async function runEvaluationCycle(
   log(
     `\n[Arbiter] Cycle complete in ${elapsed}s` +
       ` — expansions: ${reviewed}, resources: ${resourcesReviewed}, scored: ${scored}` +
-      (bountiesPosted > 0 ? `, bounties: ${bountiesPosted}` : ""),
+      (bountiesPosted > 0 ? `, bounties: ${bountiesPosted}` : "") +
+      (restructuringBounties > 0 ? `, restructuring: ${restructuringBounties}` : ""),
   );
 
-  return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs };
+  return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs };
 }

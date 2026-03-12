@@ -57,6 +57,11 @@ export const expansionReviewSchema = z.object({
     accuracy: z.number().describe("Whether relationship types are correct (0-10)"),
     summary: z.string().describe("1 sentence assessment of proposed edges"),
   }),
+  topicPlacement: z.object({
+    appropriateness: z.number().describe("How well does this topic fit under its proposed parent? (0-10). 10 = perfect fit as a subtopic of the parent, 0 = completely wrong location. For root topics, assess whether it truly deserves top-level status or should be a subtopic of an existing topic."),
+    suggestedParent: z.string().nullable().describe("If the topic would be better placed elsewhere, the slug of a better parent topic from the existing topics list. null if current placement is good."),
+    reasoning: z.string().describe("1-2 sentence explanation of why this placement is or isn't appropriate"),
+  }),
   reasoning: z.string().describe("2-4 sentence justification of the verdict"),
   suggestedReputationDelta: z.number().int().describe("Karma reward/penalty (-200 to +300)"),
   improvementSuggestions: z.array(z.string()).describe("Specific improvements if rejected or revision requested"),
@@ -220,6 +225,10 @@ export async function reviewExpansion(
     contributorTrustLevel: string;
     contributorAcceptanceRate?: number;
     urlVerification?: UrlVerificationResult[];
+    parentTopic?: { id: string; title: string; summary?: string | null; depth: number } | null;
+    siblings?: Array<{ id: string; title: string; summary?: string | null }>;
+    grandparent?: { id: string; title: string } | null;
+    targetDepth: number;
   },
   sessionData?: {
     events: Array<{ procedure: string; input: Record<string, unknown> | null; durationMs: number | null; createdAt: string | Date }>;
@@ -298,6 +307,26 @@ ${(expansion.findings ?? []).length > 0
 ### Proposed Edges (${expansion.edges.length}):
 ${expansion.edges.map((e) => `- ${expansion.topic.title} → ${e.targetTopicSlug} (${e.relationType})`).join("\n")}
 ${expansion.edges.length > 0 ? `\nExisting topics in graph: ${context.existingTopics.slice(0, 30).map(t => t.id).join(", ")}${context.existingTopics.length > 30 ? "..." : ""}` : ""}
+
+### Topic Placement Context
+${context.parentTopic
+  ? `Parent topic: "${context.parentTopic.title}" (${context.parentTopic.id})${context.parentTopic.summary ? ` — ${context.parentTopic.summary}` : ""}
+${context.grandparent ? `Grandparent: "${context.grandparent.title}" (${context.grandparent.id})` : "Top-level parent (depth 1 topic)"}
+Siblings (other children of "${context.parentTopic.title}"):
+${context.siblings && context.siblings.length > 0
+  ? context.siblings.map(s => `- "${s.title}" (${s.id})${s.summary ? ` — ${s.summary}` : ""}`).join("\n")
+  : "(no existing siblings)"}
+Target depth: ${context.targetDepth}`
+  : `This is a ROOT topic (depth 0). Assess whether it truly deserves top-level status or should be a subtopic of an existing topic.
+Target depth: 0`}
+${context.targetDepth >= 4 ? `\nWARNING: This topic targets depth ${context.targetDepth}. The knowledge graph prefers shallower hierarchies. Consider whether this content could be merged into its parent or placed at a shallower depth.` : ""}
+
+## Topic Placement Assessment
+Evaluate whether this topic is placed correctly in the hierarchy:
+- Does it logically belong under its parent?
+- Is it at the right level of specificity for its depth?
+- Would it be a better fit as a sibling or child of a different existing topic?
+- If suggesting a different parent, use the slug from the existing topics list.
 
 ## Existing Topics in Graph (${context.existingTopics.length}):
 ${context.existingTopics.map(t => `- "${t.title}" (\`${t.id}\`)${t.summary ? ` — ${t.summary}` : ""}`).slice(0, 50).join("\n")}${context.existingTopics.length > 50 ? "\n...(truncated)" : ""}
@@ -727,6 +756,130 @@ Generate specific, actionable bounties.`;
     system: ARBITER_SYSTEM,
     prompt,
     schema: gapAnalysisSchema,
+  });
+
+  return { result: object, durationMs: Date.now() - start, model: MODEL };
+}
+
+// ─── Graph Restructuring ──────────────────────────────────────────────────
+
+export const restructuringSuggestionSchema = z.object({
+  suggestions: z.array(
+    z.object({
+      type: z.enum(["reparent", "flatten", "merge", "split_root", "needs_subtopics"]),
+      topicSlug: z.string().describe("Slug of the topic to restructure"),
+      targetParentSlug: z.string().nullable().describe("New parent slug for reparent/flatten, null for others"),
+      mergeWithSlug: z.string().nullable().describe("Slug of topic to merge with, null if not a merge"),
+      reasoning: z.string().describe("Why this restructuring is needed"),
+      confidence: z.number().int().describe("Confidence in this suggestion (0-100)"),
+      suggestedBounty: z.object({
+        title: z.string().describe("Bounty title (should start with 'Restructure: ')"),
+        description: z.string().describe("What the bounty asks for"),
+        karmaReward: z.number().int().describe("Karma reward (50-200)"),
+      }),
+    }),
+  ).describe("Suggested graph restructuring operations"),
+});
+
+export type RestructuringSuggestion = z.infer<typeof restructuringSuggestionSchema>;
+
+export async function suggestRestructuring(
+  topics: Array<{
+    id: string;
+    title: string;
+    summary: string | null;
+    parentTopicId: string | null;
+    depth: number;
+    childCount: number;
+    resourceCount: number;
+    contentLength: number;
+    baseSlug: string | null;
+  }>,
+): Promise<{ result: RestructuringSuggestion; durationMs: number; model: string }> {
+  const start = Date.now();
+
+  // Build indented tree visualization
+  const childMap = new Map<string | null, typeof topics>();
+  for (const t of topics) {
+    const key = t.parentTopicId;
+    const group = childMap.get(key) ?? [];
+    group.push(t);
+    childMap.set(key, group);
+  }
+
+  function buildTreeLines(parentId: string | null, indent: number): string[] {
+    const children = childMap.get(parentId) ?? [];
+    const lines: string[] = [];
+    for (const t of children) {
+      const prefix = "  ".repeat(indent);
+      const stats = `[d${t.depth}, ${t.childCount} children, ${t.resourceCount} resources, ${t.contentLength} chars]`;
+      lines.push(`${prefix}- "${t.title}" (${t.id}) ${stats}`);
+      lines.push(...buildTreeLines(t.id, indent + 1));
+    }
+    return lines;
+  }
+
+  const treeVisualization = buildTreeLines(null, 0).join("\n");
+
+  // Compute stats for the prompt
+  const deepTopics = topics.filter((t) => t.depth >= 4);
+  const rootTopics = topics.filter((t) => !t.parentTopicId);
+  const rootsNoChildren = rootTopics.filter((t) => t.childCount === 0);
+
+  // Detect potential sibling overlaps (simple title-word overlap heuristic)
+  const siblingGroups = new Map<string | null, typeof topics>();
+  for (const t of topics) {
+    const group = siblingGroups.get(t.parentTopicId) ?? [];
+    group.push(t);
+    siblingGroups.set(t.parentTopicId, group);
+  }
+
+  const potentialOverlaps: string[] = [];
+  for (const [parentId, siblings] of siblingGroups) {
+    if (siblings.length < 2) continue;
+    for (let i = 0; i < siblings.length; i++) {
+      for (let j = i + 1; j < siblings.length; j++) {
+        const wordsA = new Set(siblings[i]!.title.toLowerCase().split(/\s+/));
+        const wordsB = new Set(siblings[j]!.title.toLowerCase().split(/\s+/));
+        const intersection = [...wordsA].filter((w) => wordsB.has(w) && w.length > 3);
+        if (intersection.length >= 2) {
+          potentialOverlaps.push(`"${siblings[i]!.title}" & "${siblings[j]!.title}" (shared: ${intersection.join(", ")})`);
+        }
+      }
+    }
+  }
+
+  const prompt = `Analyze this knowledge graph's topic tree for structural issues and suggest restructuring operations.
+
+## Topic Tree (${topics.length} topics, ${rootTopics.length} roots)
+${treeVisualization}
+
+## Structural Stats
+- Deep topics (depth 4+): ${deepTopics.length}${deepTopics.length > 0 ? ` — ${deepTopics.map((t) => `"${t.title}" at depth ${t.depth}`).join(", ")}` : ""}
+- Root topics with 0 children: ${rootsNoChildren.length}${rootsNoChildren.length > 0 ? ` — ${rootsNoChildren.map((t) => `"${t.title}"`).join(", ")}` : ""}
+${potentialOverlaps.length > 0 ? `- Potential sibling overlaps: ${potentialOverlaps.join("; ")}` : "- No obvious sibling overlaps detected"}
+
+## What to Look For
+1. **Deep nesting (depth 4+)**: Topics that could be flattened by moving up one level
+2. **Misplaced roots**: Root topics that should be subtopics of another root
+3. **Sibling overlap**: Topics under the same parent with overlapping titles/content that should be merged
+4. **Broad roots with no children**: Root topics that need subtopic structure (overlap with gap analysis, but focus on the structural angle — should this be a root at all?)
+5. **Wrong branch**: Topics whose title/content aligns better with a different part of the tree
+
+## Guidelines
+- Only suggest changes with high confidence — restructuring is disruptive
+- Prefer minimal moves (reparent one topic) over wholesale reorganization
+- For merges, pick the topic with more content/resources as the target
+- "Restructure: " prefix is REQUIRED for all bounty titles
+- karmaReward should be 50-200, proportional to complexity
+- Suggest at most 5 restructuring operations per cycle
+- Do NOT suggest restructuring if the tree looks well-organized`;
+
+  const { object } = await generateObject({
+    model: getModel(),
+    system: ARBITER_SYSTEM,
+    prompt,
+    schema: restructuringSuggestionSchema,
   });
 
   return { result: object, durationMs: Date.now() - start, model: MODEL };

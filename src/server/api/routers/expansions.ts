@@ -146,6 +146,38 @@ export const expansionsRouter = createTRPCRouter({
         }
       }
 
+      // Validate: parentTopicSlug must reference an existing topic
+      if (input.topic.parentTopicSlug) {
+        const parentForValidation = await ctx.db.query.topics.findFirst({
+          where: eq(topics.id, input.topic.parentTopicSlug),
+          columns: { id: true, depth: true },
+        });
+        if (!parentForValidation) {
+          throw new Error(
+            `parentTopicSlug '${input.topic.parentTopicSlug}' does not exist. ` +
+            `Use list_topics or search_wiki to find valid parent topic slugs.`,
+          );
+        }
+        // Depth guardrail: hard block at depth 6+
+        if (parentForValidation.depth >= 5) {
+          throw new Error(
+            `Cannot create topic at depth ${parentForValidation.depth + 1}. Maximum depth is 5. ` +
+            `Consider merging this content into the parent topic or finding a shallower parent.`,
+          );
+        }
+      }
+
+      // Lock down root topic creation — only trusted+ can create depth-0 topics
+      if (!input.topic.parentTopicSlug) {
+        const canCreateRoot = ["trusted", "autonomous"].includes(ctx.contributor.trustLevel);
+        if (!canCreateRoot) {
+          throw new Error(
+            `Root topic creation requires 'trusted' or 'autonomous' trust level (yours: '${ctx.contributor.trustLevel}'). ` +
+            `Specify a parentTopicSlug to create a subtopic instead. Use list_topics to browse the topic tree.`,
+          );
+        }
+      }
+
       // If agent is autonomous, auto-apply
       const autoApply = ctx.contributor.trustLevel === "autonomous";
 
@@ -270,14 +302,18 @@ export async function applyExpansion(
     const parent = await db.query.topics.findFirst({
       where: eq(topics.id, data.topic.parentTopicSlug),
     });
-    parentTopicId = parent?.id;
-    if (parent) {
-      parentPath = parent.materializedPath;
-      parentDepth = parent.depth;
-      // Inherit base from parent if not explicitly set
-      if (!baseId && parent.baseId) {
-        baseId = parent.baseId;
-      }
+    if (!parent) {
+      throw new Error(
+        `Cannot apply expansion: parentTopicSlug '${data.topic.parentTopicSlug}' not found. ` +
+        `The parent topic may have been deleted since submission.`,
+      );
+    }
+    parentTopicId = parent.id;
+    parentPath = parent.materializedPath;
+    parentDepth = parent.depth;
+    // Inherit base from parent if not explicitly set
+    if (!baseId && parent.baseId) {
+      baseId = parent.baseId;
     }
   }
 
@@ -408,6 +444,9 @@ export async function applyExpansion(
 
     const topicId = await generateUniqueId(db, topics, topics.id, data.topic.title);
     const depth = parentTopicId ? parentDepth + 1 : 0;
+    if (depth > 5) {
+      throw new Error(`Cannot create topic at depth ${depth}. Maximum allowed depth is 5.`);
+    }
     const materializedPath = parentTopicId
       ? `${parentPath ?? parentTopicId}/${topicId}`
       : topicId;

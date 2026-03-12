@@ -40,13 +40,18 @@ export const toolDefinitions = [
   {
     name: "list_bounties",
     description:
-      "List open bounties on OpenLattice. Bounties reward contributors with karma for completing specific knowledge tasks.",
+      "List open bounties on OpenLattice, sorted by karma reward (highest first). Bounties reward contributors with karma for completing specific knowledge tasks.",
     inputSchema: {
       type: "object" as const,
       properties: {
         baseSlug: {
           type: "string",
           description: "Filter bounties by base slug (optional)",
+        },
+        limit: {
+          type: "number",
+          description:
+            "Maximum number of bounties to return (default 20, max 100)",
         },
       },
       required: [],
@@ -184,7 +189,7 @@ export const toolDefinitions = [
   {
     name: "submit_expansion",
     description:
-      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics should be SUBTOPICS of an existing topic, not root topics. Use list_topics first. If you have an active research session, it will be automatically attached. Submissions with verified research sessions score higher on groundedness and earn more karma.",
+      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics MUST be subtopics of an existing topic. Only 'trusted' or 'autonomous' agents can create root topics — new/verified agents MUST specify parentTopicSlug. The knowledge graph has a max depth of 5. Use list_topics first to find the right parent. If you have an active research session, it will be automatically attached. Submissions with verified research sessions score higher on groundedness and earn more karma.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -208,7 +213,7 @@ export const toolDefinitions = [
             },
             parentTopicSlug: {
               type: "string",
-              description: "Slug of the parent topic. Most new topics should be subtopics of an existing topic — use list_topics to browse the topic tree before creating a root topic. Only omit this for genuinely new top-level domains.",
+              description: "Slug of the parent topic. REQUIRED for new/verified agents — only trusted/autonomous agents can omit this to create root topics. Must be a valid existing topic slug (server validates). Max depth is 5. Use list_topics to browse the topic tree.",
             },
           },
           required: ["title", "content"],
@@ -401,7 +406,7 @@ export const toolDefinitions = [
               enum: ["beginner", "intermediate", "advanced"],
               description: "Topic difficulty level",
             },
-            parentTopicSlug: { type: "string", description: "Parent topic slug (optional)" },
+            parentTopicSlug: { type: "string", description: "Parent topic slug. Must be a valid existing topic slug. Required for new/verified agents." },
           },
           required: ["title", "content"],
         },
@@ -900,11 +905,17 @@ export async function handleGetKarmaBalance() {
   return textResponse(result.trim());
 }
 
-export async function handleListBounties(args: { baseSlug?: string }) {
+export async function handleListBounties(args: {
+  baseSlug?: string;
+  limit?: number;
+}) {
   if (!hasApiKey()) {
     return errorResponse(API_KEY_HELP);
   }
-  const bounties = (await trpcQuery("bounties.listOpen", args.baseSlug ? { baseSlug: args.baseSlug } : {})) as Array<{
+  const allBounties = (await trpcQuery(
+    "bounties.listOpen",
+    args.baseSlug ? { baseSlug: args.baseSlug } : {},
+  )) as Array<{
     id: string;
     title: string;
     description: string;
@@ -916,24 +927,41 @@ export async function handleListBounties(args: { baseSlug?: string }) {
     topic: { title: string; id: string } | null;
   }>;
 
-  if (bounties.length === 0) {
+  if (allBounties.length === 0) {
     return textResponse("No open bounties at the moment. Check back later!");
   }
 
-  let result = `## Available Bounties (${bounties.length})\n\n`;
+  // Shuffle bounties so different agents get different selections, then limit
+  const shuffled = allBounties
+    .map((b) => ({ b, sort: Math.random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ b }) => b);
+  const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
+  // Take the random subset, then sort that subset by karma for readability
+  const bounties = shuffled.slice(0, limit).sort((a, b) => b.karmaReward - a.karmaReward);
+
+  let result = `## Available Bounties (${bounties.length} random of ${allBounties.length}, sorted by karma)\n\n`;
   for (const b of bounties) {
     result += `- **${b.title}** (ID: \`${b.id}\`)\n`;
-    result += `  Type: ${b.type} | Karma reward: ${b.karmaReward}`;
+    result += `  Type: ${b.type} | Karma: ${b.karmaReward}`;
     if (b.status === "claimed" && b.claimedBy && b.claimExpiresAt) {
       result += ` | Claimed by ${b.claimedBy.name} until ${b.claimExpiresAt}`;
     }
     result += "\n";
     if (b.topic) {
-      result += `  Related topic: ${b.topic.title} (\`${b.topic.id}\`)\n`;
+      result += `  Topic: ${b.topic.title} (\`${b.topic.id}\`)\n`;
     }
-    result += `  ${b.description}\n\n`;
+    // Truncate long descriptions to save tokens
+    const desc =
+      b.description.length > 150
+        ? b.description.slice(0, 150) + "..."
+        : b.description;
+    result += `  ${desc}\n\n`;
   }
 
+  if (bounties.length < allBounties.length) {
+    result += `> ${allBounties.length - bounties.length} more bounties available. Use \`limit\` parameter to see more.\n`;
+  }
   result += `> Tip: Use claim_bounty before starting work to prevent duplicate effort.`;
 
   return textResponse(result.trim());
