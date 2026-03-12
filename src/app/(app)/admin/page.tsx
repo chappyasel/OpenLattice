@@ -25,6 +25,7 @@ import {
   StopCircleIcon,
   ExamIcon,
   ScalesIcon,
+  ArrowCounterClockwiseIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
@@ -985,66 +986,82 @@ function SubmissionQueue() {
           {filtered.map((sub) => {
             const data = sub.data as Record<string, unknown> | null;
             const topicTitle = (data?.topic as any)?.title;
+            const submitterName = sub.agentName ?? (sub.contributor as any)?.name ?? "Unknown agent";
+            const typeLabel: Record<string, string> = {
+              expansion: "Expansion",
+              bounty_response: "Bounty Response",
+              resource: "Resource",
+            };
             return (
               <div
                 key={sub.id}
-                className="flex items-start gap-4 rounded-xl border border-border/40 bg-muted/10 p-4"
+                className="rounded-xl border border-border/40 bg-muted/10 p-4"
               >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 text-xs font-medium text-cyan-400">
-                      {sub.type}
-                    </span>
-                    <SubmissionStatusBadge status={sub.status} />
-                    <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                      {sub.evaluationCount}/2 evals
-                    </span>
-                    {sub.consensusReachedAt && (
-                      <ConsensusStatusBadge
-                        status={sub.status === "approved" || sub.status === "rejected" ? "consensus" : "split"}
-                        size="sm"
-                      />
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    {topicTitle && (
+                      <p className="text-sm font-semibold truncate mb-1.5">{topicTitle}</p>
                     )}
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(sub.createdAt), { addSuffix: true })}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                      <span className="rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 text-[11px] font-medium text-cyan-400">
+                        {typeLabel[sub.type] ?? sub.type}
+                      </span>
+                      {tab !== "revision_requested" && <SubmissionStatusBadge status={sub.status} />}
+                      <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        {sub.evaluationCount}/2 evals
+                      </span>
+                      {sub.consensusReachedAt && (
+                        <ConsensusStatusBadge
+                          status={sub.status === "approved" || sub.status === "rejected" ? "consensus" : "split"}
+                          size="sm"
+                        />
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <RobotIcon className="size-3 shrink-0" />
+                      <span className="truncate">{submitterName}</span>
+                      <span className="text-muted-foreground/40">·</span>
+                      <span className="shrink-0">{formatDistanceToNow(new Date(sub.createdAt), { addSuffix: true })}</span>
+                    </div>
                   </div>
-                  {topicTitle && (
-                    <p className="text-sm font-medium truncate">{topicTitle}</p>
-                  )}
-                  {sub.status === "revision_requested" && sub.reviewReasoning && (
-                    <p className="mt-1 text-xs text-orange-400/80 line-clamp-2">
-                      Feedback: {sub.reviewReasoning}
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground font-mono mt-0.5">
-                    by {(sub.contributor as any)?.name ?? sub.agentName ?? "unknown"}
-                    {" · "}
-                    {sub.id.slice(0, 8)}...
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      onClick={() =>
+                        reviewMutation.mutate({ id: sub.id, status: "approved" })
+                      }
+                      disabled={reviewMutation.isPending}
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+                    >
+                      <CheckCircleIcon weight="bold" className="size-3.5" />
+                      Approve
+                    </button>
+                    <button
+                      onClick={() =>
+                        reviewMutation.mutate({ id: sub.id, status: "revision_requested" })
+                      }
+                      disabled={reviewMutation.isPending}
+                      className="inline-flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-400 transition-colors hover:bg-orange-500/20 disabled:opacity-50"
+                    >
+                      <ArrowCounterClockwiseIcon weight="bold" className="size-3.5" />
+                      Revise
+                    </button>
+                    <button
+                      onClick={() =>
+                        reviewMutation.mutate({ id: sub.id, status: "rejected" })
+                      }
+                      disabled={reviewMutation.isPending}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                    >
+                      <XCircleIcon weight="bold" className="size-3.5" />
+                      Reject
+                    </button>
+                  </div>
+                </div>
+                {sub.status === "revision_requested" && sub.reviewReasoning && (
+                  <p className="mt-2 text-xs text-orange-400/80 line-clamp-2 border-t border-border/30 pt-2">
+                    {sub.reviewReasoning}
                   </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    onClick={() =>
-                      reviewMutation.mutate({ id: sub.id, status: "approved" })
-                    }
-                    disabled={reviewMutation.isPending}
-                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
-                  >
-                    <CheckCircleIcon weight="bold" className="size-3.5" />
-                    Approve
-                  </button>
-                  <button
-                    onClick={() =>
-                      reviewMutation.mutate({ id: sub.id, status: "rejected" })
-                    }
-                    disabled={reviewMutation.isPending}
-                    className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
-                  >
-                    <XCircleIcon weight="bold" className="size-3.5" />
-                    Reject
-                  </button>
-                </div>
+                )}
               </div>
             );
           })}

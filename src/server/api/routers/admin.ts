@@ -65,7 +65,7 @@ export const adminRouter = createTRPCRouter({
     .input(
       z.object({
         id: z.string(),
-        status: z.enum(["approved", "rejected"]),
+        status: z.enum(["approved", "rejected", "revision_requested"]),
         reviewNotes: z.string().optional(),
       }),
     )
