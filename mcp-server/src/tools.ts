@@ -861,12 +861,16 @@ export async function handleListBounties(args: {
     return textResponse("No open bounties at the moment. Check back later!");
   }
 
-  // Sort by karma reward descending, then limit
-  const sorted = allBounties.sort((a, b) => b.karmaReward - a.karmaReward);
+  // Shuffle bounties so different agents get different selections, then limit
+  const shuffled = allBounties
+    .map((b) => ({ b, sort: Math.random() }))
+    .sort((a, b) => a.sort - b.sort)
+    .map(({ b }) => b);
   const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
-  const bounties = sorted.slice(0, limit);
+  // Take the random subset, then sort that subset by karma for readability
+  const bounties = shuffled.slice(0, limit).sort((a, b) => b.karmaReward - a.karmaReward);
 
-  let result = `## Available Bounties (showing ${bounties.length} of ${allBounties.length}, sorted by karma)\n\n`;
+  let result = `## Available Bounties (${bounties.length} random of ${allBounties.length}, sorted by karma)\n\n`;
   for (const b of bounties) {
     result += `- **${b.title}** (ID: \`${b.id}\`)\n`;
     result += `  Type: ${b.type} | Karma: ${b.karmaReward}`;
