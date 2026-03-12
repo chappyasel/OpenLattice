@@ -66,6 +66,12 @@ function handleMessage(message: Record<string, unknown>, log: Logger) {
   }
 }
 
+// Max time a single scout cycle can run before being force-terminated
+const CYCLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+// Inactivity timeout — if no messages arrive for this long, assume the stream is stuck
+const INACTIVITY_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+
 export async function runScoutCycle(
   config: {
     scoutId: string;
@@ -85,13 +91,25 @@ export async function runScoutCycle(
   const signal = config.signal;
 
   // Route through AI Gateway if configured
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = {
+    // Allow long-running tool calls (web searches, MCP) without the SDK
+    // killing the stream on its default 60s inactivity timeout
+    CLAUDE_CODE_STREAM_CLOSE_TIMEOUT: "300",
+  };
   const gatewayKey = process.env.AI_GATEWAY_API_KEY;
   if (gatewayKey) {
     env.ANTHROPIC_BASE_URL = "https://ai-gateway.vercel.sh";
     env.ANTHROPIC_AUTH_TOKEN = gatewayKey;
     env.ANTHROPIC_API_KEY = "";
     prefixedLog("[Scout] Using Vercel AI Gateway");
+  }
+
+  // Dedicated abort controller so we can kill the query subprocess on timeout
+  const queryAbort = new AbortController();
+
+  // Forward the external cancellation signal
+  if (signal) {
+    signal.addEventListener("abort", () => queryAbort.abort(), { once: true });
   }
 
   try {
@@ -103,16 +121,14 @@ export async function runScoutCycle(
       maxTurns: 40,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
+      abortController: queryAbort,
+      env,
       stderr: (data: string) => {
         prefixedLog(`[Scout:stderr] ${data.trim()}`);
       },
     };
-    // Only pass env if we have overrides — passing {} strips PATH and causes ENOENT
-    if (Object.keys(env).length > 0) {
-      queryOptions.env = env;
-    }
 
-    for await (const message of query({
+    const queryIterable = query({
       prompt:
         "Run a contribution cycle for OpenLattice. " +
         "First check for revision requests and address any feedback. " +
@@ -120,12 +136,62 @@ export async function runScoutCycle(
         "and submit a high-quality expansion with real, verified resources. " +
         "If time permits, work on additional bounties.",
       options: queryOptions as Parameters<typeof query>[0]["options"],
-    })) {
-      if (signal?.aborted) {
-        prefixedLog("[Scout] Cancelled");
-        break;
+    });
+
+    // Wrap the async iteration with both a hard cycle timeout and an
+    // inactivity watchdog so a stalled stream can't freeze the scout forever.
+    let lastMessageAt = Date.now();
+
+    const iterationPromise = (async () => {
+      for await (const message of queryIterable) {
+        lastMessageAt = Date.now();
+        if (signal?.aborted) {
+          prefixedLog("[Scout] Cancelled");
+          break;
+        }
+        handleMessage(message as Record<string, unknown>, prefixedLog);
       }
-      handleMessage(message as Record<string, unknown>, prefixedLog);
+    })();
+
+    const timeoutPromise = new Promise<"cycle-timeout" | "inactivity-timeout">(
+      (resolve) => {
+        const cycleTimer = setTimeout(
+          () => resolve("cycle-timeout"),
+          CYCLE_TIMEOUT_MS,
+        );
+
+        // Check for inactivity periodically
+        const inactivityCheck = setInterval(() => {
+          if (Date.now() - lastMessageAt > INACTIVITY_TIMEOUT_MS) {
+            clearTimeout(cycleTimer);
+            clearInterval(inactivityCheck);
+            resolve("inactivity-timeout");
+          }
+        }, 10_000);
+
+        // Clean up timers if the iteration finishes normally
+        iterationPromise.finally(() => {
+          clearTimeout(cycleTimer);
+          clearInterval(inactivityCheck);
+        });
+      },
+    );
+
+    const result = await Promise.race([
+      iterationPromise.then(() => "done" as const),
+      timeoutPromise,
+    ]);
+
+    if (result === "cycle-timeout") {
+      prefixedLog(
+        `[Scout] Cycle timeout (${CYCLE_TIMEOUT_MS / 1000}s) — force-terminating`,
+      );
+      queryAbort.abort();
+    } else if (result === "inactivity-timeout") {
+      prefixedLog(
+        `[Scout] Inactivity timeout (${INACTIVITY_TIMEOUT_MS / 1000}s since last message) — force-terminating`,
+      );
+      queryAbort.abort();
     }
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
