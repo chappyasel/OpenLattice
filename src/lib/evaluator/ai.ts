@@ -127,6 +127,26 @@ export const edgeSuggestionSchema = z.object({
 
 export type EdgeSuggestion = z.infer<typeof edgeSuggestionSchema>;
 
+export const edgeEvaluationSchema = z.object({
+  submittedEdgeReviews: z.array(
+    z.object({
+      targetTopicSlug: z.string().describe("Slug from the submitted edge being reviewed"),
+      verdict: z.enum(["valid", "wrong_type", "invalid"]).describe("valid = good edge, wrong_type = right target but wrong relationType, invalid = should not exist"),
+      correctedRelationType: z.enum(["related", "prerequisite", "subtopic", "see_also"]).optional().describe("If wrong_type, what it should be"),
+      reasoning: z.string().describe("1 sentence explaining the verdict"),
+    }),
+  ).describe("Review of each submitted edge"),
+  missingEdges: z.array(
+    z.object({
+      targetTopicSlug: z.string().describe("Slug of a topic that should be connected but wasn't submitted"),
+      relationType: z.enum(["related", "prerequisite", "subtopic", "see_also"]).describe("Type of relationship"),
+      reasoning: z.string().describe("1 sentence explaining why this edge should exist"),
+    }),
+  ).describe("Important edges the submission missed. Only include clearly justified ones — 0-2 typically."),
+});
+
+export type EdgeEvaluation = z.infer<typeof edgeEvaluationSchema>;
+
 // ─── Evaluation Functions ─────────────────────────────────────────────────
 
 const ARBITER_SYSTEM = `You are Arbiter, the in-house evaluator agent for OpenLattice — a knowledge market for the agentic internet.
@@ -442,6 +462,60 @@ ${topicList}
     system: ARBITER_SYSTEM,
     prompt,
     schema: edgeSuggestionSchema,
+  });
+
+  return { result: object, durationMs: Date.now() - start, model: MODEL };
+}
+
+export async function evaluateEdges(
+  topic: { title: string; content: string; summary?: string },
+  submittedEdges: Array<{ targetTopicSlug: string; relationType: string }>,
+  existingTopics: Array<{ id: string; title: string; summary?: string }>,
+): Promise<{ result: EdgeEvaluation; durationMs: number; model: string }> {
+  const start = Date.now();
+
+  const topicList = existingTopics
+    .map((t) => `- ${t.id}: "${t.title}"${t.summary ? ` — ${t.summary}` : ""}`)
+    .join("\n");
+
+  const edgeList = submittedEdges
+    .map((e) => `- → ${e.targetTopicSlug} (${e.relationType})`)
+    .join("\n");
+
+  const prompt = `Evaluate the edges submitted by a contributor agent for a new topic in the knowledge graph.
+
+## New Topic: "${topic.title}"
+${topic.summary ? `Summary: ${topic.summary}` : ""}
+
+### Content (preview):
+${topic.content.slice(0, 2000)}${topic.content.length > 2000 ? "\n...(truncated)" : ""}
+
+## Submitted Edges:
+${edgeList || "(none submitted)"}
+
+## All Existing Topics in the Graph:
+${topicList}
+
+## Relationship Types:
+- **prerequisite**: The target topic must be understood before this one (directional — order matters)
+- **subtopic**: This topic is a sub-area of the target (directional — order matters)
+- **related**: Conceptually related, complementary knowledge (symmetric)
+- **see_also**: Tangentially relevant, worth cross-referencing (symmetric)
+
+## Your Task:
+1. **Review each submitted edge**: Is the target valid? Is the relationship type correct?
+   - "valid" = the edge is reasonable and the relationship type is appropriate
+   - "wrong_type" = the target is right but the relationship type should be different (provide correctedRelationType)
+   - "invalid" = this edge should not exist (target is not meaningfully related)
+2. **Identify missing edges**: Are there important connections the submission missed? Only flag clearly justified ones (0-2 max). Don't penalize for missing weak/tangential connections.
+
+Be generous with "valid" — if an edge is defensible, mark it valid. Reserve "invalid" for clearly wrong connections.`;
+
+  const { object } = await generateObject({
+    model: getModel(),
+    system: ARBITER_SYSTEM,
+    prompt,
+    schema: edgeEvaluationSchema,
   });
 
   return { result: object, durationMs: Date.now() - start, model: MODEL };
