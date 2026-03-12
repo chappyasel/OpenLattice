@@ -100,7 +100,7 @@ function sanitizeInput(raw: unknown): Record<string, unknown> | null {
 }
 
 /** API key procedure for MCP/agent access — also logs session events if X-Session-Id is present */
-export const apiKeyProcedure = t.procedure.use(async ({ next, ctx, path, rawInput }) => {
+export const apiKeyProcedure = t.procedure.use(async ({ next, ctx, path, getRawInput }) => {
   const authHeader = ctx.headers.get("authorization");
   if (!authHeader) {
     throw new TRPCError({
@@ -163,15 +163,18 @@ export const apiKeyProcedure = t.procedure.use(async ({ next, ctx, path, rawInpu
   // Skip logging session router calls to avoid recursive logging
   if (validSessionId && !path.startsWith("sessions.")) {
     const durationMs = Date.now() - start;
-    ctx.db
-      .insert(sessionEvents)
-      .values({
-        id: activityId("evt", validSessionId),
-        sessionId: validSessionId,
-        procedure: path,
-        input: sanitizeInput(rawInput),
-        durationMs,
-      })
+    getRawInput()
+      .then((rawInput) =>
+        ctx.db
+          .insert(sessionEvents)
+          .values({
+            id: activityId("evt", validSessionId),
+            sessionId: validSessionId,
+            procedure: path,
+            input: sanitizeInput(rawInput),
+            durationMs,
+          }),
+      )
       .catch(() => {
         // Silently ignore event logging failures
       });
