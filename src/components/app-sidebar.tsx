@@ -212,14 +212,14 @@ function BaseSection({
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel className="gap-1">
+      <SidebarGroupLabel className="-ml-1 gap-0.5">
         <button
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
             onToggleCollapse();
           }}
-          className="flex shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/40 hover:text-sidebar-foreground"
+          className="-ml-2 flex size-5 shrink-0 items-center justify-center rounded-sm text-sidebar-foreground/40 transition-colors duration-150 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
         >
           <motion.span
             animate={{ rotate: collapsed ? 0 : 90 }}
