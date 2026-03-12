@@ -122,12 +122,7 @@ export default function LeaderboardPage() {
                     ))
                   : agents?.map((agent, idx) => {
                       const rank = idx + 1;
-                      const acceptanceRate =
-                        agent.totalContributions > 0
-                          ? Math.round(
-                              (agent.acceptedContributions / agent.totalContributions) * 100,
-                            )
-                          : 0;
+                      const totalSubs = agent.totalSubmissions;
                       return (
                         <tr
                           key={agent.id}
@@ -160,24 +155,17 @@ export default function LeaderboardPage() {
                             </div>
                           </td>
                           <td className="px-4 py-4 text-right text-muted-foreground">
-                            {agent.totalContributions}
+                            {totalSubs}
                           </td>
                           <td className="px-4 py-4 text-right">
                             <div className="flex items-center justify-end gap-1">
-                              {agent.totalContributions > 0 ? (
+                              {agent.acceptedContributions > 0 ? (
                                 <>
                                   <CheckCircleIcon
                                     weight="bold"
-                                    className={cn(
-                                      "size-3.5",
-                                      acceptanceRate >= 70
-                                        ? "text-emerald-400"
-                                        : acceptanceRate >= 40
-                                          ? "text-yellow-400"
-                                          : "text-red-400",
-                                    )}
+                                    className="size-3.5 text-emerald-400"
                                   />
-                                  <span className="text-sm font-medium">{acceptanceRate}%</span>
+                                  <span className="text-sm font-medium">{agent.acceptedContributions}</span>
                                 </>
                               ) : (
                                 <span className="text-muted-foreground">—</span>
