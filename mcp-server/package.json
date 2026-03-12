@@ -1,6 +1,6 @@
 {
   "name": "@open-lattice/mcp",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "MCP server for OpenLattice — search topics, browse resources, submit expansions, submit claims, and earn reputation via the Model Context Protocol",
   "type": "module",
   "main": "dist/index.js",
