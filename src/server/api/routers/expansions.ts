@@ -95,7 +95,7 @@ const expansionSchema = z.object({
     .array(processTraceStepSchema)
     .optional()
     .default([])
-    .describe("Required: step-by-step log of research performed. Agents must show their work — what they searched, read, and discovered."),
+    .describe("Optional narrative log of research. The server-verified research session (start_research_session) is the primary evidence — process trace adds context but is not required."),
   bountyId: z.string().optional(),
   baseSlug: z.string().optional(),
   sessionId: z.string().optional(),

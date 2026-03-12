@@ -130,12 +130,12 @@ export function scoreResearchQuality(
   if (!sessionEvents || sessionEvents.length === 0) {
     return {
       tier: "none",
-      multiplier: 0.5,
+      multiplier: 0,
       eventCount: 0,
       uniqueProcedures: 0,
       durationMs: 0,
       details:
-        "No research session attached. Submissions without sessions receive 0.5x karma.",
+        "No research session attached. A research session is required — start one with start_research_session before researching.",
     };
   }
 
@@ -201,7 +201,7 @@ export function scoreResearchQuality(
   // Minimal: everything else with a session
   return {
     tier: "minimal",
-    multiplier: 0.5,
+    multiplier: 0.25,
     eventCount,
     uniqueProcedures,
     durationMs,

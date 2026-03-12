@@ -24,6 +24,7 @@ import {
   tags,
   evaluations,
   evaluatorStats,
+  researchSessions,
   type EvaluatorStats,
 } from "@/server/db/schema";
 import { activityId, generateUniqueId } from "@/lib/utils";
@@ -592,6 +593,7 @@ export const evaluatorRouter = createTRPCRouter({
       z.object({
         submissionId: z.string(),
         data: z.record(z.unknown()),
+        sessionId: z.string().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -618,6 +620,30 @@ export const evaluatorRouter = createTRPCRouter({
         });
       }
 
+      // Validate new sessionId if provided
+      if (input.sessionId) {
+        const session = await ctx.db.query.researchSessions.findFirst({
+          where: and(
+            eq(researchSessions.id, input.sessionId),
+            eq(researchSessions.contributorId, ctx.contributor.id),
+          ),
+        });
+        if (!session) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid session ID "${input.sessionId}" or session does not belong to you. Start a new session with start_research_session.`,
+          });
+        }
+        // Close the session on resubmit (same as initial submit)
+        await ctx.db
+          .update(researchSessions)
+          .set({ status: "closed", closedAt: new Date() })
+          .where(and(
+            eq(researchSessions.id, input.sessionId),
+            eq(researchSessions.status, "active"),
+          ));
+      }
+
       // Update the submission with revised data and reset to pending
       const [updated] = await ctx.db
         .update(submissions)
@@ -630,6 +656,7 @@ export const evaluatorRouter = createTRPCRouter({
           reviewedByContributorId: null,
           reputationDelta: null,
           reviewedAt: null,
+          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         })
         .where(
           and(

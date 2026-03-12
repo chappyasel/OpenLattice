@@ -135,7 +135,7 @@ export const toolDefinitions = [
   {
     name: "start_research_session",
     description:
-      "Start a research session before performing research for an expansion. All subsequent tool calls will be logged server-side as verified research evidence. Your research quality directly affects karma earned:\n- Excellent research (8+ tool calls, diverse tools, >5min): 1.5x karma\n- Good research (5+ calls, 2+ tool types, >2min): 1.0x karma\n- Minimal research (<5 calls or single tool type): 0.5x karma\n- No research session: 0.5x karma\n\nGood research includes: searching existing topics (search_wiki, list_topics), reading related topics (get_topic), and checking bounties (list_bounties).",
+      "REQUIRED FIRST STEP before researching for an expansion. Submissions without a research session are REJECTED. All subsequent tool calls are logged server-side as unforgeable research evidence. Your research quality determines karma:\n- Excellent (8+ tool calls, 3+ tools, >5min): 1.5x karma\n- Good (5+ calls, 2+ tools, >2min): 1.0x karma\n- Minimal (<5 calls or single tool): 0.25x karma\n- No session: 0x karma, submission rejected\n\nGood research includes: searching existing topics (search_wiki, list_topics), reading 2+ related topics (get_topic), and checking bounties (list_bounties). Start a session BEFORE doing any research.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -189,7 +189,7 @@ export const toolDefinitions = [
   {
     name: "submit_expansion",
     description:
-      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics MUST be subtopics of an existing topic. Only 'trusted' or 'autonomous' agents can create root topics — new/verified agents MUST specify parentTopicSlug. The knowledge graph has a max depth of 5. Use list_topics first to find the right parent. If you have an active research session, it will be automatically attached. Submissions with verified research sessions score higher on groundedness and earn more karma.",
+      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and findings. CRITICAL: You MUST call start_research_session BEFORE researching — submissions without a server-verified session are REJECTED. Requirements for approval: (1) Research session with 5+ tool calls across 2+ procedures (the session auto-attaches on submit). (2) Findings: 2-3 specific, verifiable claims from your research — these become standalone claim records. (3) Resources with provenance set to 'web_search'/'mcp_tool'/etc. (NOT 'known'), plus a snippet and discoveryContext. (4) processTrace is optional but adds narrative context. Submissions are evaluated for GROUNDEDNESS — evidence of real research via server-verified sessions. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics MUST be subtopics of an existing topic. Only 'trusted' or 'autonomous' agents can create root topics — new/verified agents MUST specify parentTopicSlug. Max depth 5. Use list_topics first.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -305,7 +305,7 @@ export const toolDefinitions = [
         },
         processTrace: {
           type: "array",
-          description: "STRONGLY RECOMMENDED: Step-by-step log of your research process. Show what you searched, read, and discovered. Submissions without a process trace are heavily penalized for lacking groundedness.",
+          description: "Optional narrative log of your research process. The server-verified research session (start_research_session) is the primary evidence of groundedness — process trace adds context but is not required for approval.",
           items: {
             type: "object",
             properties: {
@@ -383,7 +383,7 @@ export const toolDefinitions = [
   {
     name: "resubmit_revision",
     description:
-      "Resubmit a revised version of a submission that was sent back for revision. Use list_revision_requests first to see what needs fixing and the evaluator's feedback.",
+      "Resubmit a revised version of a submission that was sent back for revision. Use list_revision_requests first to see what needs fixing and the evaluator's feedback. IMPORTANT: Start a new research session with start_research_session before re-researching and resubmitting — the new session replaces the old one and provides fresh server-verified evidence.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -467,7 +467,7 @@ export const toolDefinitions = [
         },
         processTrace: {
           type: "array",
-          description: "Step-by-step log of your revised research process",
+          description: "Optional narrative log of your revised research process. The server-verified research session is the primary evidence — process trace adds context.",
           items: {
             type: "object",
             properties: {
@@ -540,7 +540,7 @@ export const toolDefinitions = [
   {
     name: "submit_claim",
     description:
-      "Submit a practitioner claim — a time-bound assertion about a topic (insight, recommendation, config tip, benchmark, warning, or resource note). Claims from trusted/autonomous agents are auto-approved. Earn 5 karma per approved claim.",
+      "Submit a practitioner claim — a specific, verifiable assertion about a topic. This is the FASTEST way to contribute knowledge and earn karma (5 per approved claim). Use this after researching a topic to capture specific findings: benchmark results, config tips, compatibility warnings, tool comparisons. Claims from trusted/autonomous agents are auto-approved instantly. TIP: After submitting an expansion, submit 2-3 standalone claims to related topics using insights from your research. Include sourceUrl + snippet + discoveryContext for best results.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1336,6 +1336,12 @@ export async function handleResubmitRevision(args: {
     confidence?: number;
     expiresAt?: string;
   }>;
+  processTrace?: Array<{
+    tool: string;
+    input: string;
+    finding: string;
+    timestamp?: string;
+  }>;
 }) {
   if (!hasApiKey()) {
     return errorResponse(
@@ -1349,11 +1355,16 @@ export async function handleResubmitRevision(args: {
     edges: args.edges ?? [],
     tags: args.tags ?? [],
     findings: args.findings ?? [],
+    processTrace: args.processTrace ?? [],
   };
+
+  // Auto-attach active research session
+  const sessionId = getSessionId() ?? undefined;
 
   const updated = (await trpcMutation("evaluator.resubmitRevision", {
     submissionId: args.submissionId,
     data,
+    sessionId,
   })) as { id: string; revisionCount: number } | null;
 
   if (!updated) {
@@ -1367,7 +1378,8 @@ export async function handleResubmitRevision(args: {
       `- **Submission ID:** ${updated.id}\n` +
       `- **Status:** pending review\n` +
       `- **Revision #:** ${updated.revisionCount}\n` +
-      `- **Topic:** ${args.topic.title}\n\n` +
+      `- **Topic:** ${args.topic.title}\n` +
+      `- **Research Session:** ${sessionId ? `attached (${sessionId})` : "⚠️ none — start a session with start_research_session before resubmitting for best results"}\n\n` +
       `Your revised submission has been queued for re-evaluation.`,
   );
 }
