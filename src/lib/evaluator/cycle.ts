@@ -257,6 +257,31 @@ async function reviewPendingSubmissions(
         }
       }
 
+      // 0b. Fetch hierarchy context for topic placement assessment
+      let parentTopic: { id: string; title: string; summary: string | null; depth: number } | null = null;
+      let siblings: Array<{ id: string; title: string; summary: string | null }> = [];
+      let grandparent: { id: string; title: string } | null = null;
+      let targetDepth = 0;
+
+      try {
+        const hierarchyContext = await trpc.query<{
+          parent: { id: string; title: string; summary: string | null; depth: number } | null;
+          siblings: Array<{ id: string; title: string; summary: string | null }>;
+          grandparent: { id: string; title: string } | null;
+          targetDepth: number;
+        }>("topics.getHierarchyContext", {
+          parentSlug: expansion.topic.parentTopicSlug,
+        });
+        if (hierarchyContext) {
+          parentTopic = hierarchyContext.parent;
+          siblings = hierarchyContext.siblings;
+          grandparent = hierarchyContext.grandparent;
+          targetDepth = hierarchyContext.targetDepth;
+        }
+      } catch (err: any) {
+        log(`  [review] Hierarchy context fetch failed: ${err.message}`);
+      }
+
       // 1. Content review
       const { result, durationMs, model } = await reviewExpansion(expansion, {
         existingTopics,
@@ -264,6 +289,10 @@ async function reviewPendingSubmissions(
         contributorTrustLevel: contributor?.trustLevel ?? "new",
         contributorAcceptanceRate: acceptanceRate,
         urlVerification: urlVerification ?? undefined,
+        parentTopic,
+        siblings,
+        grandparent,
+        targetDepth,
       });
 
       // 1b. Hard guardrails — override AI verdict when minimum standards aren't met
@@ -392,6 +421,30 @@ async function reviewPendingSubmissions(
           ...result.improvementSuggestions,
         ];
         log(`  [review] Override: approve→revise (${thinSummaryResources.length} resources with thin summaries)`);
+      }
+
+      // 1h. Topic placement hard gate — reject very poor placements
+      if (result.verdict === "approve" && result.topicPlacement.appropriateness < 3) {
+        result.verdict = "revise";
+        result.reasoning = `Topic placement score ${result.topicPlacement.appropriateness}/10 is too low — this topic doesn't fit under its proposed parent. ${result.topicPlacement.suggestedParent ? `Consider placing under '${result.topicPlacement.suggestedParent}' instead. ` : ""}${result.reasoning}`;
+        result.improvementSuggestions = [
+          result.topicPlacement.suggestedParent
+            ? `Move this topic under '${result.topicPlacement.suggestedParent}' by setting parentTopicSlug to '${result.topicPlacement.suggestedParent}'.`
+            : `Reconsider the placement of this topic. ${result.topicPlacement.reasoning}`,
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (placement ${result.topicPlacement.appropriateness} < 3 minimum)`);
+      }
+
+      // 1i. Depth hard gate — block topics at depth 5+
+      if (result.verdict === "approve" && targetDepth > 5) {
+        result.verdict = "revise";
+        result.reasoning = `Target depth ${targetDepth} exceeds maximum allowed depth of 5. ${result.reasoning}`;
+        result.improvementSuggestions = [
+          `This topic targets depth ${targetDepth}, which exceeds the maximum of 5. Merge this content into the parent topic or restructure under a shallower parent.`,
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (depth ${targetDepth} > 5 hard limit)`);
       }
 
       // 2. Edge suggestion + diff
@@ -580,6 +633,7 @@ async function reviewPendingSubmissions(
             findingsAssessment: result.findingsAssessment,
             edgeAssessment: result.edgeAssessment,
             groundedness: result.groundedness,
+            topicPlacement: result.topicPlacement,
           },
           reasoning: result.reasoning,
           suggestedReputationDelta: totalReputationDelta,
@@ -619,6 +673,7 @@ async function reviewPendingSubmissions(
             edgeAssessment: result.edgeAssessment,
             groundedness: result.groundedness,
             findingsAssessment: result.findingsAssessment,
+            topicPlacement: result.topicPlacement,
             improvementSuggestions: result.improvementSuggestions,
             verdict: result.verdict,
             topicTitle: expansion.topic.title,

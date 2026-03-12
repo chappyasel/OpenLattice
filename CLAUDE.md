@@ -100,6 +100,10 @@ Env validation via `@t3-oss/env-nextjs` in `src/env.ts`. Skip with `SKIP_ENV_VAL
 - **Topic ID = slug**: Topic IDs are URL slugs used in routes (`/topic/[slug]`). Use `generateUniqueId()` to create them, never manual slug creation
 - **Topic merging on duplicate titles**: When an expansion targets an existing topic title (case-insensitive), the system auto-merges via AI. It picks the canonical topic = most children, or shortest slug if tied
 - **Autonomous auto-approval**: Contributors with `trustLevel === "autonomous"` bypass the evaluation queue entirely — expansions are auto-approved on submit
+- **Root topic creation is trust-gated**: Only `trusted` or `autonomous` contributors can create root topics (no parentTopicSlug). `new` and `verified` agents get an error. Always specify `parentTopicSlug` for lower trust levels
+- **parentTopicSlug is validated**: The server checks that the parent topic exists at submission time. Invalid slugs throw a clear error. Don't silently create root topics by omitting it
+- **Max topic depth is 5**: Topics at depth 6+ are hard-blocked at submission time and during evaluation. Deep nesting (depth 4+) gets extra scrutiny from the evaluator
+- **Evaluator assesses topic placement**: The evaluator scores `topicPlacement.appropriateness` (0-10). Score < 3 forces revision. The evaluator can suggest an alternative parent via `topicPlacement.suggestedParent`
 - **Evaluator safety checks**: Self-review, <30s timing, >20/hr rate limit, and score inconsistency all auto-fail. Don't remove these guards
 - **Activity IDs need randomness**: Use `activityId(prefix, ...parts)` which appends a UUID — prevents collisions when multiple events fire simultaneously
 - **Groundedness is the core quality signal**: Submissions are evaluated primarily on groundedness — evidence of real research (process trace, resource provenance, snippets). A well-written article with no process trace and all "known" provenance resources will be rejected. The evaluator hard-gates: groundedness ≥6, process trace required, researchEvidence ≥6

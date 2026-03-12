@@ -56,6 +56,11 @@ export const expansionReviewSchema = z.object({
     accuracy: z.number().describe("Whether relationship types are correct (0-10)"),
     summary: z.string().describe("1 sentence assessment of proposed edges"),
   }),
+  topicPlacement: z.object({
+    appropriateness: z.number().describe("How well does this topic fit under its proposed parent? (0-10). 10 = perfect fit as a subtopic of the parent, 0 = completely wrong location. For root topics, assess whether it truly deserves top-level status or should be a subtopic of an existing topic."),
+    suggestedParent: z.string().nullable().describe("If the topic would be better placed elsewhere, the slug of a better parent topic from the existing topics list. null if current placement is good."),
+    reasoning: z.string().describe("1-2 sentence explanation of why this placement is or isn't appropriate"),
+  }),
   reasoning: z.string().describe("2-4 sentence justification of the verdict"),
   suggestedReputationDelta: z.number().int().describe("Karma reward/penalty (-200 to +300)"),
   improvementSuggestions: z.array(z.string()).describe("Specific improvements if rejected or revision requested"),
@@ -219,6 +224,10 @@ export async function reviewExpansion(
     contributorTrustLevel: string;
     contributorAcceptanceRate?: number;
     urlVerification?: UrlVerificationResult[];
+    parentTopic?: { id: string; title: string; summary?: string | null; depth: number } | null;
+    siblings?: Array<{ id: string; title: string; summary?: string | null }>;
+    grandparent?: { id: string; title: string } | null;
+    targetDepth: number;
   },
 ): Promise<{ result: ExpansionReview; durationMs: number; model: string }> {
   const start = Date.now();
@@ -272,6 +281,26 @@ ${(expansion.findings ?? []).length > 0
 ### Proposed Edges (${expansion.edges.length}):
 ${expansion.edges.map((e) => `- ${expansion.topic.title} → ${e.targetTopicSlug} (${e.relationType})`).join("\n")}
 ${expansion.edges.length > 0 ? `\nExisting topics in graph: ${context.existingTopics.slice(0, 30).map(t => t.id).join(", ")}${context.existingTopics.length > 30 ? "..." : ""}` : ""}
+
+### Topic Placement Context
+${context.parentTopic
+  ? `Parent topic: "${context.parentTopic.title}" (${context.parentTopic.id})${context.parentTopic.summary ? ` — ${context.parentTopic.summary}` : ""}
+${context.grandparent ? `Grandparent: "${context.grandparent.title}" (${context.grandparent.id})` : "Top-level parent (depth 1 topic)"}
+Siblings (other children of "${context.parentTopic.title}"):
+${context.siblings && context.siblings.length > 0
+  ? context.siblings.map(s => `- "${s.title}" (${s.id})${s.summary ? ` — ${s.summary}` : ""}`).join("\n")
+  : "(no existing siblings)"}
+Target depth: ${context.targetDepth}`
+  : `This is a ROOT topic (depth 0). Assess whether it truly deserves top-level status or should be a subtopic of an existing topic.
+Target depth: 0`}
+${context.targetDepth >= 4 ? `\nWARNING: This topic targets depth ${context.targetDepth}. The knowledge graph prefers shallower hierarchies. Consider whether this content could be merged into its parent or placed at a shallower depth.` : ""}
+
+## Topic Placement Assessment
+Evaluate whether this topic is placed correctly in the hierarchy:
+- Does it logically belong under its parent?
+- Is it at the right level of specificity for its depth?
+- Would it be a better fit as a sibling or child of a different existing topic?
+- If suggesting a different parent, use the slug from the existing topics list.
 
 ## Existing Topics in Graph (${context.existingTopics.length}):
 ${context.existingTopics.map(t => `- "${t.title}" (\`${t.id}\`)${t.summary ? ` — ${t.summary}` : ""}`).slice(0, 50).join("\n")}${context.existingTopics.length > 50 ? "\n...(truncated)" : ""}
