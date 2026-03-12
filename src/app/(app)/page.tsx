@@ -83,6 +83,7 @@ export default function HomePage() {
     const { data: graphData } = api.graph.getFullGraph.useQuery();
     const { data: recentActivity } = api.activity.getRecent.useQuery({ limit: 20 });
     const [topicPage, setTopicPage] = useState(0);
+    const slideDirection = useRef(1); // 1 = forward, -1 = backward
     const { data: searchResults } = api.search.query.useQuery(
         { q: debouncedQuery },
         { enabled: debouncedQuery.length >= 2 },
@@ -117,6 +118,7 @@ export default function HomePage() {
     useEffect(() => {
         if (totalPages <= 1) return;
         const timer = setInterval(() => {
+            slideDirection.current = 1;
             setTopicPage((p) => (p + 1) % totalPages);
         }, 5000);
         return () => clearInterval(timer);
@@ -164,9 +166,11 @@ export default function HomePage() {
                     allTopics={allBreadcrumbs ?? []}
                 />
             ) : (
-                <div className="flex flex-col items-center pb-16">
+                <div className="flex min-h-screen flex-col">
+                    {/* Main content — vertically centered */}
+                    <div className="flex flex-1 flex-col items-center justify-center">
                     {/* Hero Section */}
-                    <div className="relative flex flex-col items-center justify-center px-6 py-12">
+                    <div className="relative flex flex-col items-center justify-center px-6 py-8">
                         <GrainientBackground />
 
                         <div className="relative text-center">
@@ -314,48 +318,25 @@ export default function HomePage() {
 
                     {/* Suggested Topics — paginated carousel */}
                     <div className="mx-auto w-full max-w-3xl px-6 pb-8">
-                        <div className="mb-4 flex items-center justify-between">
+                        <div className="mb-4">
                             <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
                                 Suggested Topics
                             </h2>
-                            {totalPages > 1 && (
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setTopicPage((p) => (p - 1 + totalPages) % totalPages)}
-                                        className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                                    >
-                                        <ArrowLeftIcon weight="bold" className="size-3.5" />
-                                    </button>
-                                    <div className="flex gap-1">
-                                        {Array.from({ length: totalPages }).map((_, i) => (
-                                            <button
-                                                key={i}
-                                                onClick={() => setTopicPage(i)}
-                                                className={`size-1.5 rounded-full transition-all ${
-                                                    i === topicPage
-                                                        ? "bg-foreground scale-125"
-                                                        : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
-                                                }`}
-                                            />
-                                        ))}
-                                    </div>
-                                    <button
-                                        onClick={() => setTopicPage((p) => (p + 1) % totalPages)}
-                                        className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                                    >
-                                        <ArrowRightIcon weight="bold" className="size-3.5" />
-                                    </button>
-                                </div>
-                            )}
                         </div>
                         <div className="relative p-1 -m-1">
-                            <AnimatePresence mode="wait">
+                            <AnimatePresence mode="wait" initial={false} custom={slideDirection.current}>
                                 <motion.div
                                     key={topicPage}
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.25 }}
+                                    custom={slideDirection.current}
+                                    variants={{
+                                        enter: (dir: number) => ({ opacity: 0, x: dir * 30 }),
+                                        center: { opacity: 1, x: 0 },
+                                        exit: (dir: number) => ({ opacity: 0, x: dir * -30 }),
+                                    }}
+                                    initial="enter"
+                                    animate="center"
+                                    exit="exit"
+                                    transition={{ duration: 0.25, ease: "easeInOut" }}
                                     className="grid gap-4 sm:grid-cols-3"
                                 >
                                     {topicsLoading
@@ -372,9 +353,12 @@ export default function HomePage() {
                                           ))
                                         : suggestedTopics
                                               ?.slice(topicPage * 3, topicPage * 3 + 3)
-                                              .map((topic) => (
+                                              .map((topic, i) => (
                                                   <motion.button
                                                       key={topic.id}
+                                                      initial={{ opacity: 0, scale: 0.95 }}
+                                                      animate={{ opacity: 1, scale: 1 }}
+                                                      transition={{ duration: 0.25, delay: i * 0.06, ease: "easeOut" }}
                                                       onClick={() => navigateToSlug(topic.id)}
                                                       whileHover={{
                                                           scale: 1.02,
@@ -433,10 +417,28 @@ export default function HomePage() {
                                 </motion.div>
                             </AnimatePresence>
                         </div>
+                        {totalPages > 1 && (
+                            <div className="mt-4 flex justify-center gap-1.5">
+                                {Array.from({ length: totalPages }).map((_, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => {
+                                            slideDirection.current = i > topicPage ? 1 : -1;
+                                            setTopicPage(i);
+                                        }}
+                                        className={`size-1.5 rounded-full transition-all ${
+                                            i === topicPage
+                                                ? "bg-foreground scale-125"
+                                                : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
+                                        }`}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* Graph Preview */}
-                    <div className="mx-auto w-full max-w-4xl px-6 pb-8">
+                    <div className="mx-auto w-full max-w-4xl px-6 pb-10">
                         <div
                             className="relative h-[350px] cursor-pointer"
                             onClick={() => {
@@ -451,6 +453,7 @@ export default function HomePage() {
                                     onNodeClick={(node) => {
                                         if (node.id) navigateToSlug(node.id);
                                     }}
+                                    disableZoom
                                 />
                             )}
                             {graphNodes.length > 0 && (
@@ -467,10 +470,12 @@ export default function HomePage() {
                         </div>
                     </div>
 
-                    {/* Latest Updates — scrolling marquee */}
+                    </div>{/* end main content centering wrapper */}
+
+                    {/* Latest Updates — scrolling marquee, pinned to bottom */}
                     {recentActivity && recentActivity.length > 0 && (
-                        <div className="w-full overflow-hidden border-t border-border/50 py-3">
-                            <div className="mb-2 px-6">
+                        <div className="w-full shrink-0 overflow-hidden py-3">
+                            <div className="mx-auto mb-2 w-full max-w-3xl px-6">
                                 <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                                     Latest Updates
                                 </h2>
@@ -568,7 +573,7 @@ export default function HomePage() {
                     )}
 
                     {/* Footer */}
-                    <div className="w-full px-6 pt-4">
+                    <div className="w-full shrink-0 px-6 py-4">
                         <p className="text-center text-sm text-muted-foreground">
                             Powered by{" "}
                             <a

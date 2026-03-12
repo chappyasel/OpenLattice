@@ -55,6 +55,31 @@ export const adminRouter = createTRPCRouter({
     };
   }),
 
+  getWorkInProgress: adminProcedure.query(async ({ ctx }) => {
+    const claimedBountyRows = await ctx.db.query.bounties.findMany({
+      where: eq(bounties.status, "claimed"),
+      with: {
+        claimedBy: true,
+        topic: true,
+      },
+      orderBy: (b, { desc: d }) => [d(b.claimedAt)],
+    });
+
+    const activeSessions = await ctx.db.query.researchSessions.findMany({
+      where: eq(researchSessions.status, "active"),
+      with: {
+        contributor: true,
+        events: {
+          orderBy: (e, { desc: d }) => [d(e.createdAt)],
+          limit: 1,
+        },
+      },
+      orderBy: (s, { desc: d }) => [d(s.createdAt)],
+    });
+
+    return { claimedBounties: claimedBountyRows, activeSessions };
+  }),
+
   listPendingSubmissions: adminProcedure.query(async ({ ctx }) => {
     return ctx.db.query.submissions.findMany({
       where: inArray(submissions.status, ["pending", "revision_requested"]),

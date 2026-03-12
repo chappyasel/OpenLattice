@@ -31,6 +31,9 @@ import {
   ClockIcon,
   FileTextIcon,
   ListIcon,
+  HourglassIcon,
+  LightningIcon,
+  TimerIcon,
 } from "@phosphor-icons/react";
 import { useQueryState } from "nuqs";
 import { api } from "@/trpc/react";
@@ -142,11 +145,14 @@ export default function AdminPage() {
         {/* Pending Submissions */}
         <SubmissionQueue />
 
-        {/* Activity Log */}
-        <ActivityLog />
+        {/* Work In Progress */}
+        <WorkInProgress />
 
         {/* Contributor Manager */}
         <ContributorManager />
+
+        {/* Activity Log */}
+        <ActivityLog />
 
         {/* Deduplicate */}
         <div className="mb-8">
@@ -599,6 +605,142 @@ function DeduplicateButton() {
           {mutation.isPending ? "Deduplicating…" : "Deduplicate"}
         </button>
       </div>
+    </div>
+  );
+}
+
+function WorkInProgress() {
+  const { data, isLoading } = api.admin.getWorkInProgress.useQuery(undefined, {
+    refetchInterval: 30_000,
+  });
+
+  const claimedBounties = data?.claimedBounties ?? [];
+  const activeSessions = data?.activeSessions ?? [];
+  const totalItems = claimedBounties.length + activeSessions.length;
+
+  return (
+    <div className="mb-8 overflow-hidden rounded-2xl border border-border/50 bg-card p-6">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <HourglassIcon weight="bold" className="size-4 text-amber-400" />
+          <h2 className="text-base font-semibold">Work In Progress</h2>
+          {totalItems > 0 && (
+            <span className="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-400">
+              {totalItems}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-14 animate-pulse rounded-lg bg-muted/30" />
+          ))}
+        </div>
+      ) : totalItems === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border/30 py-8 text-center">
+          <HourglassIcon weight="thin" className="mb-2 size-8 text-muted-foreground/30" />
+          <p className="text-sm text-muted-foreground">No active work right now</p>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {/* Claimed Bounties */}
+          {claimedBounties.map((bounty) => {
+            const isExpired = bounty.claimExpiresAt && new Date(bounty.claimExpiresAt) < new Date();
+            return (
+              <div
+                key={`bounty-${bounty.id}`}
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/30"
+              >
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-yellow-500/10">
+                  <TreasureChestIcon weight="bold" className="size-3.5 text-yellow-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate">
+                    <span className="font-medium">{bounty.title}</span>
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {bounty.claimedBy && (
+                      <span className="flex items-center gap-1">
+                        <RobotIcon weight="bold" className="size-3" />
+                        {bounty.claimedBy.name}
+                      </span>
+                    )}
+                    {bounty.topic && (
+                      <Link href={`/topic/${bounty.topic.id}`} className="hover:text-brand-blue truncate">
+                        {bounty.topic.title}
+                      </Link>
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {isExpired ? (
+                    <span className="rounded-full bg-red-500/10 border border-red-500/20 px-2 py-0.5 text-xs font-medium text-red-400">
+                      Expired
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-400">
+                      Claimed
+                    </span>
+                  )}
+                  {bounty.claimedAt && (
+                    <time className="text-xs text-muted-foreground">
+                      {formatDistanceToNow(new Date(bounty.claimedAt), { addSuffix: true })}
+                    </time>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Active Sessions */}
+          {activeSessions.map((session) => {
+            const lastEvent = session.events?.[0];
+            const metadata = session.metadata as { bountyId?: string; targetTopic?: string; description?: string } | null;
+            return (
+              <div
+                key={`session-${session.id}`}
+                className="flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-muted/30"
+              >
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-500/10">
+                  <LightningIcon weight="bold" className="size-3.5 text-emerald-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm truncate">
+                    <span className="font-medium">
+                      {metadata?.description ?? metadata?.targetTopic ?? "Research session"}
+                    </span>
+                  </p>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {session.contributor && (
+                      <span className="flex items-center gap-1">
+                        <RobotIcon weight="bold" className="size-3" />
+                        {session.contributor.name}
+                      </span>
+                    )}
+                    {lastEvent && (
+                      <span className="flex items-center gap-1 truncate">
+                        <TimerIcon weight="bold" className="size-3" />
+                        Last: {lastEvent.procedure}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">
+                    <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Active
+                  </span>
+                  <time className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(new Date(session.createdAt), { addSuffix: true })}
+                  </time>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
