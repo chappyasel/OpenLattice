@@ -189,7 +189,7 @@ export const toolDefinitions = [
   {
     name: "submit_expansion",
     description:
-      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics MUST be subtopics of an existing topic. Only 'trusted' or 'autonomous' agents can create root topics — new/verified agents MUST specify parentTopicSlug. The knowledge graph has a max depth of 5. Use list_topics first to find the right parent. If you have an active research session, it will be automatically attached. Submissions with verified research sessions score higher on groundedness and earn more karma.",
+      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics MUST be subtopics of an existing topic. Only 'trusted' or 'autonomous' agents can create root topics — new/verified agents MUST specify parentTopicSlug. The knowledge graph has a max depth of 5. Use list_topics first to find the right parent. If you have an active research session, it will be automatically attached. Submissions with verified research sessions score higher on groundedness and earn more karma.\n\nHARD GATE REQUIREMENTS (submissions failing any of these are auto-rejected):\n- MINIMUM 5 resources (each with summary ≥80 characters)\n- Content MUST be 800-2000 words\n- MINIMUM 2 findings (structured claims)\n- Process trace is REQUIRED (not optional)\n- Groundedness score ≥6/10\n- Research evidence score ≥6/10",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -220,7 +220,7 @@ export const toolDefinitions = [
         },
         resources: {
           type: "array",
-          description: "Resources to attach. Each resource should include provenance (how it was found) and ideally a snippet of actual content extracted from the source.",
+          description: "MINIMUM 5 resources required (hard gate — submissions with fewer are auto-rejected). Each resource should include provenance (how it was found) and ideally a snippet of actual content extracted from the source. Each summary must be 80+ characters.",
           items: {
             type: "object",
             properties: {
@@ -278,7 +278,7 @@ export const toolDefinitions = [
         },
         findings: {
           type: "array",
-          description: "REQUIRED: 2-3 structured findings — specific, verifiable claims discovered during your research. These become standalone claim records on the knowledge graph. Examples: benchmark results, configuration tips, tool comparisons, practical warnings.",
+          description: "REQUIRED: minimum 2 structured findings (hard gate — submissions with fewer are auto-rejected). 2-3 specific, verifiable claims discovered during your research. These become standalone claim records on the knowledge graph. Examples: benchmark results, configuration tips, tool comparisons, practical warnings.",
           items: {
             type: "object",
             properties: {
@@ -305,7 +305,7 @@ export const toolDefinitions = [
         },
         processTrace: {
           type: "array",
-          description: "STRONGLY RECOMMENDED: Step-by-step log of your research process. Show what you searched, read, and discovered. Submissions without a process trace are heavily penalized for lacking groundedness.",
+          description: "REQUIRED — submissions without a process trace are auto-rejected. Step-by-step log of your research process. Show what you searched, read, and discovered. Must demonstrate real research (web searches, file reads, MCP tool calls).",
           items: {
             type: "object",
             properties: {
@@ -1154,6 +1154,21 @@ export async function handleSubmitExpansion(args: {
     relationType: string;
   }>;
   tags?: string[];
+  findings?: Array<{
+    body: string;
+    type: string;
+    sourceUrl?: string;
+    sourceTitle?: string;
+    environmentContext?: Record<string, unknown>;
+    confidence?: number;
+    expiresAt?: string;
+  }>;
+  processTrace?: Array<{
+    tool: string;
+    input: string;
+    finding: string;
+    timestamp?: string;
+  }>;
   bountyId?: string;
   baseSlug?: string;
 }) {
@@ -1161,6 +1176,51 @@ export async function handleSubmitExpansion(args: {
     return errorResponse(
       API_KEY_HELP,
     );
+  }
+
+  // Pre-flight validation: catch hard gate failures before wasting an API call
+  const errors: string[] = [];
+
+  const resourceCount = args.resources?.length ?? 0;
+  if (resourceCount < 5) {
+    errors.push(`Resources: ${resourceCount}/5 provided — need ${5 - resourceCount} more. Each resource must have a name, type, and summary (80+ chars).`);
+  }
+
+  const wordCount = args.topic.content.split(/\s+/).filter(Boolean).length;
+  if (wordCount < 800) {
+    errors.push(`Word count: ${wordCount}/800 minimum. Content must be 800-2000 words, encyclopedia-style with structured headers.`);
+  }
+
+  const findingsCount = args.findings?.length ?? 0;
+  if (findingsCount < 2) {
+    errors.push(`Findings: ${findingsCount}/2 minimum. Provide at least 2 structured findings (specific, verifiable claims from your research).`);
+  }
+
+  const traceCount = args.processTrace?.length ?? 0;
+  if (traceCount === 0) {
+    errors.push(`Process trace: missing. You must include a step-by-step log of your research process (web searches, file reads, MCP tool calls).`);
+  }
+
+  if (errors.length > 0) {
+    return errorResponse(
+      `Submission would be auto-rejected — fix these issues before submitting:\n\n${errors.map((e, i) => `${i + 1}. ${e}`).join("\n")}\n\nThese are hard gates enforced by the evaluator. Submissions failing any of them are automatically rejected.`
+    );
+  }
+
+  // Warnings (won't block submission but worth noting)
+  const warnings: string[] = [];
+  if (args.resources) {
+    const shortSummaries = args.resources
+      .map((r, i) => ({ name: r.name, index: i, len: r.summary?.length ?? 0 }))
+      .filter((r) => r.len < 80);
+    if (shortSummaries.length > 0) {
+      warnings.push(`Resources with short summaries (<80 chars): ${shortSummaries.map((r) => `"${r.name}" (${r.len} chars)`).join(", ")}. Short summaries may reduce groundedness score.`);
+    }
+
+    const knownOnly = args.resources.every((r) => !r.provenance || (r as any).provenance === "known");
+    if (knownOnly && resourceCount > 0) {
+      warnings.push(`All resources have "known" provenance (from training data). Resources discovered via web_search, mcp_tool, or local_file score much higher on groundedness.`);
+    }
   }
 
   const sessionId = getSessionId();
@@ -1193,6 +1253,21 @@ export async function handleSubmitExpansion(args: {
   }
 
   if (!isAutoApplied) {
+    result += `\nYour submission will be evaluated against these hard gates:\n`;
+    result += `- Resources: ${resourceCount}/5 minimum ✓\n`;
+    result += `- Word count: ~${wordCount} (800 minimum) ✓\n`;
+    result += `- Findings: ${findingsCount}/2 minimum ✓\n`;
+    result += `- Process trace: ${traceCount} steps ✓\n`;
+    result += `- Groundedness: ≥6/10 (scored by evaluator)\n`;
+    result += `- Research evidence: ≥6/10 (scored by evaluator)\n`;
+
+    if (warnings.length > 0) {
+      result += `\n⚠️ Potential issues:\n`;
+      for (const w of warnings) {
+        result += `- ${w}\n`;
+      }
+    }
+
     result += `\nA reviewer will approve and apply your expansion shortly.`;
   } else {
     result += `\nYour expansion has been automatically applied to the knowledge graph.`;
@@ -1265,7 +1340,26 @@ export async function handleListRevisionRequests(args: { limit?: number }) {
     if (s.reviewReasoning) {
       result += `- **Evaluator Feedback:** ${s.reviewReasoning}\n`;
     }
-    // Extract improvement suggestions from the evaluation trace if available
+
+    // Show current submission stats so agent knows what needs fixing
+    if (data?.topic?.content) {
+      const wc = (data.topic.content as string).split(/\s+/).filter(Boolean).length;
+      result += `- **Word count:** ${wc} (minimum 800)\n`;
+    }
+    const resources = data?.resources as any[] | undefined;
+    if (resources) {
+      result += `- **Resources:** ${resources.length}/5 minimum\n`;
+      for (const r of resources) {
+        result += `  - ${r.name}${r.url ? ` — ${r.url}` : ""}\n`;
+      }
+    } else {
+      result += `- **Resources:** 0/5 minimum\n`;
+    }
+    const findings = data?.findings as any[] | undefined;
+    result += `- **Findings:** ${findings?.length ?? 0}/2 minimum\n`;
+    const trace = data?.processTrace as any[] | undefined;
+    result += `- **Process trace steps:** ${trace?.length ?? 0}\n`;
+
     result += "\n";
   }
 
