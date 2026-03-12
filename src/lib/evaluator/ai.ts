@@ -735,6 +735,130 @@ Generate specific, actionable bounties.`;
   return { result: object, durationMs: Date.now() - start, model: MODEL };
 }
 
+// ─── Graph Restructuring ──────────────────────────────────────────────────
+
+export const restructuringSuggestionSchema = z.object({
+  suggestions: z.array(
+    z.object({
+      type: z.enum(["reparent", "flatten", "merge", "split_root", "needs_subtopics"]),
+      topicSlug: z.string().describe("Slug of the topic to restructure"),
+      targetParentSlug: z.string().nullable().describe("New parent slug for reparent/flatten, null for others"),
+      mergeWithSlug: z.string().nullable().describe("Slug of topic to merge with, null if not a merge"),
+      reasoning: z.string().describe("Why this restructuring is needed"),
+      confidence: z.number().int().describe("Confidence in this suggestion (0-100)"),
+      suggestedBounty: z.object({
+        title: z.string().describe("Bounty title (should start with 'Restructure: ')"),
+        description: z.string().describe("What the bounty asks for"),
+        karmaReward: z.number().int().describe("Karma reward (50-200)"),
+      }),
+    }),
+  ).describe("Suggested graph restructuring operations"),
+});
+
+export type RestructuringSuggestion = z.infer<typeof restructuringSuggestionSchema>;
+
+export async function suggestRestructuring(
+  topics: Array<{
+    id: string;
+    title: string;
+    summary: string | null;
+    parentTopicId: string | null;
+    depth: number;
+    childCount: number;
+    resourceCount: number;
+    contentLength: number;
+    baseSlug: string | null;
+  }>,
+): Promise<{ result: RestructuringSuggestion; durationMs: number; model: string }> {
+  const start = Date.now();
+
+  // Build indented tree visualization
+  const childMap = new Map<string | null, typeof topics>();
+  for (const t of topics) {
+    const key = t.parentTopicId;
+    const group = childMap.get(key) ?? [];
+    group.push(t);
+    childMap.set(key, group);
+  }
+
+  function buildTreeLines(parentId: string | null, indent: number): string[] {
+    const children = childMap.get(parentId) ?? [];
+    const lines: string[] = [];
+    for (const t of children) {
+      const prefix = "  ".repeat(indent);
+      const stats = `[d${t.depth}, ${t.childCount} children, ${t.resourceCount} resources, ${t.contentLength} chars]`;
+      lines.push(`${prefix}- "${t.title}" (${t.id}) ${stats}`);
+      lines.push(...buildTreeLines(t.id, indent + 1));
+    }
+    return lines;
+  }
+
+  const treeVisualization = buildTreeLines(null, 0).join("\n");
+
+  // Compute stats for the prompt
+  const deepTopics = topics.filter((t) => t.depth >= 4);
+  const rootTopics = topics.filter((t) => !t.parentTopicId);
+  const rootsNoChildren = rootTopics.filter((t) => t.childCount === 0);
+
+  // Detect potential sibling overlaps (simple title-word overlap heuristic)
+  const siblingGroups = new Map<string | null, typeof topics>();
+  for (const t of topics) {
+    const group = siblingGroups.get(t.parentTopicId) ?? [];
+    group.push(t);
+    siblingGroups.set(t.parentTopicId, group);
+  }
+
+  const potentialOverlaps: string[] = [];
+  for (const [parentId, siblings] of siblingGroups) {
+    if (siblings.length < 2) continue;
+    for (let i = 0; i < siblings.length; i++) {
+      for (let j = i + 1; j < siblings.length; j++) {
+        const wordsA = new Set(siblings[i]!.title.toLowerCase().split(/\s+/));
+        const wordsB = new Set(siblings[j]!.title.toLowerCase().split(/\s+/));
+        const intersection = [...wordsA].filter((w) => wordsB.has(w) && w.length > 3);
+        if (intersection.length >= 2) {
+          potentialOverlaps.push(`"${siblings[i]!.title}" & "${siblings[j]!.title}" (shared: ${intersection.join(", ")})`);
+        }
+      }
+    }
+  }
+
+  const prompt = `Analyze this knowledge graph's topic tree for structural issues and suggest restructuring operations.
+
+## Topic Tree (${topics.length} topics, ${rootTopics.length} roots)
+${treeVisualization}
+
+## Structural Stats
+- Deep topics (depth 4+): ${deepTopics.length}${deepTopics.length > 0 ? ` — ${deepTopics.map((t) => `"${t.title}" at depth ${t.depth}`).join(", ")}` : ""}
+- Root topics with 0 children: ${rootsNoChildren.length}${rootsNoChildren.length > 0 ? ` — ${rootsNoChildren.map((t) => `"${t.title}"`).join(", ")}` : ""}
+${potentialOverlaps.length > 0 ? `- Potential sibling overlaps: ${potentialOverlaps.join("; ")}` : "- No obvious sibling overlaps detected"}
+
+## What to Look For
+1. **Deep nesting (depth 4+)**: Topics that could be flattened by moving up one level
+2. **Misplaced roots**: Root topics that should be subtopics of another root
+3. **Sibling overlap**: Topics under the same parent with overlapping titles/content that should be merged
+4. **Broad roots with no children**: Root topics that need subtopic structure (overlap with gap analysis, but focus on the structural angle — should this be a root at all?)
+5. **Wrong branch**: Topics whose title/content aligns better with a different part of the tree
+
+## Guidelines
+- Only suggest changes with high confidence — restructuring is disruptive
+- Prefer minimal moves (reparent one topic) over wholesale reorganization
+- For merges, pick the topic with more content/resources as the target
+- "Restructure: " prefix is REQUIRED for all bounty titles
+- karmaReward should be 50-200, proportional to complexity
+- Suggest at most 5 restructuring operations per cycle
+- Do NOT suggest restructuring if the tree looks well-organized`;
+
+  const { object } = await generateObject({
+    model: getModel(),
+    system: ARBITER_SYSTEM,
+    prompt,
+    schema: restructuringSuggestionSchema,
+  });
+
+  return { result: object, durationMs: Date.now() - start, model: MODEL };
+}
+
 // ─── Topic Merge ──────────────────────────────────────────────────────────
 
 export const topicMergeSchema = z.object({

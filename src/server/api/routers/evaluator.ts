@@ -823,6 +823,156 @@ export const evaluatorRouter = createTRPCRouter({
       return updated!;
     }),
 
+  reparentTopic: evaluatorProcedure
+    .input(
+      z.object({
+        topicId: z.string(),
+        newParentTopicId: z.string().nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      return await ctx.db.transaction(async (tx) => {
+        // 1. Validate topic exists and is published
+        const topic = await tx.query.topics.findFirst({
+          where: and(eq(topics.id, input.topicId), eq(topics.status, "published")),
+        });
+        if (!topic) throw new Error("Topic not found or not published");
+
+        // 2. Validate new parent exists (if not null)
+        let newParent: typeof topic | null = null;
+        if (input.newParentTopicId) {
+          const found = await tx.query.topics.findFirst({
+            where: eq(topics.id, input.newParentTopicId),
+          });
+          if (!found) throw new Error("New parent topic not found");
+          newParent = found;
+
+          // 3. No circular reference — new parent's path must not contain this topic
+          if (newParent.materializedPath?.includes(input.topicId)) {
+            throw new Error("Circular reference: new parent is a descendant of this topic");
+          }
+          if (input.newParentTopicId === input.topicId) {
+            throw new Error("Cannot reparent a topic under itself");
+          }
+        }
+
+        // 4. Compute new depth and check subtree depth
+        const newDepth = newParent ? (newParent.depth ?? 0) + 1 : 0;
+
+        // Find max depth in subtree relative to current topic
+        const allTopics = await tx.query.topics.findMany({
+          where: eq(topics.status, "published"),
+          columns: { id: true, parentTopicId: true, depth: true, materializedPath: true },
+        });
+
+        // BFS to find all descendants and max depth offset
+        const descendants: string[] = [];
+        const queue = [input.topicId];
+        const depthMap = new Map<string, number>();
+        depthMap.set(input.topicId, newDepth);
+
+        // Build child lookup
+        const childLookup = new Map<string, string[]>();
+        for (const t of allTopics) {
+          if (t.parentTopicId) {
+            const children = childLookup.get(t.parentTopicId) ?? [];
+            children.push(t.id);
+            childLookup.set(t.parentTopicId, children);
+          }
+        }
+
+        while (queue.length > 0) {
+          const current = queue.shift()!;
+          const children = childLookup.get(current) ?? [];
+          for (const childId of children) {
+            const childDepth = (depthMap.get(current) ?? 0) + 1;
+            if (childDepth > 5) {
+              throw new Error(`Reparenting would push descendant "${childId}" to depth ${childDepth}, exceeding max depth of 5`);
+            }
+            depthMap.set(childId, childDepth);
+            descendants.push(childId);
+            queue.push(childId);
+          }
+        }
+
+        // 5. Update this topic
+        const previousParentId = topic.parentTopicId;
+        const newPath = newParent
+          ? `${newParent.materializedPath ?? newParent.id}/${input.topicId}`
+          : input.topicId;
+        const newBaseId = newParent?.baseId ?? topic.baseId;
+
+        await tx
+          .update(topics)
+          .set({
+            parentTopicId: input.newParentTopicId,
+            depth: newDepth,
+            materializedPath: newPath,
+            baseId: newBaseId,
+          })
+          .where(eq(topics.id, input.topicId));
+
+        // 6. BFS update all descendants
+        for (const descId of descendants) {
+          const descTopic = allTopics.find((t) => t.id === descId);
+          if (!descTopic) continue;
+
+          const descDepth = depthMap.get(descId) ?? 0;
+          // Recompute path: replace old prefix with new prefix
+          const parentDepthVal = depthMap.get(descTopic.parentTopicId!) ?? 0;
+          const parentPath = descTopic.parentTopicId === input.topicId
+            ? newPath
+            : undefined; // Will be computed from parent
+
+          // Build new path by walking up
+          let pathParts: string[] = [descId];
+          let walkId: string | null = descTopic.parentTopicId;
+          while (walkId) {
+            pathParts.unshift(walkId);
+            const walkTopic = allTopics.find((t) => t.id === walkId);
+            if (!walkTopic || walkTopic.id === input.topicId) break;
+            walkId = walkTopic.parentTopicId;
+          }
+          // Prepend the new path prefix for the reparented topic
+          if (newParent?.materializedPath) {
+            pathParts = [newParent.materializedPath, ...pathParts];
+          }
+          const descPath = pathParts.join("/");
+
+          await tx
+            .update(topics)
+            .set({
+              depth: descDepth,
+              materializedPath: descPath,
+              baseId: newBaseId,
+            })
+            .where(eq(topics.id, descId));
+        }
+
+        // 7. Log activity
+        await tx.insert(activity).values({
+          id: activityId("topic-reparented", input.topicId),
+          type: "topic_reparented" as any,
+          contributorId: ctx.contributor.id,
+          topicId: input.topicId,
+          description: `Topic "${topic.title}" reparented from ${previousParentId ?? "root"} to ${input.newParentTopicId ?? "root"}`,
+          data: {
+            previousParentId,
+            newParentId: input.newParentTopicId,
+            descendantsUpdated: descendants.length,
+          },
+        });
+
+        return {
+          topicId: input.topicId,
+          previousParentId,
+          newParentId: input.newParentTopicId,
+          newDepth,
+          descendantsUpdated: descendants.length,
+        };
+      });
+    }),
+
   recalculateReputation: evaluatorProcedure.mutation(async ({ ctx }) => {
     const allContributors = await ctx.db.query.contributors.findMany({
       with: { submissions: true },

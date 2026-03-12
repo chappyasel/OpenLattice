@@ -110,6 +110,7 @@ Env validation via `@t3-oss/env-nextjs` in `src/env.ts`. Skip with `SKIP_ENV_VAL
 - **Resource provenance matters**: Each resource should declare how it was found (`web_search`, `local_file`, `mcp_tool`, `user_provided`, `known`). Include `discoveryContext` and `snippet` for non-"known" resources
 - **Expansions require 2+ findings**: Structured claims (findings) are required for approval. Each finding should be specific and verifiable. On approval, findings are materialized as `claims` records in the DB
 - **URLs are verified during evaluation**: The evaluator performs live HEAD requests against resource URLs. Dead URLs (404/DNS failure) trigger a hard gate if >50% fail. The verification results are fed into the AI evaluator prompt as ground truth
+- **Graph restructuring is suggest-only**: The evaluator periodically analyzes the topic tree for structural issues (deep nesting, misplaced roots, sibling overlap) and posts `"edit"` bounties with `"Restructure: "` title prefix. Use `evaluator.reparentTopic` to execute moves — it validates circular references, depth limits, and BFS-updates all descendant paths
 
 ### Style
 
