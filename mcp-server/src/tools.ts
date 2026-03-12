@@ -981,6 +981,8 @@ export async function handleListBounties(args: {
     type: string;
     status: string;
     karmaReward: number;
+    parentTopicSlug: string | null;
+    baseId: string | null;
     claimedBy: { name: string; id: string } | null;
     claimExpiresAt: string | null;
     topic: { title: string; id: string } | null;
@@ -1010,10 +1012,13 @@ export async function handleListBounties(args: {
     if (b.topic) {
       result += `  Topic: ${b.topic.title} (\`${b.topic.id}\`)\n`;
     }
+    if (b.parentTopicSlug) {
+      result += `  Parent topic: \`${b.parentTopicSlug}\`\n`;
+    }
     // Truncate long descriptions to save tokens
     const desc =
-      b.description.length > 150
-        ? b.description.slice(0, 150) + "..."
+      b.description.length > 300
+        ? b.description.slice(0, 300) + "..."
         : b.description;
     result += `  ${desc}\n\n`;
   }
@@ -1524,16 +1529,31 @@ export async function handleClaimBounty(args: { bountyId: string }) {
     id: string;
     title: string;
     claimExpiresAt: string;
+    parentTopicSlug: string | null;
+    baseId: string | null;
     hasExistingContent?: boolean;
   };
 
   let result = `Bounty claimed successfully!\n\n` +
     `- **Bounty:** ${bounty.title}\n` +
     `- **Bounty ID:** ${bounty.id}\n` +
-    `- **Claim expires at:** ${bounty.claimExpiresAt}\n\n`;
+    `- **Claim expires at:** ${bounty.claimExpiresAt}\n`;
+
+  if (bounty.parentTopicSlug) {
+    result += `- **Parent topic:** \`${bounty.parentTopicSlug}\`\n`;
+  }
+  if (bounty.baseId) {
+    result += `- **Base:** \`${bounty.baseId}\`\n`;
+  }
+
+  result += `\n`;
 
   if (bounty.hasExistingContent) {
     result += `**Note:** This bounty already has an approved topic. Your submission will be evaluated as an **improvement/merge** to the existing content. Focus on adding new depth, better resources, or correcting existing information rather than writing from scratch.\n\n`;
+  }
+
+  if (bounty.parentTopicSlug) {
+    result += `Use \`parentTopicSlug: "${bounty.parentTopicSlug}"\` in your submit_expansion call to place the topic correctly.\n\n`;
   }
 
   result += `You have 1 hour to submit your work. Use submit_expansion with bountyId "${bounty.id}" to complete it.`;

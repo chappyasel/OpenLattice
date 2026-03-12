@@ -41,6 +41,7 @@ export const bounties = pgTable(
       onDelete: "set null",
     }),
     karmaReward: integer("karma_reward").notNull().default(10),
+    parentTopicSlug: text("parent_topic_slug"),
     icon: text("icon"),
     iconHue: integer("icon_hue"),
     claimedById: text("claimed_by_id").references(() => contributors.id, {

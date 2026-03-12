@@ -171,12 +171,13 @@ async function seedBase(data: BaseData, sortOrder: number) {
         .values({
           id: `bounty--${childSlug}`,
           title: child.title,
-          description: `${child.summary} This is a subtopic of "${root.title}" in the ${base.name} base. Use \`baseSlug: '${base.slug}'\` and \`parentTopicSlug: '${rootSlug}'\` when submitting.`,
+          description: `${child.summary} This is a subtopic of "${root.title}" in the ${base.name} base.`,
           type: "topic" as const,
           status: "open" as const,
           karmaReward: child.bountyReward,
           icon: child.icon,
           iconHue: child.iconHue,
+          parentTopicSlug: rootSlug,
           baseId,
         })
         .onConflictDoUpdate({
@@ -187,6 +188,7 @@ async function seedBase(data: BaseData, sortOrder: number) {
             karmaReward: sql`excluded.karma_reward`,
             icon: sql`excluded.icon`,
             iconHue: sql`excluded.icon_hue`,
+            parentTopicSlug: sql`excluded.parent_topic_slug`,
             baseId: sql`excluded.base_id`,
           },
         });
