@@ -203,6 +203,47 @@ export const adminRouter = createTRPCRouter({
       return updated!;
     }),
 
+  bulkApproveSubmissions: adminProcedure
+    .input(
+      z.object({
+        status: z.enum(["pending", "rejected", "revision_requested"]),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      // Get all submissions with the given status
+      const toApprove = await ctx.db.query.submissions.findMany({
+        where: eq(submissions.status, input.status),
+      });
+
+      let approved = 0;
+      for (const sub of toApprove) {
+        const [updated] = await ctx.db
+          .update(submissions)
+          .set({
+            status: "approved",
+            reviewNotes: `Bulk approved from ${input.status}`,
+            reviewedAt: new Date(),
+          })
+          .where(eq(submissions.id, sub.id))
+          .returning();
+
+        if (
+          updated &&
+          (updated.type === "expansion" || updated.type === "bounty_response")
+        ) {
+          await applyExpansion(
+            ctx.db,
+            updated.id,
+            updated.data as any,
+            updated.contributorId,
+          );
+        }
+        approved++;
+      }
+
+      return { approved };
+    }),
+
   listAllContributors: adminProcedure.query(async ({ ctx }) => {
     return ctx.db.query.contributors.findMany({
       orderBy: [desc(contributors.createdAt)],

@@ -1144,8 +1144,18 @@ function SubmissionQueue() {
     },
   });
 
+  const bulkApproveMutation = api.admin.bulkApproveSubmissions.useMutation({
+    onSuccess: () => {
+      void utils.admin.listSubmissions.invalidate();
+      void utils.admin.getSubmissionCounts.invalidate();
+      void utils.admin.getStats.invalidate();
+      void utils.admin.listPendingSubmissions.invalidate();
+    },
+  });
+
   const filtered = data?.items ?? [];
   const isActionable = tab === "pending" || tab === "revision_requested";
+  const showBulkApprove = (tab === "pending" || tab === "revision_requested" || tab === "rejected") && filtered.length > 0;
 
   return (
     <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6">
@@ -1154,29 +1164,45 @@ function SubmissionQueue() {
           <ClipboardIcon weight="bold" className="size-4 text-brand-blue" />
           <h2 className="text-base font-semibold">Submissions</h2>
         </div>
-        <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-muted/20 p-0.5">
-          {tabConfig.map((t) => {
-            const count = counts?.[t.key] ?? 0;
-            return (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  tab === t.key
-                    ? "bg-background text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t.label}
-                {count > 0 && (
-                  <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-medium", t.borderColor, t.color)}>
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-muted/20 p-0.5">
+            {tabConfig.map((t) => {
+              const count = counts?.[t.key] ?? 0;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    tab === t.key
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {t.label}
+                  {count > 0 && (
+                    <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-medium", t.borderColor, t.color)}>
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {showBulkApprove && (
+            <button
+              onClick={() => bulkApproveMutation.mutate({ status: tab as "pending" | "rejected" | "revision_requested" })}
+              disabled={bulkApproveMutation.isPending}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+            >
+              {bulkApproveMutation.isPending ? (
+                <SpinnerIcon className="size-3.5 animate-spin" />
+              ) : (
+                <CheckCircleIcon weight="bold" className="size-3.5" />
+              )}
+              Approve all
+            </button>
+          )}
         </div>
       </div>
 
@@ -1243,42 +1269,12 @@ function SubmissionQueue() {
                       )}
                     </div>
                   </div>
-                  {isActionable && (
-                    <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        onClick={() => reviewMutation.mutate({ id: sub.id, status: "approved" })}
-                        disabled={reviewMutation.isPending}
-                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
-                      >
-                        <CheckCircleIcon weight="bold" className="size-3.5" />
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => reviewMutation.mutate({ id: sub.id, status: "revision_requested" })}
-                        disabled={reviewMutation.isPending}
-                        className="inline-flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-400 transition-colors hover:bg-orange-500/20 disabled:opacity-50"
-                      >
-                        <ArrowCounterClockwiseIcon weight="bold" className="size-3.5" />
-                        Revise
-                      </button>
-                      <button
-                        onClick={() => reviewMutation.mutate({ id: sub.id, status: "rejected" })}
-                        disabled={reviewMutation.isPending}
-                        className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
-                      >
-                        <XCircleIcon weight="bold" className="size-3.5" />
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                  {!isActionable && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setSelectedId(sub.id); }}
-                      className="shrink-0 rounded-lg border border-border/30 p-2 text-muted-foreground transition-colors hover:text-foreground hover:border-border"
-                    >
-                      <EyeIcon weight="bold" className="size-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setSelectedId(sub.id); }}
+                    className="shrink-0 rounded-lg border border-border/30 p-2 text-muted-foreground transition-colors hover:text-foreground hover:border-border"
+                  >
+                    <EyeIcon weight="bold" className="size-4" />
+                  </button>
                 </div>
                 {sub.status === "revision_requested" && sub.reviewReasoning && (
                   <p className="mt-2 text-xs text-orange-400/80 line-clamp-2 border-t border-border/30 pt-2">
