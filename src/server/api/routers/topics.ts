@@ -60,6 +60,39 @@ export const topicsRouter = createTRPCRouter({
       .where(eq(topics.status, "published"));
   }),
 
+  // Lightweight summary for evaluator — no content, no relations
+  listSummary: publicProcedure
+    .input(
+      z
+        .object({
+          status: z.enum(["draft", "published", "archived"]).optional(),
+        })
+        .optional(),
+    )
+    .query(async ({ ctx, input }) => {
+      const conditions = [];
+      if (input?.status) {
+        conditions.push(eq(topics.status, input.status));
+      }
+
+      return ctx.db
+        .select({
+          id: topics.id,
+          title: topics.title,
+          summary: topics.summary,
+          parentTopicId: topics.parentTopicId,
+          baseId: topics.baseId,
+          depth: topics.depth,
+          iconHue: topics.iconHue,
+          contentLength: sql<number>`length(${topics.content})`,
+          resourceCount: sql<number>`(SELECT count(*)::integer FROM topic_resources tr WHERE tr.topic_id = "topics"."id")`,
+          childCount: sql<number>`(SELECT count(*)::integer FROM topics c WHERE c.parent_topic_id = "topics"."id" AND c.status = 'published')`,
+        })
+        .from(topics)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(topics.sortOrder, topics.title);
+    }),
+
   list: publicProcedure
     .input(
       z
