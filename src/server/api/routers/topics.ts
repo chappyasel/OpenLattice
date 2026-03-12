@@ -220,7 +220,9 @@ export const topicsRouter = createTRPCRouter({
             },
             orderBy: (tr, { desc }) => [desc(tr.relevanceScore)],
           },
-          childTopics: true,
+          childTopics: {
+            orderBy: (t, { asc }) => [asc(t.sortOrder), asc(t.title)],
+          },
           revisions: {
             with: { contributor: { columns: publicContributorColumns } },
             orderBy: (tr, { desc }) => [desc(tr.revisionNumber)],
