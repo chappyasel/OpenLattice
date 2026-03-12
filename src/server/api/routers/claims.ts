@@ -54,6 +54,40 @@ export const claimsRouter = createTRPCRouter({
       })).sort((a, b) => b.effectiveConfidence - a.effectiveConfidence);
     }),
 
+  listAll: publicProcedure
+    .input(
+      z.object({
+        type: z.enum(claimTypeValues).optional(),
+        limit: z.number().int().min(1).max(100).default(50),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const conditions = [
+        eq(claims.status, "approved"),
+        or(isNull(claims.expiresAt), gte(claims.expiresAt, new Date())),
+      ];
+      if (input.type) {
+        conditions.push(eq(claims.type, input.type));
+      }
+
+      const results = await ctx.db.query.claims.findMany({
+        where: and(...conditions),
+        with: {
+          contributor: { columns: publicContributorColumns },
+          topic: { columns: { id: true, title: true } },
+        },
+        orderBy: [desc(claims.confidence), desc(claims.createdAt)],
+        limit: input.limit,
+      });
+
+      return results.map((claim) => ({
+        ...claim,
+        effectiveConfidence: claim.lastEndorsedAt
+          ? computeEffectiveConfidence(claim.confidence, claim.lastEndorsedAt, claim.type)
+          : claim.confidence,
+      })).sort((a, b) => b.effectiveConfidence - a.effectiveConfidence);
+    }),
+
   submit: apiKeyProcedure
     .input(
       z.object({

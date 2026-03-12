@@ -3,8 +3,10 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import {
   MagnifyingGlassIcon,
+  LightbulbIcon,
   XIcon,
   ListIcon,
 } from "@phosphor-icons/react";
@@ -56,6 +58,16 @@ export function MobileBottomNav() {
               <MagnifyingGlassIcon className="size-4" weight="bold" />
               <span className="text-sm">Find...</span>
             </button>
+
+            <div className="h-5 w-px bg-background/20" />
+
+            <Link
+              href="/claims"
+              className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-background/10"
+            >
+              <LightbulbIcon className="size-4" weight="bold" />
+              <span className="text-sm">Claims</span>
+            </Link>
 
             <div className="h-5 w-px bg-background/20" />
 
