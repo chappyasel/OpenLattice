@@ -95,6 +95,20 @@ export async function runScoutCycle(
   }
 
   try {
+    const queryOptions: Record<string, unknown> = {
+      pathToClaudeCodeExecutable: CLI_PATH,
+      systemPrompt: SCOUT_PROMPT,
+      mcpServers,
+      allowedTools: ["WebSearch", "WebFetch", "mcp__openlattice__*"],
+      maxTurns: 40,
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+    };
+    // Only pass env if we have overrides — passing {} strips PATH and causes ENOENT
+    if (Object.keys(env).length > 0) {
+      queryOptions.env = env;
+    }
+
     for await (const message of query({
       prompt:
         "Run a contribution cycle for OpenLattice. " +
@@ -102,16 +116,7 @@ export async function runScoutCycle(
         "Then browse bounties, pick the best one, research the topic thoroughly using web search, " +
         "and submit a high-quality expansion with real, verified resources. " +
         "If time permits, work on additional bounties.",
-      options: {
-        pathToClaudeCodeExecutable: CLI_PATH,
-        systemPrompt: SCOUT_PROMPT,
-        mcpServers,
-        env,
-        allowedTools: ["WebSearch", "WebFetch", "mcp__openlattice__*"],
-        maxTurns: 40,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-      },
+      options: queryOptions as Parameters<typeof query>[0]["options"],
     })) {
       if (signal?.aborted) {
         prefixedLog("[Scout] Cancelled");
