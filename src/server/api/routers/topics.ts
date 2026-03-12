@@ -6,7 +6,7 @@ import {
   createTRPCRouter,
   publicProcedure,
 } from "@/server/api/trpc";
-import { edges, topicTags, topicResources, topics } from "@/server/db/schema";
+import { edges, tags, topicTags, topicResources, topics } from "@/server/db/schema";
 import { generateUniqueId, slugify } from "@/lib/utils";
 import { resolveBaseId } from "@/lib/resolve-base";
 import { publicContributorColumns } from "./contributors";
@@ -149,13 +149,18 @@ export const topicsRouter = createTRPCRouter({
         id: topics.id,
         title: topics.title,
         summary: topics.summary,
+        icon: topics.icon,
         iconHue: topics.iconHue,
         updatedAt: topics.updatedAt,
         resourceCount: count(topicResources.id),
       })
       .from(topics)
       .leftJoin(topicResources, eq(topicResources.topicId, topics.id))
-      .where(eq(topics.status, "published"))
+      .where(and(
+        eq(topics.status, "published"),
+        sql`${topics.content} != ''`,
+        sql`${topics.summary} IS NOT NULL AND ${topics.summary} != ''`,
+      ))
       .groupBy(topics.id)
       .orderBy(
         sql`(
@@ -164,9 +169,34 @@ export const topicsRouter = createTRPCRouter({
           + random() * 5
         ) DESC`,
       )
-      .limit(3);
+      .limit(12);
 
-    return results;
+    if (results.length === 0) return [];
+
+    // Fetch tags for the suggested topics
+    const topicIds = results.map((r) => r.id);
+    const tagRows = await ctx.db
+      .select({
+        topicId: topicTags.topicId,
+        tagName: tags.name,
+        tagIcon: tags.icon,
+        tagIconHue: tags.iconHue,
+      })
+      .from(topicTags)
+      .innerJoin(tags, eq(topicTags.tagId, tags.id))
+      .where(inArray(topicTags.topicId, topicIds));
+
+    const tagsByTopic = new Map<string, Array<{ name: string; icon: string; iconHue: number }>>();
+    for (const row of tagRows) {
+      const existing = tagsByTopic.get(row.topicId) ?? [];
+      existing.push({ name: row.tagName, icon: row.tagIcon, iconHue: row.tagIconHue });
+      tagsByTopic.set(row.topicId, existing);
+    }
+
+    return results.map((r) => ({
+      ...r,
+      tags: tagsByTopic.get(r.id) ?? [],
+    }));
   }),
 
   getBySlug: publicProcedure

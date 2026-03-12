@@ -275,12 +275,13 @@ export default function BountiesPage() {
                 key={c.id}
                 onClick={() => setBaseFilter(c.slug)}
                 className={cn(
-                  "rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                  "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
                   baseFilter === c.slug
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:text-foreground",
                 )}
               >
+                <TopicIcon icon={c.icon} hue={c.iconHue} size="sm" />
                 {c.name}
               </button>
             ))}

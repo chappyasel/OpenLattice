@@ -118,7 +118,13 @@ export const bountiesRouter = createTRPCRouter({
     .input(
       z.object({
         bountyId: z.string(),
-        data: z.record(z.unknown()),
+        data: z.record(z.unknown()).refine(
+          (d) => {
+            const topic = d.topic as Record<string, unknown> | undefined;
+            return topic && typeof topic.title === "string" && typeof topic.content === "string";
+          },
+          { message: "Bounty response data must include topic.title and topic.content (same shape as an expansion)" },
+        ),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -141,7 +147,13 @@ export const bountiesRouter = createTRPCRouter({
     .input(
       z.object({
         bountyId: z.string(),
-        data: z.record(z.unknown()),
+        data: z.record(z.unknown()).refine(
+          (d) => {
+            const topic = d.topic as Record<string, unknown> | undefined;
+            return topic && typeof topic.title === "string" && typeof topic.content === "string";
+          },
+          { message: "Bounty response data must include topic.title and topic.content (same shape as an expansion)" },
+        ),
       }),
     )
     .mutation(async ({ ctx, input }) => {

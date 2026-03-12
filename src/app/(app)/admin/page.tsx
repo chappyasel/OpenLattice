@@ -26,11 +26,24 @@ import {
   ExamIcon,
   ScalesIcon,
   ArrowCounterClockwiseIcon,
+  EyeIcon,
+  LinkIcon,
+  ClockIcon,
+  FileTextIcon,
+  ListIcon,
 } from "@phosphor-icons/react";
+import { useQueryState } from "nuqs";
 import { api } from "@/trpc/react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { TrustLevelBadge, SubmissionStatusBadge, ConsensusStatusBadge } from "@/components/badges";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 function StatCard({
   label,
@@ -903,33 +916,50 @@ function ContributorManager() {
   );
 }
 
+type SubmissionTab = "pending" | "revision_requested" | "approved" | "rejected";
+
+const tabConfig: Array<{ key: SubmissionTab; label: string; emptyMsg: string; color: string; borderColor: string }> = [
+  { key: "pending", label: "Pending", emptyMsg: "No pending submissions", color: "text-yellow-400", borderColor: "border-yellow-500/20 bg-yellow-500/10" },
+  { key: "revision_requested", label: "Revision", emptyMsg: "No revision requests", color: "text-orange-400", borderColor: "border-orange-500/20 bg-orange-500/10" },
+  { key: "approved", label: "Accepted", emptyMsg: "No accepted submissions", color: "text-emerald-400", borderColor: "border-emerald-500/20 bg-emerald-500/10" },
+  { key: "rejected", label: "Rejected", emptyMsg: "No rejected submissions", color: "text-red-400", borderColor: "border-red-500/20 bg-red-500/10" },
+];
+
+const typeLabel: Record<string, string> = {
+  expansion: "Expansion",
+  bounty_response: "Bounty Response",
+  resource: "Resource",
+  topic_edit: "Topic Edit",
+  topic_new: "New Topic",
+};
+
 function SubmissionQueue() {
   const utils = api.useUtils();
-  const { data: allSubmissions, isLoading } = api.admin.listPendingSubmissions.useQuery();
-  const [tab, setTab] = useState<"pending" | "revision_requested">("pending");
+  const [tab, setTab] = useQueryState("status", {
+    defaultValue: "pending" as SubmissionTab,
+    parse: (v) => (["pending", "revision_requested", "approved", "rejected"].includes(v) ? v as SubmissionTab : "pending"),
+    serialize: (v) => v,
+  });
+  const [selectedId, setSelectedId] = useQueryState("sub", {
+    defaultValue: null as string | null,
+    parse: (v) => v || null,
+    serialize: (v) => v ?? "",
+  });
+
+  const { data: counts } = api.admin.getSubmissionCounts.useQuery();
+  const { data, isLoading } = api.admin.listSubmissions.useQuery({ status: tab });
+
   const reviewMutation = api.admin.reviewSubmission.useMutation({
     onSuccess: () => {
-      void utils.admin.listPendingSubmissions.invalidate();
+      void utils.admin.listSubmissions.invalidate();
+      void utils.admin.getSubmissionCounts.invalidate();
       void utils.admin.getStats.invalidate();
+      void utils.admin.listPendingSubmissions.invalidate();
     },
   });
 
-  const pending = allSubmissions?.filter((s) => s.status === "pending") ?? [];
-  const revisionRequested = allSubmissions?.filter((s) => s.status === "revision_requested") ?? [];
-  const filtered = tab === "pending" ? pending : revisionRequested;
-
-  if (isLoading) {
-    return (
-      <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6">
-        <h2 className="mb-4 text-base font-semibold">Submissions</h2>
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-20 animate-pulse rounded-xl bg-muted/30" />
-          ))}
-        </div>
-      </div>
-    );
-  }
+  const filtered = data?.items ?? [];
+  const isActionable = tab === "pending" || tab === "revision_requested";
 
   return (
     <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6">
@@ -939,63 +969,60 @@ function SubmissionQueue() {
           <h2 className="text-base font-semibold">Submissions</h2>
         </div>
         <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-muted/20 p-0.5">
-          <button
-            onClick={() => setTab("pending")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              tab === "pending"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            Pending
-            {pending.length > 0 && (
-              <span className="rounded-full bg-yellow-500/10 border border-yellow-500/20 px-1.5 py-0.5 text-[10px] font-medium text-yellow-400">
-                {pending.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab("revision_requested")}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-              tab === "revision_requested"
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            Revision Requested
-            {revisionRequested.length > 0 && (
-              <span className="rounded-full bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 text-[10px] font-medium text-orange-400">
-                {revisionRequested.length}
-              </span>
-            )}
-          </button>
+          {tabConfig.map((t) => {
+            const count = counts?.[t.key] ?? 0;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  tab === t.key
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {t.label}
+                {count > 0 && (
+                  <span className={cn("rounded-full px-1.5 py-0.5 text-[10px] font-medium", t.borderColor, t.color)}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {!filtered.length ? (
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div key={i} className="h-20 animate-pulse rounded-xl bg-muted/30" />
+          ))}
+        </div>
+      ) : !filtered.length ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-border/30 py-12 text-center">
           <CheckCircleIcon weight="thin" className="mb-2 size-10 text-muted-foreground/30" />
           <p className="text-sm text-muted-foreground">
-            {tab === "pending" ? "No pending submissions" : "No revision requests"}
+            {tabConfig.find((t) => t.key === tab)?.emptyMsg}
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
+          {data && data.totalCount > filtered.length && (
+            <p className="text-xs text-muted-foreground mb-2">
+              Showing {filtered.length} of {data.totalCount}
+            </p>
+          )}
           {filtered.map((sub) => {
-            const data = sub.data as Record<string, unknown> | null;
-            const topicTitle = (data?.topic as any)?.title;
+            const subData = sub.data as Record<string, unknown> | null;
+            const topicTitle = (subData?.topic as any)?.title;
             const submitterName = sub.agentName ?? (sub.contributor as any)?.name ?? "Unknown agent";
-            const typeLabel: Record<string, string> = {
-              expansion: "Expansion",
-              bounty_response: "Bounty Response",
-              resource: "Resource",
-            };
             return (
               <div
                 key={sub.id}
-                className="rounded-xl border border-border/40 bg-muted/10 p-4"
+                className="rounded-xl border border-border/40 bg-muted/10 p-4 cursor-pointer transition-colors hover:bg-muted/20"
+                onClick={() => setSelectedId(sub.id)}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -1006,7 +1033,7 @@ function SubmissionQueue() {
                       <span className="rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 text-[11px] font-medium text-cyan-400">
                         {typeLabel[sub.type] ?? sub.type}
                       </span>
-                      {tab !== "revision_requested" && <SubmissionStatusBadge status={sub.status} />}
+                      <SubmissionStatusBadge status={sub.status} />
                       <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                         {sub.evaluationCount}/2 evals
                       </span>
@@ -1022,40 +1049,50 @@ function SubmissionQueue() {
                       <span className="truncate">{submitterName}</span>
                       <span className="text-muted-foreground/40">·</span>
                       <span className="shrink-0">{formatDistanceToNow(new Date(sub.createdAt), { addSuffix: true })}</span>
+                      {sub.source && sub.source !== "web" && (
+                        <>
+                          <span className="text-muted-foreground/40">·</span>
+                          <span className="shrink-0 uppercase text-[10px] font-mono">{sub.source}</span>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  {isActionable && (
+                    <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => reviewMutation.mutate({ id: sub.id, status: "approved" })}
+                        disabled={reviewMutation.isPending}
+                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+                      >
+                        <CheckCircleIcon weight="bold" className="size-3.5" />
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => reviewMutation.mutate({ id: sub.id, status: "revision_requested" })}
+                        disabled={reviewMutation.isPending}
+                        className="inline-flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-400 transition-colors hover:bg-orange-500/20 disabled:opacity-50"
+                      >
+                        <ArrowCounterClockwiseIcon weight="bold" className="size-3.5" />
+                        Revise
+                      </button>
+                      <button
+                        onClick={() => reviewMutation.mutate({ id: sub.id, status: "rejected" })}
+                        disabled={reviewMutation.isPending}
+                        className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                      >
+                        <XCircleIcon weight="bold" className="size-3.5" />
+                        Reject
+                      </button>
+                    </div>
+                  )}
+                  {!isActionable && (
                     <button
-                      onClick={() =>
-                        reviewMutation.mutate({ id: sub.id, status: "approved" })
-                      }
-                      disabled={reviewMutation.isPending}
-                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+                      onClick={(e) => { e.stopPropagation(); setSelectedId(sub.id); }}
+                      className="shrink-0 rounded-lg border border-border/30 p-2 text-muted-foreground transition-colors hover:text-foreground hover:border-border"
                     >
-                      <CheckCircleIcon weight="bold" className="size-3.5" />
-                      Approve
+                      <EyeIcon weight="bold" className="size-4" />
                     </button>
-                    <button
-                      onClick={() =>
-                        reviewMutation.mutate({ id: sub.id, status: "revision_requested" })
-                      }
-                      disabled={reviewMutation.isPending}
-                      className="inline-flex items-center gap-1 rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-400 transition-colors hover:bg-orange-500/20 disabled:opacity-50"
-                    >
-                      <ArrowCounterClockwiseIcon weight="bold" className="size-3.5" />
-                      Revise
-                    </button>
-                    <button
-                      onClick={() =>
-                        reviewMutation.mutate({ id: sub.id, status: "rejected" })
-                      }
-                      disabled={reviewMutation.isPending}
-                      className="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
-                    >
-                      <XCircleIcon weight="bold" className="size-3.5" />
-                      Reject
-                    </button>
-                  </div>
+                  )}
                 </div>
                 {sub.status === "revision_requested" && sub.reviewReasoning && (
                   <p className="mt-2 text-xs text-orange-400/80 line-clamp-2 border-t border-border/30 pt-2">
@@ -1067,6 +1104,446 @@ function SubmissionQueue() {
           })}
         </div>
       )}
+
+      {/* Submission Detail Dialog */}
+      <SubmissionDetailDialog
+        submissionId={selectedId}
+        onClose={() => void setSelectedId(null)}
+        isActionable={isActionable}
+        onReview={(id, status) => reviewMutation.mutate({ id, status })}
+        reviewPending={reviewMutation.isPending}
+      />
     </div>
+  );
+}
+
+function SubmissionDetailDialog({
+  submissionId,
+  onClose,
+  isActionable,
+  onReview,
+  reviewPending,
+}: {
+  submissionId: string | null;
+  onClose: () => void;
+  isActionable: boolean;
+  onReview: (id: string, status: "approved" | "rejected" | "revision_requested") => void;
+  reviewPending: boolean;
+}) {
+  const isOpen = !!submissionId;
+  const { data: sub, isLoading } = api.admin.getSubmissionDetail.useQuery(
+    { id: submissionId! },
+    { enabled: isOpen },
+  );
+  const [activeSection, setActiveSection] = useState<"overview" | "trace" | "session" | "evaluations">("overview");
+
+  // Keep the last-loaded data visible during exit animation
+  const lastSubRef = useRef(sub);
+  if (sub) lastSubRef.current = sub;
+  const displaySub = isOpen ? sub : lastSubRef.current;
+
+  const subData = displaySub?.data as Record<string, unknown> | null;
+  const topicTitle = (subData?.topic as any)?.title;
+  const topicSlug = (subData?.topic as any)?.slug;
+  const article = (subData?.topic as any)?.article ?? (subData as any)?.article;
+  const resources = (subData?.resources ?? (subData?.topic && (subData.topic as any)?.resources)) as
+    | Array<{ url?: string; name?: string; provenance?: string; snippet?: string; discoveryContext?: string }>
+    | undefined;
+  const findings = (subData?.findings ?? []) as Array<{ type?: string; title?: string; body?: string }>;
+  const submitterName = displaySub?.agentName ?? (displaySub?.contributor as any)?.name ?? "Unknown agent";
+  const displayId = submissionId ?? lastSubRef.current?.id;
+
+  const sectionTabs: Array<{ key: typeof activeSection; label: string; icon: React.ComponentType<any>; count?: number }> = [
+    { key: "overview", label: "Overview", icon: FileTextIcon },
+    { key: "trace", label: "Process Trace", icon: ListIcon },
+    { key: "session", label: "Session", icon: ClockIcon, count: displaySub?.sessionEvents?.length ?? 0 },
+    { key: "evaluations", label: "Evaluations", icon: ExamIcon, count: displaySub?.evaluations?.length ?? 0 },
+  ];
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="truncate pr-8">
+            {isOpen && isLoading ? "Loading..." : topicTitle ?? (displayId ? `Submission ${displayId.slice(0, 8)}` : "Submission")}</DialogTitle>
+          <DialogDescription className="flex items-center gap-2">
+            {displaySub && (
+              <>
+                <RobotIcon className="size-3" />
+                <span>{submitterName}</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span>{displaySub.type}</span>
+                <span className="text-muted-foreground/40">·</span>
+                <span>{formatDistanceToNow(new Date(displaySub.createdAt), { addSuffix: true })}</span>
+                {displaySub.source && displaySub.source !== "web" && (
+                  <>
+                    <span className="text-muted-foreground/40">·</span>
+                    <span className="uppercase text-[10px] font-mono">{displaySub.source}</span>
+                  </>
+                )}
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        {isOpen && isLoading && !displaySub ? (
+          <div className="flex-1 flex items-center justify-center py-12">
+            <SpinnerIcon weight="bold" className="size-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : displaySub ? (
+          <>
+            {/* Status + badges row */}
+            <div className="flex flex-wrap items-center gap-1.5 -mt-2">
+              <SubmissionStatusBadge status={displaySub.status} />
+              <span className="rounded-full bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 text-[11px] font-medium text-cyan-400">
+                {typeLabel[displaySub.type] ?? displaySub.type}
+              </span>
+              <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                {displaySub.evaluationCount}/2 evals
+              </span>
+              {displaySub.consensusReachedAt && (
+                <ConsensusStatusBadge
+                  status={displaySub.status === "approved" || displaySub.status === "rejected" ? "consensus" : "split"}
+                  size="sm"
+                />
+              )}
+              {displaySub.revisionCount > 0 && (
+                <span className="rounded-full border border-border/50 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  Rev #{displaySub.revisionCount}
+                </span>
+              )}
+              {displaySub.reputationDelta != null && displaySub.reputationDelta !== 0 && (
+                <span className={cn(
+                  "rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                  displaySub.reputationDelta > 0
+                    ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400"
+                    : "border-red-500/20 bg-red-500/10 text-red-400",
+                )}>
+                  {displaySub.reputationDelta > 0 ? "+" : ""}{displaySub.reputationDelta} karma
+                </span>
+              )}
+              {topicSlug && (
+                <Link
+                  href={`/topic/${topicSlug}`}
+                  className="inline-flex items-center gap-1 rounded-full border border-brand-blue/20 bg-brand-blue/10 px-2 py-0.5 text-[11px] font-medium text-brand-blue hover:bg-brand-blue/20 transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <LinkIcon weight="bold" className="size-3" />
+                  View Topic
+                </Link>
+              )}
+            </div>
+
+            {/* Section tabs */}
+            <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-muted/20 p-0.5">
+              {sectionTabs.map((s) => (
+                <button
+                  key={s.key}
+                  onClick={() => setActiveSection(s.key)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                    activeSection === s.key
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <s.icon weight="bold" className="size-3" />
+                  {s.label}
+                  {s.count != null && s.count > 0 && (
+                    <span className="rounded-full bg-muted/50 border border-border/50 px-1.5 py-0.5 text-[10px] font-medium">
+                      {s.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Content area */}
+            <div className="flex-1 overflow-y-auto min-h-0 -mx-6 px-6">
+              {activeSection === "overview" && (
+                <div className="space-y-4 pb-4">
+                  {/* Review reasoning */}
+                  {displaySub.reviewReasoning && (
+                    <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-3">
+                      <p className="text-xs font-medium text-orange-400 mb-1">Review Reasoning</p>
+                      <p className="text-xs text-orange-400/80 whitespace-pre-wrap">{displaySub.reviewReasoning}</p>
+                    </div>
+                  )}
+                  {displaySub.reviewNotes && (
+                    <div className="rounded-lg border border-border/30 bg-muted/10 p-3">
+                      <p className="text-xs font-medium text-muted-foreground mb-1">Review Notes</p>
+                      <p className="text-xs text-muted-foreground whitespace-pre-wrap">{displaySub.reviewNotes}</p>
+                    </div>
+                  )}
+
+                  {/* Article preview */}
+                  {article && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5">Article</p>
+                      <div className="rounded-lg border border-border/30 bg-muted/10 p-3 max-h-48 overflow-y-auto">
+                        <p className="text-xs text-foreground/80 whitespace-pre-wrap">{typeof article === "string" ? article : JSON.stringify(article, null, 2)}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Resources */}
+                  {resources && resources.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5">Resources ({resources.length})</p>
+                      <div className="space-y-1.5">
+                        {resources.map((r, i) => (
+                          <div key={i} className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2">
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="font-medium truncate">{r.name ?? r.url ?? `Resource ${i + 1}`}</span>
+                              {r.provenance && (
+                                <span className="shrink-0 rounded-full bg-muted/50 border border-border/50 px-1.5 py-0.5 text-[10px] font-mono">
+                                  {r.provenance}
+                                </span>
+                              )}
+                            </div>
+                            {r.url && (
+                              <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-brand-blue hover:underline truncate block mt-0.5">
+                                {r.url}
+                              </a>
+                            )}
+                            {r.snippet && (
+                              <p className="text-[11px] text-muted-foreground mt-1 line-clamp-2">{r.snippet}</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Findings */}
+                  {findings.length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5">Findings ({findings.length})</p>
+                      <div className="space-y-1.5">
+                        {findings.map((f, i) => (
+                          <div key={i} className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2">
+                            <div className="flex items-center gap-2 text-xs mb-0.5">
+                              {f.type && (
+                                <span className="rounded-full bg-violet-500/10 border border-violet-500/20 px-1.5 py-0.5 text-[10px] font-medium text-violet-400">
+                                  {f.type}
+                                </span>
+                              )}
+                              {f.title && <span className="font-medium">{f.title}</span>}
+                            </div>
+                            {f.body && <p className="text-[11px] text-muted-foreground">{f.body}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Metadata */}
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1.5">Metadata</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-muted/20 px-3 py-2 flex justify-between">
+                        <span className="text-muted-foreground">ID</span>
+                        <span className="font-mono text-[11px]">{displaySub.id.slice(0, 16)}...</span>
+                      </div>
+                      <div className="rounded-lg bg-muted/20 px-3 py-2 flex justify-between">
+                        <span className="text-muted-foreground">Agent Model</span>
+                        <span className="font-mono text-[11px]">{displaySub.agentModel ?? "—"}</span>
+                      </div>
+                      <div className="rounded-lg bg-muted/20 px-3 py-2 flex justify-between">
+                        <span className="text-muted-foreground">Session</span>
+                        <span className="font-mono text-[11px]">{displaySub.sessionId ? displaySub.sessionId.slice(0, 12) + "..." : "—"}</span>
+                      </div>
+                      <div className="rounded-lg bg-muted/20 px-3 py-2 flex justify-between">
+                        <span className="text-muted-foreground">Contributor</span>
+                        <span className="font-mono text-[11px]">{displaySub.contributorId ?? "—"}</span>
+                      </div>
+                      {displaySub.reviewedAt && (
+                        <div className="rounded-lg bg-muted/20 px-3 py-2 flex justify-between">
+                          <span className="text-muted-foreground">Reviewed</span>
+                          <span className="text-[11px]">{formatDistanceToNow(new Date(displaySub.reviewedAt), { addSuffix: true })}</span>
+                        </div>
+                      )}
+                      {displaySub.reviewedBy && (
+                        <div className="rounded-lg bg-muted/20 px-3 py-2 flex justify-between">
+                          <span className="text-muted-foreground">Reviewed By</span>
+                          <span className="text-[11px]">{(displaySub.reviewedBy as any).name ?? displaySub.reviewedByContributorId}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeSection === "trace" && (
+                <div className="pb-4">
+                  {displaySub.processTrace ? (
+                    <pre className="rounded-lg border border-border/30 bg-muted/10 p-3 text-xs font-mono text-foreground/80 whitespace-pre-wrap max-h-[50vh] overflow-y-auto">
+                      {displaySub.processTrace}
+                    </pre>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-border/30 py-12 text-center">
+                      <ListIcon weight="thin" className="mb-2 size-8 text-muted-foreground/30" />
+                      <p className="text-sm text-muted-foreground">No process trace recorded</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeSection === "session" && (
+                <div className="pb-4">
+                  {displaySub.session && (
+                    <div className="mb-3 rounded-lg border border-border/30 bg-muted/10 p-3">
+                      <div className="flex items-center gap-2 text-xs mb-1">
+                        <span className="font-medium">Session {displaySub.sessionId}</span>
+                        <span className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                          (displaySub.session as any).status === "active"
+                            ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-400"
+                            : "bg-muted/50 border border-border/50 text-muted-foreground"
+                        )}>
+                          {(displaySub.session as any).status}
+                        </span>
+                      </div>
+                      {(displaySub.session as any).metadata && (
+                        <p className="text-[11px] text-muted-foreground">
+                          {JSON.stringify((displaySub.session as any).metadata)}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                  {displaySub.sessionEvents && displaySub.sessionEvents.length > 0 ? (
+                    <div className="space-y-1">
+                      {displaySub.sessionEvents.map((evt, i) => (
+                        <div key={evt.id} className="rounded-lg border border-border/30 bg-muted/10 px-3 py-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="rounded bg-muted/50 px-1.5 py-0.5 font-mono text-[10px]">{i + 1}</span>
+                              <span className="font-medium">{evt.procedure}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              {evt.durationMs != null && (
+                                <span className="text-[10px] font-mono">{evt.durationMs}ms</span>
+                              )}
+                              <span className="text-[10px]">{formatDistanceToNow(new Date(evt.createdAt), { addSuffix: true })}</span>
+                            </div>
+                          </div>
+                          {evt.input && Object.keys(evt.input).length > 0 && (
+                            <pre className="mt-1 text-[10px] text-muted-foreground font-mono overflow-x-auto whitespace-pre-wrap">
+                              {JSON.stringify(evt.input, null, 2)}
+                            </pre>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-border/30 py-12 text-center">
+                      <ClockIcon weight="thin" className="mb-2 size-8 text-muted-foreground/30" />
+                      <p className="text-sm text-muted-foreground">No session events</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeSection === "evaluations" && (
+                <div className="pb-4">
+                  {displaySub.evaluations && displaySub.evaluations.length > 0 ? (
+                    <div className="space-y-3">
+                      {displaySub.evaluations.map((ev) => (
+                        <div key={ev.id} className="rounded-lg border border-border/30 bg-muted/10 p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className={cn(
+                                "rounded-full px-2 py-0.5 text-[11px] font-medium border",
+                                ev.verdict === "approve" && "border-emerald-500/20 bg-emerald-500/10 text-emerald-400",
+                                ev.verdict === "reject" && "border-red-500/20 bg-red-500/10 text-red-400",
+                                ev.verdict === "revise" && "border-orange-500/20 bg-orange-500/10 text-orange-400",
+                              )}>
+                                {ev.verdict}
+                              </span>
+                              <span className="font-medium">Score: {ev.overallScore}/10</span>
+                              {ev.suggestedReputationDelta !== 0 && (
+                                <span className="text-muted-foreground">
+                                  ({ev.suggestedReputationDelta > 0 ? "+" : ""}{ev.suggestedReputationDelta} karma)
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-muted-foreground">
+                              {(ev as any).evaluator?.name ?? "Unknown evaluator"}
+                              {" · "}
+                              {formatDistanceToNow(new Date(ev.createdAt), { addSuffix: true })}
+                            </span>
+                          </div>
+
+                          {/* Scores breakdown */}
+                          {ev.scores && Object.keys(ev.scores).length > 0 && (
+                            <div className="mb-2 flex flex-wrap gap-1.5">
+                              {Object.entries(ev.scores as Record<string, unknown>).map(([key, val]) => (
+                                <span key={key} className="rounded bg-muted/30 px-1.5 py-0.5 text-[10px] font-mono">
+                                  {key}: {String(val)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Reasoning */}
+                          <p className="text-xs text-foreground/80 whitespace-pre-wrap">{ev.reasoning}</p>
+
+                          {/* Improvement suggestions */}
+                          {ev.improvementSuggestions && (ev.improvementSuggestions as string[]).length > 0 && (
+                            <div className="mt-2 border-t border-border/30 pt-2">
+                              <p className="text-[10px] font-medium text-muted-foreground mb-1">Suggestions</p>
+                              <ul className="list-disc list-inside text-[11px] text-muted-foreground space-y-0.5">
+                                {(ev.improvementSuggestions as string[]).map((s, i) => (
+                                  <li key={i}>{s}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center rounded-xl border border-border/30 py-12 text-center">
+                      <ExamIcon weight="thin" className="mb-2 size-8 text-muted-foreground/30" />
+                      <p className="text-sm text-muted-foreground">No evaluations yet</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons at bottom for actionable statuses */}
+            {isActionable && (
+              <div className="flex items-center gap-2 pt-3 border-t border-border/30">
+                <button
+                  onClick={() => { onReview(displaySub.id, "approved"); onClose(); }}
+                  disabled={reviewPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-sm font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-50"
+                >
+                  <CheckCircleIcon weight="bold" className="size-4" />
+                  Approve
+                </button>
+                <button
+                  onClick={() => { onReview(displaySub.id, "revision_requested"); onClose(); }}
+                  disabled={reviewPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-orange-500/30 bg-orange-500/10 px-4 py-2 text-sm font-medium text-orange-400 transition-colors hover:bg-orange-500/20 disabled:opacity-50"
+                >
+                  <ArrowCounterClockwiseIcon weight="bold" className="size-4" />
+                  Request Revision
+                </button>
+                <button
+                  onClick={() => { onReview(displaySub.id, "rejected"); onClose(); }}
+                  disabled={reviewPending}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+                >
+                  <XCircleIcon weight="bold" className="size-4" />
+                  Reject
+                </button>
+              </div>
+            )}
+          </>
+        ) : null}
+      </DialogContent>
+    </Dialog>
   );
 }

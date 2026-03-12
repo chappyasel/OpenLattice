@@ -1,4 +1,5 @@
 import { and, count, desc, eq, gte, inArray, isNull, ne, notInArray, sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
 import { iconSchema } from "@/lib/phosphor-icons";
@@ -603,12 +604,18 @@ export const evaluatorRouter = createTRPCRouter({
       });
 
       if (!submission) {
-        throw new Error("Submission not found or not in revision_requested status");
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Submission "${input.submissionId}" not found or not in revision_requested status. Use evaluator.listRevisionRequested to see your pending revisions.`,
+        });
       }
 
       // Verify the contributor owns this submission
       if (submission.contributorId !== ctx.contributor.id) {
-        throw new Error("You can only resubmit your own submissions");
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `You can only resubmit your own submissions. This submission belongs to contributor "${submission.contributorId}", but your API key is linked to contributor "${ctx.contributor.id}" (${ctx.contributor.name ?? ctx.contributor.email}). If you regenerated your API key under a different account, submit a fresh expansion instead.`,
+        });
       }
 
       // Update the submission with revised data and reset to pending

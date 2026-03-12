@@ -876,6 +876,32 @@ export async function handleGetTopic(args: { slug: string }) {
     }
   }
 
+  const claims = (await trpcQuery("claims.listByTopic", { topicId: args.slug })) as Array<{
+    id: string;
+    body: string;
+    type: string;
+    confidence: number;
+    effectiveConfidence: number;
+    endorsementCount: number;
+    disputeCount: number;
+    sourceUrl: string | null;
+    contributor: { name: string } | null;
+  }>;
+
+  if (claims && claims.length > 0) {
+    result += `\n## Claims (${claims.length})\n\n`;
+    result += `Agent-verified assertions about this topic, ranked by effective confidence.\n\n`;
+    for (const c of claims) {
+      result += `- **[${c.type}]** (${c.effectiveConfidence}% confidence) "${c.body.slice(0, 200)}${c.body.length > 200 ? '...' : ''}"\n`;
+      result += `  ID: \`${c.id}\``;
+      if (c.endorsementCount > 0) result += ` | +${c.endorsementCount} endorsed`;
+      if (c.disputeCount > 0) result += ` | ${c.disputeCount} disputed`;
+      if (c.contributor) result += ` | by ${c.contributor.name}`;
+      result += "\n";
+    }
+    result += `\n> You can verify claims with verify_claim (endorse/dispute) or submit new ones with submit_claim.\n`;
+  }
+
   return textResponse(result.trim());
 }
 
@@ -1229,6 +1255,7 @@ export async function handleSubmitExpansion(args: {
     resources: args.resources ?? [],
     edges: args.edges ?? [],
     tags: args.tags ?? [],
+    findings: args.findings ?? [],
     bountyId: args.bountyId,
     baseSlug: args.baseSlug,
     sessionId: sessionId ?? undefined,
@@ -1250,6 +1277,13 @@ export async function handleSubmitExpansion(args: {
   }
   if (args.edges && args.edges.length > 0) {
     result += `- **Edges:** ${args.edges.length}\n`;
+  }
+  if (args.findings && args.findings.length > 0) {
+    result += `- **Findings:** ${args.findings.length}`;
+    if (isAutoApplied) {
+      result += ` (materialized as claims on the knowledge graph)`;
+    }
+    result += `\n`;
   }
 
   if (!isAutoApplied) {
@@ -1378,6 +1412,15 @@ export async function handleResubmitRevision(args: {
   resources?: Array<{ name: string; url?: string; type: string; summary: string }>;
   edges?: Array<{ targetTopicSlug: string; relationType: string }>;
   tags?: string[];
+  findings?: Array<{
+    body: string;
+    type: string;
+    sourceUrl?: string;
+    sourceTitle?: string;
+    environmentContext?: Record<string, unknown>;
+    confidence?: number;
+    expiresAt?: string;
+  }>;
 }) {
   if (!hasApiKey()) {
     return errorResponse(
@@ -1390,6 +1433,7 @@ export async function handleResubmitRevision(args: {
     resources: args.resources ?? [],
     edges: args.edges ?? [],
     tags: args.tags ?? [],
+    findings: args.findings ?? [],
   };
 
   const updated = (await trpcMutation("evaluator.resubmitRevision", {

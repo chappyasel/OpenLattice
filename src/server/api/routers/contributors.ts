@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { TRPCError } from "@trpc/server";
@@ -9,7 +9,7 @@ import {
   protectedProcedure,
   publicProcedure,
 } from "@/server/api/trpc";
-import { contributors, contributorReputation, evaluatorStats } from "@/server/db/schema";
+import { contributors, contributorReputation, evaluatorStats, submissions } from "@/server/db/schema";
 import { recordKarma } from "@/lib/karma";
 import { resolveBaseId } from "@/lib/resolve-base";
 
@@ -51,13 +51,49 @@ export const contributorsRouter = createTRPCRouter({
     .query(async ({ ctx, input }) => {
       const baseId = await resolveBaseId(ctx.db, input?.baseSlug);
 
+      // Subquery: count ALL submissions per contributor (including pending/in-review)
+      const submissionCounts = ctx.db
+        .select({
+          contributorId: submissions.contributorId,
+          totalSubmissions: count().as("total_submissions"),
+        })
+        .from(submissions)
+        .groupBy(submissions.contributorId)
+        .as("submission_counts");
+
       if (!baseId) {
         // Global leaderboard: order by global karma
-        return ctx.db.query.contributors.findMany({
-          columns: publicContributorColumns,
-          orderBy: [desc(contributors.karma)],
-          limit: 50,
-        });
+        const rows = await ctx.db
+          .select({
+            id: contributors.id,
+            name: contributors.name,
+            image: contributors.image,
+            bio: contributors.bio,
+            websiteUrl: contributors.websiteUrl,
+            githubUsername: contributors.githubUsername,
+            twitterUsername: contributors.twitterUsername,
+            linkedinUrl: contributors.linkedinUrl,
+            isAgent: contributors.isAgent,
+            agentModel: contributors.agentModel,
+            trustLevel: contributors.trustLevel,
+            karma: contributors.karma,
+            kudosReceived: contributors.kudosReceived,
+            totalContributions: contributors.totalContributions,
+            acceptedContributions: contributors.acceptedContributions,
+            rejectedContributions: contributors.rejectedContributions,
+            createdAt: contributors.createdAt,
+            updatedAt: contributors.updatedAt,
+            totalSubmissions: submissionCounts.totalSubmissions,
+          })
+          .from(contributors)
+          .leftJoin(submissionCounts, eq(contributors.id, submissionCounts.contributorId))
+          .orderBy(desc(contributors.karma))
+          .limit(50);
+
+        return rows.map((r) => ({
+          ...r,
+          totalSubmissions: r.totalSubmissions ?? 0,
+        }));
       }
 
       // Base-scoped leaderboard: join contributorReputation, order by base score
@@ -82,14 +118,19 @@ export const contributorsRouter = createTRPCRouter({
           createdAt: contributors.createdAt,
           updatedAt: contributors.updatedAt,
           baseScore: contributorReputation.score,
+          totalSubmissions: submissionCounts.totalSubmissions,
         })
         .from(contributorReputation)
         .innerJoin(contributors, eq(contributorReputation.contributorId, contributors.id))
+        .leftJoin(submissionCounts, eq(contributors.id, submissionCounts.contributorId))
         .where(eq(contributorReputation.baseId, baseId))
         .orderBy(desc(contributorReputation.score))
         .limit(50);
 
-      return rows;
+      return rows.map((r) => ({
+        ...r,
+        totalSubmissions: r.totalSubmissions ?? 0,
+      }));
     }),
 
   getById: publicProcedure
@@ -209,6 +250,25 @@ export const contributorsRouter = createTRPCRouter({
     return { apiKey: plainKey };
   }),
 
+  fixMissingKarma: adminProcedure.mutation(async ({ ctx }) => {
+    // Find all contributors with 0 karma and grant them the signup bonus
+    const zeroKarma = await ctx.db.query.contributors.findMany({
+      where: eq(contributors.karma, 0),
+      columns: { id: true },
+    });
+
+    for (const c of zeroKarma) {
+      await recordKarma(ctx.db, {
+        contributorId: c.id,
+        delta: 50,
+        eventType: "signup_bonus",
+        description: "Retroactive welcome bonus: +50 karma",
+      });
+    }
+
+    return { fixed: zeroKarma.length };
+  }),
+
   registerAgent: publicProcedure
     .input(
       z.object({
@@ -253,6 +313,14 @@ export const contributorsRouter = createTRPCRouter({
         agentModel: input.agentModel ?? null,
         trustLevel: "new",
         apiKey: keyHash,
+      });
+
+      // Award signup bonus for new agent registration
+      await recordKarma(ctx.db, {
+        contributorId: id,
+        delta: 50,
+        eventType: "signup_bonus",
+        description: "Welcome bonus: +50 karma for agent registration",
       });
 
       return { contributorId: id, apiKey: plainKey };

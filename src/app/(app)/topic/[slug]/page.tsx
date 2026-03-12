@@ -1,7 +1,8 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useRef } from "react";
 import Link from "next/link";
+import { useQueryState } from "nuqs";
 import { motion } from "framer-motion";
 import {
   BookOpenIcon,
@@ -61,11 +62,16 @@ export default function TopicPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = use(params);
-  const [activeTab, setActiveTab] = useState<Tab>("resources");
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedResource, setSelectedResource] = useState<
-    NonNullable<typeof topic>["topicResources"][number] | null
-  >(null);
+  const [activeTab, setActiveTab] = useQueryState("tab", {
+    defaultValue: "resources" as Tab,
+    parse: (v) => (["resources", "subtopics", "claims", "history"].includes(v) ? v as Tab : "resources"),
+    serialize: (v) => v,
+  });
+  const [selectedResourceId, setSelectedResourceId] = useQueryState("resource", {
+    defaultValue: null as string | null,
+    parse: (v) => v || null,
+    serialize: (v) => v ?? "",
+  });
 
   const { data: topic, isLoading } = api.topics.getBySlug.useQuery({ slug });
   const { data: claimsData } = api.claims.listByTopic.useQuery(
@@ -236,7 +242,7 @@ export default function TopicPage({
               topic.topicResources.map((tr) => (
                 <motion.div
                   key={tr.resource.id}
-                  onClick={() => { setSelectedResource(tr); setDialogOpen(true); }}
+                  onClick={() => void setSelectedResourceId(tr.resource.id)}
                   whileHover={{ scale: 1.02, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}
                   whileTap={{ scale: 0.98 }}
                   transition={{ type: "spring", stiffness: 400, damping: 25 }}
@@ -536,80 +542,101 @@ export default function TopicPage({
           </div>
         )}
         {/* Resource detail dialog */}
-        <Dialog
-          open={dialogOpen}
-          onOpenChange={(open) => {
-            setDialogOpen(open);
-            if (!open) setTimeout(() => setSelectedResource(null), 200);
-          }}
-        >
-          <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
-            {selectedResource && (
-              <>
-                <DialogHeader>
-                  <div className="mb-1 flex items-center gap-2">
-                    <ResourceTypeBadge type={selectedResource.resource.type} />
-                  </div>
-                  <DialogTitle>{selectedResource.resource.name}</DialogTitle>
-                  {selectedResource.resource.summary && (
-                    <DialogDescription>
-                      {selectedResource.resource.summary}
-                    </DialogDescription>
-                  )}
-                </DialogHeader>
-                <div className="space-y-4">
-                  {selectedResource.resource.content && (
-                    <p className="text-sm leading-relaxed">
-                      {selectedResource.resource.content}
-                    </p>
-                  )}
-                  {selectedResource.resource.url && (
-                    <a
-                      href={selectedResource.resource.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:border-brand-blue hover:text-brand-blue"
-                    >
-                      <ArrowSquareOutIcon weight="bold" className="size-4" />
-                      Open resource
-                    </a>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-                    {selectedResource.resource.submittedBy && (
-                      <ContributorBadge
-                        contributor={selectedResource.resource.submittedBy}
-                        size="sm"
-                      />
-                    )}
-                    {selectedResource.resource.score > 0 && (
-                      <EvaluatorScoreBadge
-                        score={selectedResource.resource.score}
-                        reviewNotes={selectedResource.resource.reviewNotes}
-                        size="sm"
-                      />
-                    )}
-                    {selectedResource.relevanceScore > 0 &&
-                      selectedResource.relevanceScore !== 50 && (
-                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                          <StarIcon weight="fill" className="size-3 text-yellow-400" />
-                          {selectedResource.relevanceScore}% relevance
-                        </span>
-                      )}
-                    {selectedResource.resource.createdAt && (
-                      <span className="text-xs text-muted-foreground">
-                        {formatDistanceToNow(
-                          new Date(selectedResource.resource.createdAt),
-                          { addSuffix: true },
-                        )}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </DialogContent>
-        </Dialog>
+        <ResourceDetailDialog
+          topicResources={topic.topicResources}
+          selectedResourceId={selectedResourceId}
+          onClose={() => void setSelectedResourceId(null)}
+        />
       </div>
     </div>
+  );
+}
+
+function ResourceDetailDialog({
+  topicResources,
+  selectedResourceId,
+  onClose,
+}: {
+   
+  topicResources: any[] | undefined;
+  selectedResourceId: string | null;
+  onClose: () => void;
+}) {
+  const isOpen = !!selectedResourceId;
+  const currentResource = topicResources?.find((tr) => tr.resource.id === selectedResourceId) ?? null;
+
+  // Keep last resource visible during exit animation
+  const lastResourceRef = useRef(currentResource);
+  if (currentResource) lastResourceRef.current = currentResource;
+  const displayResource = isOpen ? currentResource : lastResourceRef.current;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        {displayResource && (
+          <>
+            <DialogHeader>
+              <div className="mb-1 flex items-center gap-2">
+                <ResourceTypeBadge type={displayResource.resource.type} />
+              </div>
+              <DialogTitle>{displayResource.resource.name}</DialogTitle>
+              {displayResource.resource.summary && (
+                <DialogDescription>
+                  {displayResource.resource.summary}
+                </DialogDescription>
+              )}
+            </DialogHeader>
+            <div className="space-y-4">
+              {displayResource.resource.content && (
+                <p className="text-sm leading-relaxed">
+                  {displayResource.resource.content}
+                </p>
+              )}
+              {displayResource.resource.url && (
+                <a
+                  href={displayResource.resource.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium transition-colors hover:border-brand-blue hover:text-brand-blue"
+                >
+                  <ArrowSquareOutIcon weight="bold" className="size-4" />
+                  Open resource
+                </a>
+              )}
+              <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+                {displayResource.resource.submittedBy && (
+                  <ContributorBadge
+                    contributor={displayResource.resource.submittedBy}
+                    size="sm"
+                  />
+                )}
+                {displayResource.resource.score > 0 && (
+                  <EvaluatorScoreBadge
+                    score={displayResource.resource.score}
+                    reviewNotes={displayResource.resource.reviewNotes}
+                    size="sm"
+                  />
+                )}
+                {displayResource.relevanceScore > 0 &&
+                  displayResource.relevanceScore !== 50 && (
+                    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <StarIcon weight="fill" className="size-3 text-yellow-400" />
+                      {displayResource.relevanceScore}% relevance
+                    </span>
+                  )}
+                {displayResource.resource.createdAt && (
+                  <span className="text-xs text-muted-foreground">
+                    {formatDistanceToNow(
+                      new Date(displayResource.resource.createdAt),
+                      { addSuffix: true },
+                    )}
+                  </span>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

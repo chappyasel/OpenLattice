@@ -11,6 +11,7 @@ import {
   DotsSixVerticalIcon,
   MagnifyingGlassIcon,
   HouseIcon,
+  LightbulbIcon,
   TreasureChestIcon,
   TrophyIcon,
   ShieldCheckIcon,
@@ -381,6 +382,7 @@ export function AppSidebar() {
   const navItems = [
     { href: "/", label: "Home", icon: HouseIcon },
     { href: "/bounties", label: "Bounties", icon: TreasureChestIcon },
+    { href: "/claims", label: "Claims", icon: LightbulbIcon },
     { href: "/leaderboard", label: "Leaderboard", icon: TrophyIcon },
     { href: "/digest", label: "Digest", icon: NewspaperIcon },
   ];

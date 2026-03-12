@@ -9,14 +9,22 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
     TrophyIcon,
     ArrowRightIcon,
+    ArrowLeftIcon,
     PlugIcon,
     MagnifyingGlassIcon,
     TreasureChestIcon,
     ArrowsOutIcon,
     XIcon,
-    NewspaperIcon,
+    GraphIcon,
+    BookOpenIcon,
+    CheckCircleIcon,
+    StarIcon,
+    ExamIcon,
+    ScalesIcon,
+    ShieldCheckIcon,
 } from "@phosphor-icons/react";
 import { TopicIcon } from "@/components/topic-icon";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { McpSetupDialog } from "@/components/mcp-setup-dialog";
 import { GrainientBackground } from "@/components/ui/grainient-background";
 import { api } from "@/trpc/react";
@@ -26,6 +34,20 @@ import { useTopicContext } from "@/components/topic-context";
 const GraphViewer = dynamic(() => import("@/components/graph-viewer").then((m) => m.GraphViewer), {
     ssr: false,
 });
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function formatTimeAgo(date: Date): string {
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 60) return "just now";
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 // ─── Debounce Hook ───────────────────────────────────────────────────────────
 
@@ -59,7 +81,8 @@ export default function HomePage() {
         },
     );
     const { data: graphData } = api.graph.getFullGraph.useQuery();
-    const { data: basesData } = api.bases.list.useQuery();
+    const { data: recentActivity } = api.activity.getRecent.useQuery({ limit: 20 });
+    const [topicPage, setTopicPage] = useState(0);
     const { data: searchResults } = api.search.query.useQuery(
         { q: debouncedQuery },
         { enabled: debouncedQuery.length >= 2 },
@@ -88,6 +111,16 @@ export default function HomePage() {
         document.addEventListener("mousedown", handleClick);
         return () => document.removeEventListener("mousedown", handleClick);
     }, []);
+
+    // Auto-advance suggested topics carousel
+    const totalPages = suggestedTopics ? Math.ceil(suggestedTopics.length / 3) : 1;
+    useEffect(() => {
+        if (totalPages <= 1) return;
+        const timer = setInterval(() => {
+            setTopicPage((p) => (p + 1) % totalPages);
+        }, 5000);
+        return () => clearInterval(timer);
+    }, [totalPages]);
 
     const { data: allBreadcrumbs } = api.topics.listBreadcrumbs.useQuery(undefined, {
         staleTime: 5 * 60 * 1000,
@@ -279,101 +312,128 @@ export default function HomePage() {
                         </div>
                     </div>
 
-                    {/* Suggested Topics */}
+                    {/* Suggested Topics — paginated carousel */}
                     <div className="mx-auto w-full max-w-3xl px-6 pb-8">
-                        <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                            Suggested Topics
-                        </h2>
-                        <div className="grid gap-4 sm:grid-cols-3">
-                            {topicsLoading
-                                ? Array.from({ length: 3 }).map((_, i) => (
-                                      <div
-                                          key={i}
-                                          className="flex flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 animate-pulse"
-                                      >
-                                          <div className="h-4 w-2/3 rounded bg-muted" />
-                                          <div className="h-3 w-full rounded bg-muted" />
-                                          <div className="h-3 w-4/5 rounded bg-muted" />
-                                          <div className="mt-auto h-3 w-20 rounded bg-muted" />
-                                      </div>
-                                  ))
-                                : suggestedTopics?.map((topic) => (
-                                      <motion.button
-                                          key={topic.id}
-                                          onClick={() => navigateToSlug(topic.id)}
-                                          whileHover={{
-                                              scale: 1.02,
-                                              boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                                          }}
-                                          className="flex flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 text-left transition-all hover:bg-card"
-                                      >
-                                          <h3 className="text-sm font-semibold">{topic.title}</h3>
-                                          <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                                              {topic.summary}
-                                          </p>
-                                          <span className="mt-auto flex items-center gap-1 text-xs text-brand-blue">
-                                              Read article
-                                              <ArrowRightIcon weight="bold" className="size-3" />
-                                          </span>
-                                      </motion.button>
-                                  ))}
+                        <div className="mb-4 flex items-center justify-between">
+                            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+                                Suggested Topics
+                            </h2>
+                            {totalPages > 1 && (
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setTopicPage((p) => (p - 1 + totalPages) % totalPages)}
+                                        className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                                    >
+                                        <ArrowLeftIcon weight="bold" className="size-3.5" />
+                                    </button>
+                                    <div className="flex gap-1">
+                                        {Array.from({ length: totalPages }).map((_, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => setTopicPage(i)}
+                                                className={`size-1.5 rounded-full transition-all ${
+                                                    i === topicPage
+                                                        ? "bg-foreground scale-125"
+                                                        : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
+                                                }`}
+                                            />
+                                        ))}
+                                    </div>
+                                    <button
+                                        onClick={() => setTopicPage((p) => (p + 1) % totalPages)}
+                                        className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                                    >
+                                        <ArrowRightIcon weight="bold" className="size-3.5" />
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                        <div className="relative p-1 -m-1">
+                            <AnimatePresence mode="wait">
+                                <motion.div
+                                    key={topicPage}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    transition={{ duration: 0.25 }}
+                                    className="grid gap-4 sm:grid-cols-3"
+                                >
+                                    {topicsLoading
+                                        ? Array.from({ length: 3 }).map((_, i) => (
+                                              <div
+                                                  key={i}
+                                                  className="flex h-[160px] flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 animate-pulse"
+                                              >
+                                                  <div className="h-4 w-2/3 rounded bg-muted" />
+                                                  <div className="h-3 w-full rounded bg-muted" />
+                                                  <div className="h-3 w-4/5 rounded bg-muted" />
+                                                  <div className="mt-auto h-3 w-20 rounded bg-muted" />
+                                              </div>
+                                          ))
+                                        : suggestedTopics
+                                              ?.slice(topicPage * 3, topicPage * 3 + 3)
+                                              .map((topic) => (
+                                                  <motion.button
+                                                      key={topic.id}
+                                                      onClick={() => navigateToSlug(topic.id)}
+                                                      whileHover={{
+                                                          scale: 1.02,
+                                                          boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
+                                                      }}
+                                                      className="flex h-[160px] flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 text-left transition-all hover:bg-card"
+                                                  >
+                                                      <div className="flex items-center gap-2">
+                                                          <TopicIcon
+                                                              icon={topic.icon}
+                                                              hue={topic.iconHue}
+                                                              size="sm"
+                                                          />
+                                                          <h3 className="text-sm font-semibold truncate">
+                                                              {topic.title}
+                                                          </h3>
+                                                      </div>
+                                                      <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                                                          {topic.summary}
+                                                      </p>
+                                                      {topic.tags.length > 0 && (
+                                                          <div className="flex items-center gap-1">
+                                                              {topic.tags.slice(0, 5).map((tag) => (
+                                                                  <Tooltip key={tag.name}>
+                                                                      <TooltipTrigger asChild>
+                                                                          <span>
+                                                                              <TopicIcon
+                                                                                  icon={tag.icon}
+                                                                                  hue={tag.iconHue}
+                                                                                  size="sm"
+                                                                              />
+                                                                          </span>
+                                                                      </TooltipTrigger>
+                                                                      <TooltipContent>{tag.name}</TooltipContent>
+                                                                  </Tooltip>
+                                                              ))}
+                                                          </div>
+                                                      )}
+                                                      <div className="mt-auto flex items-center justify-between">
+                                                          <span className="flex items-center gap-1 text-xs text-brand-blue">
+                                                              Read article
+                                                              <ArrowRightIcon
+                                                                  weight="bold"
+                                                                  className="size-3"
+                                                              />
+                                                          </span>
+                                                          {topic.resourceCount > 0 && (
+                                                              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                                                                  <BookOpenIcon weight="bold" className="size-3" />
+                                                                  {topic.resourceCount}
+                                                              </span>
+                                                          )}
+                                                      </div>
+                                                  </motion.button>
+                                              ))}
+                                </motion.div>
+                            </AnimatePresence>
                         </div>
                     </div>
-
-                    {/* Bases */}
-                    {basesData && basesData.length > 0 && (
-                        <div className="mx-auto w-full max-w-3xl px-6 pb-8">
-                            <h2 className="mb-4 text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                                Knowledge Bases
-                            </h2>
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                {basesData.map((col) => (
-                                    <motion.div
-                                        key={col.id}
-                                        whileHover={{
-                                            scale: 1.02,
-                                            boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                                        }}
-                                        className="rounded-xl"
-                                    >
-                                        <Link
-                                            href={`/base/${col.slug}`}
-                                            className="flex items-center gap-3 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 transition-all hover:bg-card"
-                                        >
-                                            <TopicIcon
-                                                icon={col.icon}
-                                                hue={col.iconHue}
-                                                size="lg"
-                                            />
-                                            <div className="flex-1">
-                                                <h3 className="text-sm font-semibold">
-                                                    {col.name}
-                                                </h3>
-                                                {col.description && (
-                                                    <p className="text-xs text-muted-foreground line-clamp-1">
-                                                        {col.description}
-                                                    </p>
-                                                )}
-                                            </div>
-                                            <ArrowRightIcon
-                                                weight="bold"
-                                                className="size-4 text-muted-foreground"
-                                            />
-                                        </Link>
-                                    </motion.div>
-                                ))}
-                            </div>
-                            <div className="mt-3 text-center">
-                                <Link
-                                    href="/digest"
-                                    className="inline-flex items-center gap-1.5 text-xs text-brand-blue hover:underline"
-                                >
-                                    <NewspaperIcon weight="bold" className="size-3.5" />
-                                    View Weekly Digest
-                                </Link>
-                            </div>
-                        </div>
-                    )}
 
                     {/* Graph Preview */}
                     <div className="mx-auto w-full max-w-4xl px-6 pb-8">
@@ -406,6 +466,106 @@ export default function HomePage() {
                             )}
                         </div>
                     </div>
+
+                    {/* Latest Updates — scrolling marquee */}
+                    {recentActivity && recentActivity.length > 0 && (
+                        <div className="w-full overflow-hidden border-t border-border/50 py-3">
+                            <div className="mb-2 px-6">
+                                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                    Latest Updates
+                                </h2>
+                            </div>
+                            <div
+                                className="relative overflow-hidden"
+                                style={{
+                                    maskImage: "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
+                                    WebkitMaskImage: "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
+                                }}
+                            >
+                                <motion.div
+                                    className="flex gap-6 whitespace-nowrap"
+                                    animate={{ x: ["0%", "-50%"] }}
+                                    transition={{
+                                        x: {
+                                            duration: recentActivity.length * 0.8,
+                                            repeat: Infinity,
+                                            ease: "linear",
+                                        },
+                                    }}
+                                >
+                                    {[...recentActivity, ...recentActivity].map((item, idx) => {
+                                        const iconMap: Record<string, React.ComponentType<any>> = {
+                                            topic_created: GraphIcon,
+                                            resource_submitted: BookOpenIcon,
+                                            edge_created: GraphIcon,
+                                            bounty_completed: TreasureChestIcon,
+                                            submission_reviewed: CheckCircleIcon,
+                                            reputation_changed: StarIcon,
+                                            evaluation_submitted: ExamIcon,
+                                            consensus_reached: ScalesIcon,
+                                            trust_level_changed: ShieldCheckIcon,
+                                        };
+                                        const colorMap: Record<string, string> = {
+                                            topic_created: "text-blue-400",
+                                            resource_submitted: "text-emerald-400",
+                                            edge_created: "text-cyan-400",
+                                            bounty_completed: "text-yellow-400",
+                                            submission_reviewed: "text-brand-blue",
+                                            reputation_changed: "text-yellow-400",
+                                            evaluation_submitted: "text-violet-400",
+                                            consensus_reached: "text-teal-400",
+                                            trust_level_changed: "text-orange-400",
+                                        };
+                                        const Icon = iconMap[item.type] ?? GraphIcon;
+                                        const color = colorMap[item.type] ?? "text-muted-foreground";
+                                        const timeAgo = formatTimeAgo(new Date(item.createdAt));
+                                        return (
+                                            <span
+                                                key={`${item.id}-${idx}`}
+                                                className="inline-flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
+                                            >
+                                                <Icon weight="bold" className={`size-3.5 ${color}`} />
+                                                {item.contributor && (
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        {item.contributor.image ? (
+                                                            <Image
+                                                                src={item.contributor.image}
+                                                                alt=""
+                                                                width={16}
+                                                                height={16}
+                                                                className="size-4 rounded-full"
+                                                            />
+                                                        ) : (
+                                                            <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
+                                                                {(item.contributor.name ?? "?")[0]?.toUpperCase()}
+                                                            </span>
+                                                        )}
+                                                        <span className="font-medium text-foreground">
+                                                            {item.contributor.name ?? "Agent"}
+                                                        </span>
+                                                    </span>
+                                                )}
+                                                <span className="max-w-[280px] truncate">
+                                                    {item.description}
+                                                </span>
+                                                {item.topic && (
+                                                    <button
+                                                        onClick={() => navigateToSlug(item.topic!.id)}
+                                                        className="font-medium text-brand-blue hover:underline"
+                                                    >
+                                                        {item.topic.title}
+                                                    </button>
+                                                )}
+                                                <span className="text-muted-foreground/60">
+                                                    {timeAgo}
+                                                </span>
+                                            </span>
+                                        );
+                                    })}
+                                </motion.div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Footer */}
                     <div className="w-full px-6 pt-4">
