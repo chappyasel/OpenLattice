@@ -557,7 +557,7 @@ function ResourceDetailDialog({
   selectedResourceId,
   onClose,
 }: {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   topicResources: any[] | undefined;
   selectedResourceId: string | null;
   onClose: () => void;
