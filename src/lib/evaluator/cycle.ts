@@ -13,6 +13,7 @@ import {
   scoreResource,
   analyzeGaps,
 } from "./ai";
+import { verifyUrls, type UrlVerificationResult } from "./url-verify";
 
 // ─── Config & Types ──────────────────────────────────────────────────────
 
@@ -232,12 +233,37 @@ async function reviewPendingSubmissions(
         `  [review] Evaluating "${expansion.topic.title}" from ${contributor?.name ?? "unknown"}...`,
       );
 
+      // 0. Verify resource URLs (before AI evaluation so results feed into the prompt)
+      let urlVerification: UrlVerificationResult[] | null = null;
+      const resourceUrls = (expansion.resources ?? [])
+        .map((r: any) => r.url)
+        .filter((u: string | undefined): u is string => !!u);
+
+      if (resourceUrls.length > 0) {
+        try {
+          urlVerification = await verifyUrls(resourceUrls, {
+            timeoutMs: 5000,
+            maxConcurrent: 5,
+            totalTimeoutMs: 15000,
+          });
+          const live = urlVerification.filter((r) => r.status === "live").length;
+          const dead = urlVerification.filter((r) => r.status === "dead").length;
+          const plausible = urlVerification.filter((r) => r.status === "plausible").length;
+          log(
+            `  [review] URL check: ${live} live, ${plausible} plausible, ${dead} dead (${urlVerification.length} total)`,
+          );
+        } catch (err: any) {
+          log(`  [review] URL verification failed: ${err.message}`);
+        }
+      }
+
       // 1. Content review
       const { result, durationMs, model } = await reviewExpansion(expansion, {
         existingTopics,
         contributorName: contributor?.name ?? "unknown",
         contributorTrustLevel: contributor?.trustLevel ?? "new",
         contributorAcceptanceRate: acceptanceRate,
+        urlVerification: urlVerification ?? undefined,
       });
 
       // 1b. Hard guardrails — override AI verdict when minimum standards aren't met
@@ -283,6 +309,57 @@ async function reviewPendingSubmissions(
           ...result.improvementSuggestions,
         ];
         log(`  [review] Override: approve→revise (researchEvidence ${result.resourceAssessment.researchEvidence} < 6 minimum)`);
+      }
+
+      // 1c2. Groundedness hard gate
+      if (result.verdict === "approve" && result.groundedness.score < 6) {
+        result.verdict = "revise";
+        result.reasoning = `Groundedness score ${result.groundedness.score}/10 is too low — submission lacks evidence of real research (process trace, resource provenance, local context). ${result.reasoning}`;
+        result.improvementSuggestions = [
+          "Include a processTrace showing your research steps (web searches performed, files read, MCP tools called). Mark resource provenance accurately (web_search, local_file, mcp_tool, not just 'known'). Include snippets of actual content extracted from sources.",
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (groundedness ${result.groundedness.score} < 6 minimum)`);
+      }
+
+      // 1c3. Process trace check — flag submissions with no trace
+      const processTrace = (expansion as any).processTrace ?? [];
+      if (result.verdict === "approve" && processTrace.length === 0) {
+        result.verdict = "revise";
+        result.reasoning = `No process trace provided — cannot verify that real research was performed. ${result.reasoning}`;
+        result.improvementSuggestions = [
+          "Include a processTrace array documenting your research steps: what you searched for, what files you read, what MCP tools you called, and what you found at each step.",
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (no process trace)`);
+      }
+
+      // 1f. Findings requirement — at least 2 structured findings
+      const findings = (expansion as any).findings ?? [];
+      if (result.verdict === "approve" && findings.length < 2) {
+        result.verdict = "revise";
+        result.reasoning = `Only ${findings.length} finding(s) provided. Expansions require at least 2 structured findings — specific, verifiable claims discovered during research. ${result.reasoning}`;
+        result.improvementSuggestions = [
+          "Add at least 2 structured findings using the 'findings' array. Each finding should be a specific, verifiable claim (e.g., benchmark result, configuration tip, practical insight) with a type (insight, recommendation, config, benchmark, warning, resource_note).",
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (${findings.length} findings < 2 minimum)`);
+      }
+
+      // 1g. URL verification hard gate — reject if majority of URLs are dead
+      if (result.verdict === "approve" && urlVerification) {
+        const checked = urlVerification.filter((r) => r.status !== "skipped");
+        const dead = checked.filter((r) => r.status === "dead");
+        if (checked.length >= 3 && dead.length / checked.length > 0.5) {
+          result.verdict = "revise";
+          const deadUrls = dead.map((u) => u.url).join(", ");
+          result.reasoning = `${dead.length}/${checked.length} resource URLs failed verification (404/timeout/DNS). ${result.reasoning}`;
+          result.improvementSuggestions = [
+            `The following URLs could not be reached: ${deadUrls}. Replace with working URLs from real web research.`,
+            ...result.improvementSuggestions,
+          ];
+          log(`  [review] Override: approve→revise (${dead.length}/${checked.length} URLs dead)`);
+        }
       }
 
       // 1d. URL pattern validation — flag future/current year dates in resource URLs
@@ -500,7 +577,9 @@ async function reviewPendingSubmissions(
           scores: {
             contentAssessment: result.contentAssessment,
             resourceAssessment: result.resourceAssessment,
+            findingsAssessment: result.findingsAssessment,
             edgeAssessment: result.edgeAssessment,
+            groundedness: result.groundedness,
           },
           reasoning: result.reasoning,
           suggestedReputationDelta: totalReputationDelta,
@@ -538,6 +617,8 @@ async function reviewPendingSubmissions(
             contentAssessment: result.contentAssessment,
             resourceAssessment: result.resourceAssessment,
             edgeAssessment: result.edgeAssessment,
+            groundedness: result.groundedness,
+            findingsAssessment: result.findingsAssessment,
             improvementSuggestions: result.improvementSuggestions,
             verdict: result.verdict,
             topicTitle: expansion.topic.title,
@@ -561,6 +642,13 @@ async function reviewPendingSubmissions(
                   resolvedTags: tagResult.resolvedTags,
                 }
               : null,
+            urlVerification: urlVerification?.map((v) => ({
+              url: v.url,
+              status: v.status,
+              httpStatus: v.httpStatus,
+              error: v.error,
+              durationMs: v.durationMs,
+            })) ?? null,
           },
         });
       }

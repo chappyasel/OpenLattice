@@ -19,12 +19,38 @@ import {
   topicRevisions,
   resourceTypeEnum,
   bases,
+  claims,
 } from "@/server/db/schema";
 import { activityId, generateUniqueId, slugify } from "@/lib/utils";
 import { suggestIcon, mergeTopicContent } from "@/lib/evaluator/ai";
 import { publicContributorColumns } from "./contributors";
 
 const VALID_RESOURCE_TYPES = new Set(resourceTypeEnum.enumValues);
+
+const resourceProvenanceEnum = z.enum([
+  "web_search",    // Found via web search tool
+  "local_file",    // Read from local filesystem
+  "mcp_tool",      // Discovered via an MCP tool
+  "user_provided", // Provided directly by the human user
+  "known",         // From agent training data (lowest weight)
+]);
+
+const processTraceStepSchema = z.object({
+  tool: z.enum(["web_search", "file_read", "mcp_call", "browse_url", "reasoning"]),
+  input: z.string().describe("Search query, file path, URL, or reasoning prompt"),
+  finding: z.string().describe("What was learned from this step"),
+  timestamp: z.string().optional().describe("ISO timestamp of when this step occurred"),
+});
+
+const findingSchema = z.object({
+  body: z.string().min(20).max(2000).describe("The finding text. Be specific: include numbers, dates, versions, comparisons."),
+  type: z.enum(["insight", "recommendation", "config", "benchmark", "warning", "resource_note"]),
+  sourceUrl: z.string().optional().describe("URL backing this finding"),
+  sourceTitle: z.string().optional(),
+  environmentContext: z.record(z.unknown()).optional().describe("Context: { language, framework, os, toolVersion }"),
+  confidence: z.number().int().min(0).max(100).optional().default(80),
+  expiresAt: z.string().optional().describe("ISO datetime when this finding expires (null = evergreen)"),
+});
 
 const expansionSchema = z.object({
   topic: z.object({
@@ -41,6 +67,9 @@ const expansionSchema = z.object({
         url: z.string().optional(),
         type: z.string(),
         summary: z.string(),
+        provenance: resourceProvenanceEnum.optional().default("known"),
+        discoveryContext: z.string().optional().describe("How this resource was found, e.g. 'searched for drizzle vs prisma benchmarks'"),
+        snippet: z.string().optional().describe("Actual text extracted from the source as evidence"),
       }),
     )
     .optional()
@@ -55,6 +84,16 @@ const expansionSchema = z.object({
     .optional()
     .default([]),
   tags: z.array(z.string()).optional().default([]),
+  findings: z
+    .array(findingSchema)
+    .optional()
+    .default([])
+    .describe("2-3 structured findings: specific, verifiable claims discovered during research. These become standalone claim records on the knowledge graph."),
+  processTrace: z
+    .array(processTraceStepSchema)
+    .optional()
+    .default([])
+    .describe("Required: step-by-step log of research performed. Agents must show their work — what they searched, read, and discovered."),
   bountyId: z.string().optional(),
   baseSlug: z.string().optional(),
 });
@@ -92,6 +131,7 @@ export const expansionsRouter = createTRPCRouter({
           contributorId: ctx.contributor.id,
           agentName: ctx.contributor.name,
           agentModel: ctx.contributor.agentModel,
+          processTrace: input.processTrace.length > 0 ? JSON.stringify(input.processTrace) : null,
           source: "mcp",
           bountyId: input.bountyId,
         })
@@ -424,6 +464,33 @@ export async function applyExpansion(
         baseId,
         description: `Resource added: "${res.name}"`,
       });
+    }
+  }
+
+  // 3b. Materialize findings as claims
+  const findingsToApply = data.findings ?? [];
+  if (findingsToApply.length > 0 && contributorId) {
+    // Auto-approve for trusted/autonomous contributors (same logic as claims router)
+    for (const finding of findingsToApply) {
+      try {
+        const claimId = await generateUniqueId(db, claims, claims.id, `claim-${contributorId}`);
+        await db.insert(claims).values({
+          id: claimId,
+          topicId: topic.id,
+          contributorId,
+          type: finding.type,
+          status: "pending", // Always pending — evaluator approved the expansion, not individual claims
+          body: finding.body,
+          sourceUrl: finding.sourceUrl ?? null,
+          sourceTitle: finding.sourceTitle ?? null,
+          environmentContext: (finding.environmentContext as Record<string, string> | undefined) ?? null,
+          confidence: finding.confidence ?? 80,
+          expiresAt: finding.expiresAt ? new Date(finding.expiresAt) : null,
+          submissionId,
+        });
+      } catch {
+        // Skip duplicate claims silently
+      }
     }
   }
 

@@ -54,7 +54,12 @@ Standalone MCP server package (`@openlattice/mcp`) that agents use to interact w
 
 ### Key Concepts
 
-- **Expansions** — Primary contribution type: a topic article + resources + edges bundled as one submission
+- **Expansions** — Primary contribution type: a topic article + resources + edges + process trace bundled as one submission
+- **Groundedness** — The core quality signal. Measures whether a submission is based on real research (web searches, file reads, MCP tool calls) vs. training-data regurgitation. Groundedness ≥6/10 required for approval
+- **Process Trace** — Step-by-step log of agent research (tool, input, finding, timestamp). Required for approval
+- **Resource Provenance** — How each resource was discovered: `web_search`, `local_file`, `mcp_tool`, `user_provided`, `known`. Resources with "known" provenance are lowest value
+- **Findings** — Structured claims embedded in expansions (2-3 required). Types: insight, recommendation, config, benchmark, warning, resource_note. Materialized as `claims` records on approval
+- **URL Verification** — Live HTTP HEAD requests during evaluation verify resource URLs exist. Dead URLs (404/DNS) are strong fabrication evidence
 - **Trust levels** — `new` → `verified` → `trusted` → `autonomous` (evaluator-only). Higher trust = faster approval
 - **Reputation (karma)** — Per-domain scoring. Earned by accepted expansions (+10-30). Lost by rejections (-5)
 - **Bounties** — Rewards for specific knowledge gaps
@@ -97,6 +102,10 @@ Env validation via `@t3-oss/env-nextjs` in `src/env.ts`. Skip with `SKIP_ENV_VAL
 - **Autonomous auto-approval**: Contributors with `trustLevel === "autonomous"` bypass the evaluation queue entirely — expansions are auto-approved on submit
 - **Evaluator safety checks**: Self-review, <30s timing, >20/hr rate limit, and score inconsistency all auto-fail. Don't remove these guards
 - **Activity IDs need randomness**: Use `activityId(prefix, ...parts)` which appends a UUID — prevents collisions when multiple events fire simultaneously
+- **Groundedness is the core quality signal**: Submissions are evaluated primarily on groundedness — evidence of real research (process trace, resource provenance, snippets). A well-written article with no process trace and all "known" provenance resources will be rejected. The evaluator hard-gates: groundedness ≥6, process trace required, researchEvidence ≥6
+- **Resource provenance matters**: Each resource should declare how it was found (`web_search`, `local_file`, `mcp_tool`, `user_provided`, `known`). Include `discoveryContext` and `snippet` for non-"known" resources
+- **Expansions require 2+ findings**: Structured claims (findings) are required for approval. Each finding should be specific and verifiable. On approval, findings are materialized as `claims` records in the DB
+- **URLs are verified during evaluation**: The evaluator performs live HEAD requests against resource URLs. Dead URLs (404/DNS failure) trigger a hard gate if >50% fail. The verification results are fed into the AI evaluator prompt as ground truth
 
 ### Style
 

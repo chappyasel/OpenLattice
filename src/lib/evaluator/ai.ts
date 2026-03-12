@@ -9,6 +9,7 @@
 import { generateObject } from "ai";
 import { createGateway } from "@ai-sdk/gateway";
 import { z } from "zod";
+import type { UrlVerificationResult } from "./url-verify";
 
 const MODEL = process.env.EVALUATOR_MODEL ?? "anthropic/claude-sonnet-4-20250514";
 
@@ -36,6 +37,20 @@ export const expansionReviewSchema = z.object({
     coverage: z.number().describe("Good mix of resource types (0-10). Penalize submissions where all resources are the same type (e.g. all articles). Reward diverse types: books, newsletters, tutorials, documentation, videos, repos, social media, etc."),
     researchEvidence: z.number().describe("Evidence of real web research vs fabricated/training-data resources (0-10). 0-3: Fabricated — future dates in URLs, generic descriptions that could apply to anything, non-existent or implausible domains, URL paths that suspiciously mirror the topic title. 4-5: Mixed signals — some plausible domains but vague descriptions, cannot confirm resources are real. 6-7: Appears real — well-known domains (arxiv, github, official docs), no red flags, but lacking highly specific details. 8-10: Clearly researched — specific findings, author names, known authoritative sources, details that could only come from actually reading the resource."),
     summary: z.string().describe("1-2 sentence assessment of resources"),
+  }),
+  groundedness: z.object({
+    score: z.number().describe("Overall groundedness score (0-10). How grounded is this submission in real, verifiable, local/experiential knowledge vs. generic training-data regurgitation? 0-2: Pure training data — no process trace, no evidence of tool use, generic knowledge any LLM could produce. 3-4: Minimal grounding — process trace exists but is vague or likely fabricated, resources marked 'known' with no discovery context. 5-6: Moderate grounding — some web searches performed, some real URLs found, but content doesn't leverage specific findings. 7-8: Well-grounded — clear process trace showing real tool usage (web search, file reads), resources have discovery context and snippets, content references specific findings. 9-10: Deeply grounded — local/experiential knowledge with specific stacks, outcomes, timestamps. Content that could only come from someone who actually did the work."),
+    hasProcessTrace: z.boolean().describe("Did the submission include a meaningful process trace?"),
+    toolUseEvidence: z.number().describe("Evidence of real tool usage in the process trace (0-10). 0 = no trace, 5 = generic traces, 10 = detailed traces with specific queries/results"),
+    localContext: z.number().describe("Evidence of local/experiential context — specific stacks, outcomes, time-bound claims (0-10). 0 = purely generic, 10 = deeply specific to a particular environment"),
+    summary: z.string().describe("1-2 sentence assessment of how grounded this submission is"),
+  }),
+  findingsAssessment: z.object({
+    specificity: z.number().describe("How specific and falsifiable are the findings? (0-10). 0 = vague platitudes ('X is useful'), 10 = precise, measurable, time-bound claims ('X v2.3 reduces latency by 40% on Postgres 16 with >1M rows')"),
+    groundedness: z.number().describe("Are findings backed by the process trace and resources? (0-10). 0 = no connection to research, 10 = each finding clearly traces to a specific research step or source"),
+    practicalValue: z.number().describe("How useful are these findings to practitioners? (0-10). 0 = obvious/trivial, 10 = non-obvious insight that saves real time/effort"),
+    count: z.number().describe("Number of findings submitted"),
+    summary: z.string().describe("1-2 sentence assessment of the findings quality"),
   }),
   edgeAssessment: z.object({
     accuracy: z.number().describe("Whether relationship types are correct (0-10)"),
@@ -108,11 +123,17 @@ export type EdgeSuggestion = z.infer<typeof edgeSuggestionSchema>;
 
 // ─── Evaluation Functions ─────────────────────────────────────────────────
 
-const ARBITER_SYSTEM = `You are Arbiter, the in-house evaluator agent for OpenLattice — a knowledge market for AI topics.
+const ARBITER_SYSTEM = `You are Arbiter, the in-house evaluator agent for OpenLattice — a knowledge market for the agentic internet.
 
-Your role is to evaluate contributions from other AI agents with rigor and fairness. You are the quality gate that ensures the knowledge graph is accurate, comprehensive, and useful.
+Your role is to evaluate contributions from other AI agents with rigor and fairness. You are the quality gate that ensures the knowledge graph contains GROUNDED, VERIFIABLE knowledge — not regurgitated training data.
 
-Evaluation principles:
+## Core Thesis (CRITICAL — read this first)
+"Frontier models know everything on the internet. They don't know what worked for THIS developer, at THIS company, with THIS stack, THIS week."
+
+OpenLattice values LOCAL, EXPERIENTIAL, GROUNDED knowledge above all else. The entire point is that agents contribute knowledge they discovered through real research — web searches, local file reads, MCP tool calls, personal experience. A submission that any LLM could generate from training data alone is LOW VALUE regardless of how well-written it is.
+
+## Evaluation Principles
+- **Groundedness above all**: Did the agent actually DO research, or just write from training data?
 - Reward depth and specificity over breadth and vagueness
 - Penalize marketing language, hype, and unsupported claims
 - Value authoritative sources (papers, official docs, established researchers)
@@ -120,7 +141,37 @@ Evaluation principles:
 - Be fair but demanding — quality is what makes the graph valuable
 - Consider the contribution in context of what already exists in the graph
 
-## Fabrication Detection (CRITICAL)
+## Process Trace Assessment (CRITICAL)
+Submissions should include a processTrace — a step-by-step log of what the agent did to research the topic. Evaluate the trace carefully:
+
+**Strong traces** (groundedness 7-10):
+- Show specific web searches with real queries ("searched 'drizzle orm batch insert performance 2026'")
+- Include file reads from the agent's local environment
+- Reference MCP tool calls with real outputs
+- Show iterative research — one finding leading to the next
+- Contain timestamps showing actual research was performed
+
+**Weak/suspicious traces** (groundedness 3-6):
+- Vague steps ("researched the topic", "gathered information")
+- No specific queries or tool names
+- Steps that read like post-hoc rationalization, not actual research
+- Traces that could be fabricated without doing any real work
+
+**No trace** (groundedness 0-2):
+- Submissions without processTrace are almost certainly training-data regurgitation
+- Should very rarely be approved, even if content is well-written
+
+## Resource Provenance
+Each resource can declare its provenance:
+- **web_search**: Found via web search tool — HIGH VALUE. Check discoveryContext and snippet.
+- **local_file**: Read from agent's local filesystem — HIGH VALUE. Indicates real local context.
+- **mcp_tool**: Discovered via MCP tool — HIGH VALUE.
+- **user_provided**: Given by the human user — MEDIUM VALUE.
+- **known**: From agent training data — LOW VALUE. Generic knowledge, not grounded research.
+
+Resources marked "known" with no discoveryContext or snippet are the lowest value. Heavily penalize submissions where ALL resources are "known" — this indicates zero research was performed.
+
+## Fabrication Detection
 Most submissions come from AI agents that may hallucinate URLs and resources. You MUST actively check for:
 - **Future dates in URLs**: Any URL containing a year ≥ the current year (2026+) is almost certainly fabricated
 - **Too-perfect URL patterns**: URLs that look like plausible-but-invented paths (e.g. "/2026/03/ai-topic-name", "/blog/exactly-matching-title")
@@ -134,19 +185,22 @@ Resource verification checklist (apply to EACH resource):
 3. Is the domain a well-known, verifiable source (arxiv, github, official docs)? → GOOD SIGN
 4. Could this summary be written without ever visiting the URL? → RED FLAG
 5. Does the URL path suspiciously mirror the topic title? → RED FLAG
+6. Does the resource have a provenance other than "known"? → GOOD SIGN
+7. Does the resource include a snippet (actual text from the source)? → STRONG SIGN
+8. Does the resource include a discoveryContext explaining how it was found? → GOOD SIGN
 
 If 2+ resources fail this checklist, researchEvidence MUST be 0-3.
 
-Verdict guidelines:
-- **approve**: High-quality submission with VERIFIABLE research. Score must be 75+ to approve. Content must be 800+ words with real depth. Must include 5+ resources with plausible, real URLs. The resources must show evidence of genuine web research — not just training-data knowledge reformatted with invented URLs. Do NOT approve marginal submissions — when in doubt, request revision.
-- **revise**: The TRUE DEFAULT. Most submissions should land here unless they demonstrably include real, verified research. Submissions with fixable issues (thin content, suspected fabricated URLs, wrong edges, tone issues, missing depth). Most first-time submissions and most AI-generated submissions belong here.
+## Verdict Guidelines
+- **approve**: High-quality submission with VERIFIABLE, GROUNDED research. Score must be 75+ to approve. Groundedness score must be 6+ to approve. Content must be 800+ words with real depth. Must include 5+ resources, with the majority having provenance other than "known". The resources must show evidence of genuine research — not just training-data knowledge reformatted with invented URLs. Process trace should show real tool usage. Do NOT approve marginal submissions — when in doubt, request revision.
+- **revise**: The TRUE DEFAULT. Most submissions should land here unless they demonstrably include real, grounded research. Submissions with: no process trace, all "known" provenance resources, suspected fabricated URLs, thin content, wrong edges, tone issues, missing depth. Most first-time submissions and most AI-generated submissions belong here.
 - **reject**: Spam, misinformation, completely off-topic, or extremely low effort. Not salvageable.
 
-Scoring calibration:
-- 90-100: Exceptional — verifiable sources from known authoritative domains, specific inline citations, clearly researched. Very rare.
-- 75-89: Good — plausible real sources, specific details, no red flags. Approval range.
-- 60-74: Structured but unverified — well-written but resources likely from training data, not web research. Always "revise".
-- 40-59: Suspected fabrication — generic descriptions, suspicious URLs, template-driven output. Always "revise".
+## Scoring Calibration
+- 90-100: Exceptional — grounded in real research with strong process trace, verifiable sources from authoritative domains, specific findings with snippets, local context. Very rare.
+- 75-89: Good — plausible real sources, decent process trace, some discovery context, no red flags. Approval range.
+- 60-74: Structured but ungrounded — well-written but no process trace, resources lack provenance, likely training data. Always "revise".
+- 40-59: Suspected fabrication — generic descriptions, suspicious URLs, no evidence of research. Always "revise".
 - Below 40: Clear fabrication or spam — "reject" unless clearly salvageable.
 
 Karma scale: suggestedReputationDelta uses a 10x scale. Approvals typically +100 to +300, revisions -10 to -50, rejections -50 to -200.`;
@@ -154,17 +208,30 @@ Karma scale: suggestedReputationDelta uses a 10x scale. Approvals typically +100
 export async function reviewExpansion(
   expansion: {
     topic: { title: string; content: string; summary?: string; difficulty?: string; parentTopicSlug?: string };
-    resources: Array<{ name: string; url?: string; type: string; summary: string }>;
+    resources: Array<{ name: string; url?: string; type: string; summary: string; provenance?: string; discoveryContext?: string; snippet?: string }>;
     edges: Array<{ targetTopicSlug: string; relationType: string }>;
+    findings?: Array<{ body: string; type: string; sourceUrl?: string; sourceTitle?: string; confidence?: number; expiresAt?: string }>;
+    processTrace?: Array<{ tool: string; input: string; finding: string; timestamp?: string }>;
   },
   context: {
     existingTopics: Array<{id: string; title: string; summary?: string | null}>;
     contributorName: string;
     contributorTrustLevel: string;
     contributorAcceptanceRate?: number;
+    urlVerification?: UrlVerificationResult[];
   },
 ): Promise<{ result: ExpansionReview; durationMs: number; model: string }> {
   const start = Date.now();
+
+  const processTrace = expansion.processTrace ?? [];
+  const hasTrace = processTrace.length > 0;
+  const provenanceCounts: Record<string, number> = {};
+  for (const r of expansion.resources) {
+    const p = r.provenance ?? "known";
+    provenanceCounts[p] = (provenanceCounts[p] ?? 0) + 1;
+  }
+  const resourcesWithSnippets = expansion.resources.filter(r => r.snippet && r.snippet.length > 20).length;
+  const resourcesWithContext = expansion.resources.filter(r => r.discoveryContext && r.discoveryContext.length > 10).length;
 
   const prompt = `Review this graph expansion submission from agent "${context.contributorName}" (trust: ${context.contributorTrustLevel}${context.contributorAcceptanceRate !== undefined ? `, acceptance rate: ${(context.contributorAcceptanceRate * 100).toFixed(0)}%` : ""}).
 
@@ -177,7 +244,30 @@ ${expansion.topic.parentTopicSlug ? `Parent topic: ${expansion.topic.parentTopic
 ${expansion.topic.content.slice(0, 8000)}${expansion.topic.content.length > 8000 ? "\n...(truncated)" : ""}
 
 ### Resources (${expansion.resources.length}):
-${expansion.resources.map((r, i) => `${i + 1}. [${r.type}] "${r.name}"${r.url ? ` — ${r.url}` : ""}\n   ${r.summary}`).join("\n")}
+${expansion.resources.map((r, i) => `${i + 1}. [${r.type}] "${r.name}"${r.url ? ` — ${r.url}` : ""}
+   Provenance: ${r.provenance ?? "known"}${r.discoveryContext ? ` | Discovery: ${r.discoveryContext}` : ""}
+   ${r.summary}${r.snippet ? `\n   Snippet: "${r.snippet.slice(0, 200)}${r.snippet.length > 200 ? "..." : ""}"` : ""}`).join("\n")}
+
+### Resource Provenance Summary:
+${Object.entries(provenanceCounts).map(([k, v]) => `- ${k}: ${v}`).join("\n")}
+- Resources with snippets: ${resourcesWithSnippets}/${expansion.resources.length}
+- Resources with discovery context: ${resourcesWithContext}/${expansion.resources.length}
+
+### URL Verification Results (live HTTP checks):
+${context.urlVerification && context.urlVerification.length > 0
+  ? context.urlVerification.map((v) => `- ${v.url}: **${v.status.toUpperCase()}**${v.httpStatus ? ` (HTTP ${v.httpStatus})` : ""}${v.error ? ` — ${v.error}` : ""}${v.redirectedTo ? ` → ${v.redirectedTo}` : ""}`).join("\n")
+  : "No URLs to verify (or verification was not performed)"}
+${context.urlVerification && context.urlVerification.length > 0
+  ? `\n⚠️ IMPORTANT: "dead" URLs are CONFIRMED unreachable (404, DNS failure, timeout). These are strong evidence of fabrication. "live" URLs are confirmed reachable. "plausible" URLs returned 401/403 (paywall/auth-gated — treat as likely real).`
+  : ""}
+
+### Process Trace (${hasTrace ? `${processTrace.length} steps` : "NONE PROVIDED"}):
+${hasTrace ? processTrace.map((step, i) => `${i + 1}. [${step.tool}] ${step.input}\n   → ${step.finding}${step.timestamp ? ` (${step.timestamp})` : ""}`).join("\n") : "⚠️ NO PROCESS TRACE — the agent did not document its research process. This is a significant red flag for groundedness."}
+
+### Findings (${expansion.findings?.length ?? 0}):
+${(expansion.findings ?? []).length > 0
+  ? (expansion.findings ?? []).map((f, i) => `${i + 1}. [${f.type}] "${f.body}"${f.sourceUrl ? ` — source: ${f.sourceUrl}` : ""}${f.expiresAt ? ` (expires: ${f.expiresAt})` : ""} (confidence: ${f.confidence ?? 80}%)`).join("\n")
+  : "⚠️ NO FINDINGS — the agent did not include structured findings. Expansions should include 2-3 specific, verifiable claims discovered during research."}
 
 ### Proposed Edges (${expansion.edges.length}):
 ${expansion.edges.map((e) => `- ${expansion.topic.title} → ${e.targetTopicSlug} (${e.relationType})`).join("\n")}
@@ -200,12 +290,38 @@ If NOT a duplicate, set duplicateOf to null.
 - **Penalize heavily**: Thin articles that merely define a term without depth, examples, or practical detail.
 - Content should have clear section headers, cover "what/why/how", and include current developments.
 
-## URL Plausibility Check (CRITICAL)
-For EACH resource URL, check:
-1. Does the URL contain a date in ${new Date().getFullYear()} or later? If so, it is almost certainly fabricated. Flag it.
-2. Does the URL path suspiciously mirror the exact topic title (e.g. "/blog/exact-topic-name-here")? Likely invented.
-3. Is the domain well-known and verifiable (arxiv.org, github.com, official project docs, major publications)? Or is it a plausible-sounding but potentially fake domain?
-4. Could the resource summary have been written by an AI without ever visiting the URL? Generic summaries like "A comprehensive guide to X that covers Y and Z" are red flags.
+## Groundedness Assessment (CRITICAL — THIS IS THE MOST IMPORTANT DIMENSION)
+OpenLattice's thesis: "Frontier models know everything on the internet. They don't know what worked for THIS developer, THIS week."
+You must assess whether this submission is GROUNDED in real research or is just training-data regurgitation:
+
+1. **Process Trace**: Does the agent show its work? Are there specific web searches, file reads, MCP tool calls? Or is the trace missing/vague?
+2. **Resource Provenance**: How many resources are marked "web_search" or "local_file" vs. "known"? Resources with "known" provenance and no discoveryContext are almost certainly from training data.
+3. **Snippets**: Do resources include actual text extracted from the source? This is strong evidence the agent actually read the source.
+4. **Specificity**: Does the content contain time-bound, specific claims ("as of March 2026, Drizzle ORM's batch insert is 3x faster than Prisma's") vs. generic statements ("Drizzle is known for good performance")?
+5. **Local Context**: Is there evidence of specific stacks, outcomes, environments? Or could any LLM have written this?
+
+Groundedness score MUST be 6+ to approve. A beautifully written article that scores 4 on groundedness should NEVER be approved.
+
+## URL Verification & Plausibility Check
+The system has performed real HTTP HEAD requests against all resource URLs. Use the URL Verification Results above as ground truth:
+- **"live" URLs** are CONFIRMED reachable — strong evidence the resource exists. This is the gold standard.
+- **"plausible" URLs** returned 401/403 (paywall/auth) — treat as likely real.
+- **"dead" URLs** returned 404, DNS failure, or timeout — STRONG evidence of fabrication. Weight heavily in researchEvidence scoring.
+
+Additionally check for each resource:
+1. Does the URL contain a date in ${new Date().getFullYear()} or later? If so, it is almost certainly fabricated.
+2. Does the URL path suspiciously mirror the exact topic title? Likely invented.
+3. Could the resource summary have been written without visiting the URL? RED FLAG.
+4. Does the resource have provenance other than "known"? GOOD SIGN.
+5. Does the resource include a snippet of actual content from the source? STRONG SIGN.
+
+## Findings Assessment
+Expansions should include 2-3 structured findings — specific, verifiable claims. Assess:
+- **Specificity**: Are findings precise and falsifiable? "Drizzle ORM batch insert is 3x faster than Prisma on Postgres 16 with >1M rows" is excellent. "Drizzle is a good ORM" is worthless.
+- **Grounded in research**: Can each finding be traced back to a specific process trace step or resource?
+- **Practical value**: Would a practitioner learn something non-obvious from these findings?
+- Submissions with 0 findings should score low on findingsAssessment and should not be approved unless the content itself contains equivalent inline claims.
+- Findings with expiresAt set are time-bound and more valuable (they're saying "this is true NOW, check again later").
 
 ## Uniformity Detection
 Flag if the submission shows signs of template-driven AI generation:
@@ -213,11 +329,12 @@ Flag if the submission shows signs of template-driven AI generation:
 - Exactly 5 resources (the most common AI default)
 - Content length in the 8K-12K character range with uniform section structure
 - Resource descriptions that follow the same grammatical pattern
+- All resources have provenance "known" (no research was done)
 
 ## Research Evidence Enforcement
 If 2+ resources fail the URL plausibility check above, researchEvidence MUST be 0-3 and verdict MUST be "revise" with specific feedback about which resources appear fabricated and why.
 
-Evaluate this expansion's quality. Be rigorous but fair. Prefer "revise" over "reject" for good-faith contributions that have fixable issues. Your DEFAULT should be "revise" — only approve when you are confident the resources are real and the content is genuinely researched.`;
+Evaluate this expansion's quality. Be rigorous but fair. Prefer "revise" over "reject" for good-faith contributions that have fixable issues. Your DEFAULT should be "revise" — only approve when you are confident the submission is GROUNDED in real research and the content contains genuine, verifiable knowledge.`;
 
   const { object } = await generateObject({
     model: getModel(),
