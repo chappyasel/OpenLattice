@@ -18,6 +18,83 @@ import {
 import { verifyUrls, type UrlVerificationResult } from "./url-verify";
 import { scoreResearchQuality, computeTraceCrossReference } from "../research-quality";
 
+// ─── Helpers ─────────────────────────────────────────────────────────────
+
+type TopicSummary = { id: string; title: string; summary: string | null; parentTopicId: string | null; baseId: string | null; depth: number };
+
+/**
+ * Filter topics to only those relevant to a submission for edge evaluation.
+ * Includes: submitted edge targets, parent's subtree (siblings), same-base topics,
+ * ancestors, and all root topics. Caps at maxTopics.
+ */
+function filterRelevantTopics(
+  allTopics: TopicSummary[],
+  opts: {
+    parentTopicSlug?: string;
+    submittedEdgeSlugs: string[];
+    baseId?: string | null;
+  },
+  maxTopics = 100,
+): Array<{ id: string; title: string; summary?: string }> {
+  if (allTopics.length <= maxTopics) {
+    return allTopics.map((t) => ({ id: t.id, title: t.title, summary: t.summary ?? undefined }));
+  }
+
+  const included = new Set<string>();
+  const topicMap = new Map(allTopics.map((t) => [t.id, t]));
+
+  // Always include submitted edge targets
+  for (const slug of opts.submittedEdgeSlugs) {
+    included.add(slug);
+  }
+
+  // Include the parent and its subtree (siblings of the new topic)
+  if (opts.parentTopicSlug) {
+    included.add(opts.parentTopicSlug);
+    const parent = topicMap.get(opts.parentTopicSlug);
+    if (parent) {
+      // Siblings: other children of the same parent
+      for (const t of allTopics) {
+        if (t.parentTopicId === opts.parentTopicSlug) included.add(t.id);
+      }
+      // Grandparent and its children (aunts/uncles)
+      if (parent.parentTopicId) {
+        included.add(parent.parentTopicId);
+        for (const t of allTopics) {
+          if (t.parentTopicId === parent.parentTopicId) included.add(t.id);
+        }
+      }
+    }
+  }
+
+  // Include all root topics (depth 0) — they're the top-level categories
+  for (const t of allTopics) {
+    if (t.depth === 0) included.add(t.id);
+  }
+
+  // Include same-base topics (same knowledge domain)
+  if (opts.baseId) {
+    for (const t of allTopics) {
+      if (t.baseId === opts.baseId) included.add(t.id);
+    }
+  }
+
+  // If still under limit, add depth-1 topics for broader coverage
+  if (included.size < maxTopics) {
+    for (const t of allTopics) {
+      if (t.depth <= 1) included.add(t.id);
+      if (included.size >= maxTopics) break;
+    }
+  }
+
+  const result = allTopics
+    .filter((t) => included.has(t.id))
+    .slice(0, maxTopics)
+    .map((t) => ({ id: t.id, title: t.title, summary: t.summary ?? undefined }));
+
+  return result;
+}
+
 // ─── Config & Types ──────────────────────────────────────────────────────
 
 export interface EvaluatorConfig {
@@ -221,7 +298,7 @@ async function reviewPendingSubmissions(
   }
 
   const allTopics = await trpc.query<
-    Array<{ id: string; title: string; summary: string | null; iconHue: number | null }>
+    Array<{ id: string; title: string; summary: string | null; iconHue: number | null; parentTopicId: string | null; baseId: string | null; depth: number }>
   >("topics.listSummary", { status: "published" });
   const existingTopics = (allTopics ?? []).map((t) => ({ id: t.id, title: t.title, summary: t.summary }));
   const topicHues = (allTopics ?? []).map((t) => t.iconHue).filter((h): h is number => h != null);
@@ -553,6 +630,13 @@ async function reviewPendingSubmissions(
       }> = expansion.edges ?? [];
 
       if (allTopics?.length && allTopics.length > 0) {
+        // Filter to relevant topics for edge evaluation (scales to large graphs)
+        const relevantTopics = filterRelevantTopics(allTopics, {
+          parentTopicSlug: expansion.topic.parentTopicSlug,
+          submittedEdgeSlugs: submittedEdges.map((e) => e.targetTopicSlug),
+          baseId: allTopics.find((t) => t.id === expansion.topic.parentTopicSlug)?.baseId,
+        });
+
         try {
           if (submittedEdges.length > 0) {
             // Evaluate submitted edges directly instead of independently suggesting
@@ -564,11 +648,7 @@ async function reviewPendingSubmissions(
                   summary: expansion.topic.summary,
                 },
                 submittedEdges,
-                (allTopics ?? []).map((t) => ({
-                  id: t.id,
-                  title: t.title,
-                  summary: t.summary ?? undefined,
-                })),
+                relevantTopics,
               );
 
             const validCount = evalResult.submittedEdgeReviews.filter(
@@ -583,10 +663,10 @@ async function reviewPendingSubmissions(
             const totalSubmitted = submittedEdges.length;
             const missingCount = evalResult.missingEdges.length;
 
-            // Accuracy: valid edges count fully, wrong_type count as half (right target, wrong type)
+            // Accuracy: valid edges count fully, wrong_type count as 75% (right target, just wrong relationship type)
             const accuracy =
               totalSubmitted > 0
-                ? (validCount + wrongTypeCount * 0.5) / totalSubmitted
+                ? (validCount + wrongTypeCount * 0.75) / totalSubmitted
                 : 1;
 
             // Build resolved edges: valid submitted + corrected wrong_type + missing
@@ -631,10 +711,8 @@ async function reviewPendingSubmissions(
               karmaDelta = missingCount > 1 ? 20 : 50;
             } else if (accuracy >= 0.5) {
               karmaDelta = 10;
-            } else if (accuracy >= 0.25) {
-              karmaDelta = -10;
             } else {
-              karmaDelta = -25;
+              karmaDelta = 0; // Don't penalize — edge quality is subjective and AI-on-AI disagreement shouldn't cost karma
             }
 
             edgeDiff = {
@@ -660,11 +738,7 @@ async function reviewPendingSubmissions(
                   content: expansion.topic.content,
                   summary: expansion.topic.summary,
                 },
-                (allTopics ?? []).map((t) => ({
-                  id: t.id,
-                  title: t.title,
-                  summary: t.summary ?? undefined,
-                })),
+                relevantTopics,
               );
 
             edgeDiff = {

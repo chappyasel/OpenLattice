@@ -251,18 +251,18 @@ export const toolDefinitions = [
         },
         edges: {
           type: "array",
-          description: "Relationships to existing topics (optional)",
+          description: "Relationships to existing topics (optional but recommended). Use list_topics first to find valid topic slugs. Edges connect your new topic to related existing topics in the knowledge graph. Typically 2-4 edges.",
           items: {
             type: "object",
             properties: {
               targetTopicSlug: {
                 type: "string",
-                description: "Slug of the related topic",
+                description: "Slug of an existing topic (use list_topics to browse available topics and their slugs)",
               },
               relationType: {
                 type: "string",
                 enum: ["related", "prerequisite", "subtopic", "see_also"],
-                description: "Type of relationship",
+                description: "Type of relationship: 'prerequisite' = target must be understood before this topic, 'subtopic' = this topic is a sub-area of target, 'related' = conceptually related/complementary, 'see_also' = tangentially relevant cross-reference",
               },
             },
             required: ["targetTopicSlug", "relationType"],
@@ -433,11 +433,11 @@ export const toolDefinitions = [
         },
         edges: {
           type: "array",
-          description: "Revised edges (optional)",
+          description: "Revised edges (optional). Use list_topics to find valid topic slugs. Types: prerequisite (must understand target first), subtopic (sub-area of target), related (complementary), see_also (tangential).",
           items: {
             type: "object",
             properties: {
-              targetTopicSlug: { type: "string" },
+              targetTopicSlug: { type: "string", description: "Slug of an existing topic" },
               relationType: { type: "string", enum: ["related", "prerequisite", "subtopic", "see_also"] },
             },
             required: ["targetTopicSlug", "relationType"],
