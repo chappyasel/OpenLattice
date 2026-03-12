@@ -279,15 +279,22 @@ function EvaluatorButton({
 
   const cancelEvaluator = async () => {
     try {
-      await fetch("/api/evaluator/cancel", {
+      const res = await fetch("/api/evaluator/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: cancelType }),
       });
+      if (res.ok) {
+        // Server cancelled the run — the SSE "done" event should close the stream,
+        // but EventSource may auto-reconnect before it arrives. Force-close as fallback.
+        eventSourceRef.current?.close();
+        eventSourceRef.current = null;
+        setRunning(false);
+        setLines((prev) => [...prev, "[Cancelled by user]"]);
+      }
     } catch {
       // Best-effort
     }
-    // The SSE stream will receive the cancel event and close
   };
 
   useEffect(() => {
@@ -365,87 +372,118 @@ function RunScoutBatchButton() {
   const [batchId, setBatchId] = useState<string | null>(null);
   const [lines, setLines] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+  const [reconnected, setReconnected] = useState(false);
   const [summary, setSummary] = useState<{ done: number; failed: number; total: number } | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  const connectToStream = (streamBatchId: string, isReconnect: boolean) => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    if (isReconnect) {
+      setReconnected(true);
+      setLines((prev) => [...prev, "[Reconnected to active batch]"]);
+    }
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/scout-worker/stream/${streamBatchId}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) {
+          setLines((prev) => [...prev, `[Error] Stream failed: ${res.status}`]);
+          setRunning(false);
+          return;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            if (!part.trim() || part.trim() === ":") continue;
+
+            // Check for named events
+            const eventMatch = part.match(/^event:\s*(.+)\ndata:\s*(.+)$/m);
+            if (eventMatch) {
+              const [, eventName, eventData] = eventMatch;
+              if (eventName === "scout-done") {
+                try {
+                  const parsed = JSON.parse(eventData!) as { scoutId: string; status: string };
+                  setSummary((prev) => prev ? {
+                    ...prev,
+                    done: prev.done + 1,
+                    failed: parsed.status === "error" ? prev.failed + 1 : prev.failed,
+                  } : null);
+                } catch { /* ignore */ }
+              } else if (eventName === "batch-done") {
+                setRunning(false);
+                void utils.admin.listPendingSubmissions.invalidate();
+                void utils.admin.getStats.invalidate();
+                void utils.activity.getRecent.invalidate();
+              }
+              continue;
+            }
+
+            // Regular data lines
+            const dataMatch = part.match(/^data:\s*(.+)$/m);
+            if (dataMatch) {
+              try {
+                const parsed = JSON.parse(dataMatch[1]!) as { scoutId: string; line: string };
+                setLines((prev) => [...prev, `[${parsed.scoutId}] ${parsed.line}`]);
+              } catch {
+                setLines((prev) => [...prev, dataMatch[1]!]);
+              }
+            }
+          }
+        }
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setLines((prev) => [...prev, `[Error] ${err instanceof Error ? err.message : String(err)}`]);
+      } finally {
+        setRunning(false);
+      }
+    })();
+  };
+
+  // Auto-reconnect on mount: check if there's an active scout batch
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/scout-worker/status");
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as { batch: { batchId: string; count: number; status: string } | null };
+        if (data.batch && data.batch.status === "running") {
+          setBatchId(data.batch.batchId);
+          setSummary({ done: 0, failed: 0, total: data.batch.count });
+          setRunning(true);
+          connectToStream(data.batch.batchId, true);
+        }
+      } catch {
+        // Best-effort
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const launchMutation = api.admin.launchScoutBatch.useMutation({
     onSuccess: (data) => {
       setBatchId(data.batchId);
       setSummary({ done: 0, failed: 0, total: data.count });
+      setReconnected(false);
       void utils.admin.listAllContributors.invalidate();
-
-      // Connect to SSE stream
-      const controller = new AbortController();
-      abortRef.current = controller;
-
-      void (async () => {
-        try {
-          const res = await fetch(`/api/scout-worker/stream/${data.batchId}`, {
-            signal: controller.signal,
-          });
-          if (!res.ok || !res.body) {
-            setLines((prev) => [...prev, `[Error] Stream failed: ${res.status}`]);
-            setRunning(false);
-            return;
-          }
-
-          const reader = res.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = "";
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const parts = buffer.split("\n\n");
-            buffer = parts.pop() ?? "";
-
-            for (const part of parts) {
-              if (!part.trim() || part.trim() === ":") continue;
-
-              // Check for named events
-              const eventMatch = part.match(/^event:\s*(.+)\ndata:\s*(.+)$/m);
-              if (eventMatch) {
-                const [, eventName, eventData] = eventMatch;
-                if (eventName === "scout-done") {
-                  try {
-                    const parsed = JSON.parse(eventData!) as { scoutId: string; status: string };
-                    setSummary((prev) => prev ? {
-                      ...prev,
-                      done: prev.done + 1,
-                      failed: parsed.status === "error" ? prev.failed + 1 : prev.failed,
-                    } : null);
-                  } catch { /* ignore */ }
-                } else if (eventName === "batch-done") {
-                  setRunning(false);
-                  void utils.admin.listPendingSubmissions.invalidate();
-                  void utils.admin.getStats.invalidate();
-                  void utils.activity.getRecent.invalidate();
-                }
-                continue;
-              }
-
-              // Regular data lines
-              const dataMatch = part.match(/^data:\s*(.+)$/m);
-              if (dataMatch) {
-                try {
-                  const parsed = JSON.parse(dataMatch[1]!) as { scoutId: string; line: string };
-                  setLines((prev) => [...prev, `[${parsed.scoutId}] ${parsed.line}`]);
-                } catch {
-                  setLines((prev) => [...prev, dataMatch[1]!]);
-                }
-              }
-            }
-          }
-        } catch (err: unknown) {
-          if (err instanceof DOMException && err.name === "AbortError") return;
-          setLines((prev) => [...prev, `[Error] ${err instanceof Error ? err.message : String(err)}`]);
-        } finally {
-          setRunning(false);
-        }
-      })();
+      connectToStream(data.batchId, false);
     },
     onError: (err) => {
       setLines((prev) => [...prev, `[Error] ${err.message}`]);
@@ -529,6 +567,12 @@ function RunScoutBatchButton() {
           </button>
         </div>
       </div>
+      {reconnected && (
+        <div className="mt-3 flex items-center gap-1.5 text-xs text-yellow-400">
+          <SpinnerIcon weight="bold" className="size-3 animate-spin" />
+          Reconnected to in-progress batch
+        </div>
+      )}
       {summary && (
         <div className="mt-3 flex items-center gap-3 text-xs">
           <span className="text-muted-foreground">

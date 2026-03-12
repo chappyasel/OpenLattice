@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "@/env";
+import { setActiveBatch } from "@/lib/scout-batch-store";
 import { isAdmin } from "@/lib/auth";
 import {
   adminProcedure,
@@ -371,6 +372,7 @@ export const adminRouter = createTRPCRouter({
         throw new Error(`Scout worker returned ${res.status}: ${text}`);
       }
 
+      setActiveBatch(batchId, input.count);
       return { batchId, count: input.count };
     }),
 });

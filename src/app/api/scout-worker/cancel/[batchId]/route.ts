@@ -1,5 +1,6 @@
 import { auth, isAdmin } from "@/lib/auth";
 import { env } from "@/env";
+import { finishBatch } from "@/lib/scout-batch-store";
 
 export const dynamic = "force-dynamic";
 
@@ -28,5 +29,6 @@ export async function POST(
     },
   );
 
+  finishBatch(batchId, "cancelled");
   return Response.json(await upstream.json(), { status: upstream.status });
 }

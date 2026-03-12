@@ -97,6 +97,16 @@ export function GraphViewer({
     };
     requestAnimationFrame(check);
   }, []);
+
+  // Block wheel/pinch zoom when disableZoom is set
+  useEffect(() => {
+    if (!disableZoom) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const blockWheel = (e: WheelEvent) => e.preventDefault();
+    el.addEventListener("wheel", blockWheel, { passive: false });
+    return () => el.removeEventListener("wheel", blockWheel);
+  }, [disableZoom]);
   const [tooltip, setTooltip] = useState<{
     type: "node" | "edge";
     label: string;
@@ -284,7 +294,6 @@ export function GraphViewer({
         edgeInterpolation="curved"
         layoutType="forceDirected2d"
         animated
-        {...(disableZoom ? { minDistance: 5000, maxDistance: 5000 } : {})}
       />
 
       {/* Tooltip */}

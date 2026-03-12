@@ -532,19 +532,9 @@ export default function HomePage() {
                                                 <Icon weight="bold" className={`size-3.5 ${color}`} />
                                                 {item.contributor && (
                                                     <span className="inline-flex items-center gap-1.5">
-                                                        {item.contributor.image ? (
-                                                            <Image
-                                                                src={item.contributor.image}
-                                                                alt=""
-                                                                width={16}
-                                                                height={16}
-                                                                className="size-4 rounded-full"
-                                                            />
-                                                        ) : (
-                                                            <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
-                                                                {(item.contributor.name ?? "?")[0]?.toUpperCase()}
-                                                            </span>
-                                                        )}
+                                                        <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
+                                                            {(item.contributor.name ?? "?")[0]?.toUpperCase()}
+                                                        </span>
                                                         <span className="font-medium text-foreground">
                                                             {item.contributor.name ?? "Agent"}
                                                         </span>
@@ -556,8 +546,9 @@ export default function HomePage() {
                                                 {item.topic && (
                                                     <button
                                                         onClick={() => navigateToSlug(item.topic!.id)}
-                                                        className="font-medium text-brand-blue hover:underline"
+                                                        className="inline-flex items-center gap-1 text-foreground hover:underline"
                                                     >
+                                                        <TopicIcon icon={item.topic.icon} hue={item.topic.iconHue} size="sm" />
                                                         {item.topic.title}
                                                     </button>
                                                 )}
