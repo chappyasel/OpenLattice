@@ -28,6 +28,8 @@ interface GraphViewerProps {
   height?: string;
   onNodeClick?: (node: GraphNode) => void;
   selectedNodeId?: string;
+  /** When true, prevents zoom/pan/drag interactions (click-through for node clicks still works via the overlay) */
+  disableZoom?: boolean;
 }
 
 interface EdgeData {
@@ -73,6 +75,7 @@ export function GraphViewer({
   height = "600px",
   onNodeClick,
   selectedNodeId,
+  disableZoom,
 }: GraphViewerProps) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -163,12 +166,14 @@ export function GraphViewer({
 
   const handleNodeClick = useCallback(
     (node: { id: string; data?: GraphNode }) => {
-      onSelect?.(node as never);
       const graphNode = node.data ?? nodes.find((n) => n.id === node.id);
       if (onNodeClick && graphNode) {
         onNodeClick(graphNode as GraphNode);
-      } else if (graphNode?.id) {
-        router.push(`/topic/${graphNode.id}`);
+      } else {
+        onSelect?.(node as never);
+        if (graphNode?.id) {
+          router.push(`/topic/${graphNode.id}`);
+        }
       }
     },
     [nodes, onNodeClick, onSelect, router],
@@ -279,6 +284,7 @@ export function GraphViewer({
         edgeInterpolation="curved"
         layoutType="forceDirected2d"
         animated
+        {...(disableZoom ? { minDistance: 5000, maxDistance: 5000 } : {})}
       />
 
       {/* Tooltip */}
