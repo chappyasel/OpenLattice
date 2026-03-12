@@ -148,6 +148,7 @@ export async function runScoutCycle(
     resourcesReviewed: 0,
     scored: 0,
     bountiesPosted: 0,
+    restructuringBounties: 0,
     durationMs,
   };
 }

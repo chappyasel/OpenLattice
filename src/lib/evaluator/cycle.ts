@@ -12,6 +12,7 @@ import {
   suggestIcon,
   scoreResource,
   analyzeGaps,
+  suggestRestructuring,
 } from "./ai";
 import { verifyUrls, type UrlVerificationResult } from "./url-verify";
 
@@ -24,6 +25,8 @@ export interface EvaluatorConfig {
   maxSubmissions?: number;
   /** Run gap analysis this cycle? */
   runGapAnalysis?: boolean;
+  /** Run graph restructuring analysis this cycle? */
+  runRestructuring?: boolean;
   /** Signal to abort the cycle early */
   signal?: AbortSignal;
 }
@@ -69,6 +72,7 @@ export interface CycleResult {
   resourcesReviewed: number;
   scored: number;
   bountiesPosted: number;
+  restructuringBounties: number;
   durationMs: number;
 }
 
@@ -988,6 +992,95 @@ async function doGapAnalysis(
   }
 }
 
+async function doGraphRestructuring(
+  trpc: ReturnType<typeof createTrpcClient>,
+  log: Logger,
+): Promise<number> {
+  const MAX_RESTRUCTURING_BOUNTIES = 5;
+
+  try {
+    const topics = await trpc.query<
+      Array<{
+        id: string;
+        title: string;
+        summary: string | null;
+        content: string;
+        parentTopicId: string | null;
+        depth: number;
+        baseId: string | null;
+        topicResources: Array<{ resource: { type: string } }>;
+        childTopics: Array<{ id: string }>;
+      }>
+    >("topics.list", { status: "published" });
+
+    if (!topics?.length || topics.length < 10) {
+      log("  [restructure] Not enough topics for restructuring analysis (need 10+)");
+      return 0;
+    }
+
+    const treeStats = topics.map((t) => ({
+      id: t.id,
+      title: t.title,
+      summary: t.summary,
+      parentTopicId: t.parentTopicId,
+      depth: t.depth ?? 0,
+      childCount: t.childTopics?.length ?? 0,
+      resourceCount: t.topicResources?.length ?? 0,
+      contentLength: t.content?.length ?? 0,
+      baseSlug: t.baseId,
+    }));
+
+    log(`  [restructure] Analyzing ${treeStats.length} topics for structural issues...`);
+
+    const { result, durationMs } = await suggestRestructuring(treeStats);
+
+    // Fetch existing bounties for dedup
+    const openBounties = await trpc.query<
+      Array<{ id: string; title: string; status: string }>
+    >("bounties.listOpen", {});
+    const existingTitles = new Set(
+      (openBounties ?? []).map((b) => b.title.toLowerCase()),
+    );
+
+    let posted = 0;
+    for (const suggestion of result.suggestions) {
+      if (posted >= MAX_RESTRUCTURING_BOUNTIES) break;
+      if (suggestion.confidence < 60) {
+        log(`  [restructure] Skipped "${suggestion.suggestedBounty.title}" (confidence ${suggestion.confidence} < 60)`);
+        continue;
+      }
+
+      // Dedup by title prefix match
+      const titleLower = suggestion.suggestedBounty.title.toLowerCase();
+      if (existingTitles.has(titleLower)) {
+        log(`  [restructure] Skipped "${suggestion.suggestedBounty.title}" — similar bounty exists`);
+        continue;
+      }
+
+      try {
+        await trpc.mutation("evaluator.postBounty", {
+          title: suggestion.suggestedBounty.title,
+          description: `${suggestion.suggestedBounty.description}\n\n**Type:** ${suggestion.type}\n**Reasoning:** ${suggestion.reasoning}${suggestion.targetParentSlug ? `\n**Target parent:** ${suggestion.targetParentSlug}` : ""}${suggestion.mergeWithSlug ? `\n**Merge with:** ${suggestion.mergeWithSlug}` : ""}`,
+          type: "edit" as const,
+          topicSlug: suggestion.topicSlug,
+          karmaReward: suggestion.suggestedBounty.karmaReward,
+        });
+        posted++;
+        existingTitles.add(titleLower);
+        log(`  [restructure] Posted bounty: "${suggestion.suggestedBounty.title}" (${suggestion.type}, confidence: ${suggestion.confidence})`);
+      } catch (err: any) {
+        log(`  [restructure] Failed to post bounty: ${err.message}`);
+      }
+    }
+
+    log(`  [restructure] Analysis complete (${durationMs}ms), posted ${posted} restructuring bounties`);
+    return posted;
+  } catch (err: any) {
+    log(`  [restructure] Graph restructuring failed: ${err.message}`);
+    return 0;
+  }
+}
+
 async function recalculateReputation(
   trpc: ReturnType<typeof createTrpcClient>,
   log: Logger,
@@ -1018,7 +1111,8 @@ export async function runEvaluationCycle(
   let reviewed = 0,
     resourcesReviewed = 0,
     scored = 0,
-    bountiesPosted = 0;
+    bountiesPosted = 0,
+    restructuringBounties = 0;
 
   try {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -1029,7 +1123,7 @@ export async function runEvaluationCycle(
       consensusMode,
     );
   } catch (err: any) {
-    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
     log(`[Arbiter] reviewPendingSubmissions failed: ${err.message}`);
   }
 
@@ -1041,7 +1135,7 @@ export async function runEvaluationCycle(
       config.maxSubmissions,
     );
   } catch (err: any) {
-    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
     log(`[Arbiter] reviewPendingResources failed: ${err.message}`);
   }
 
@@ -1049,7 +1143,7 @@ export async function runEvaluationCycle(
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     scored = await scoreUnscoredResources(trpc, log);
   } catch (err: any) {
-    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
     log(`[Arbiter] scoreUnscoredResources failed: ${err.message}`);
   }
 
@@ -1058,8 +1152,18 @@ export async function runEvaluationCycle(
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       bountiesPosted = await doGapAnalysis(trpc, log);
     } catch (err: any) {
-      if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+      if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
       log(`[Arbiter] runGapAnalysis failed: ${err.message}`);
+    }
+  }
+
+  if (config.runRestructuring) {
+    try {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      restructuringBounties = await doGraphRestructuring(trpc, log);
+    } catch (err: any) {
+      if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
+      log(`[Arbiter] runRestructuring failed: ${err.message}`);
     }
   }
 
@@ -1067,7 +1171,7 @@ export async function runEvaluationCycle(
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     await recalculateReputation(trpc, log);
   } catch (err: any) {
-    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs: Date.now() - start }; }
+    if (err?.name === "AbortError") { log("[Arbiter] Cancelled"); return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs: Date.now() - start }; }
     log(`[Arbiter] recalculateReputation failed: ${err.message}`);
   }
 
@@ -1076,8 +1180,9 @@ export async function runEvaluationCycle(
   log(
     `\n[Arbiter] Cycle complete in ${elapsed}s` +
       ` — expansions: ${reviewed}, resources: ${resourcesReviewed}, scored: ${scored}` +
-      (bountiesPosted > 0 ? `, bounties: ${bountiesPosted}` : ""),
+      (bountiesPosted > 0 ? `, bounties: ${bountiesPosted}` : "") +
+      (restructuringBounties > 0 ? `, restructuring: ${restructuringBounties}` : ""),
   );
 
-  return { reviewed, resourcesReviewed, scored, bountiesPosted, durationMs };
+  return { reviewed, resourcesReviewed, scored, bountiesPosted, restructuringBounties, durationMs };
 }
