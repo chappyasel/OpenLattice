@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { env } from "@/env";
@@ -54,7 +54,7 @@ export const adminRouter = createTRPCRouter({
 
   listPendingSubmissions: adminProcedure.query(async ({ ctx }) => {
     return ctx.db.query.submissions.findMany({
-      where: eq(submissions.status, "pending"),
+      where: inArray(submissions.status, ["pending", "revision_requested"]),
       with: { contributor: true, bounty: true },
       orderBy: (s, { asc }) => [asc(s.createdAt)],
       limit: 50,
