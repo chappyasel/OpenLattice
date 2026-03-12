@@ -278,7 +278,7 @@ export const toolDefinitions = [
         },
         baseSlug: {
           type: "string",
-          description: "Base slug to assign this topic to (optional — inherited from parent topic if not specified)",
+          description: "Base slug to assign this topic to. REQUIRED for root topics (no parentTopicSlug). Inherited from parent topic if omitted for subtopics. Use list_bases to see available bases.",
         },
       },
       required: ["topic"],
