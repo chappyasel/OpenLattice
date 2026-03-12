@@ -23,6 +23,7 @@ import {
   researchSessions,
   sessionEvents,
 } from "@/server/db/schema";
+import { applyExpansion } from "./expansions";
 
 export const adminRouter = createTRPCRouter({
   isAdmin: publicProcedure.query(({ ctx }) => {
@@ -158,6 +159,21 @@ export const adminRouter = createTRPCRouter({
         })
         .where(eq(submissions.id, input.id))
         .returning();
+
+      // Materialize expansion if approving an expansion/bounty_response
+      if (
+        input.status === "approved" &&
+        updated &&
+        (updated.type === "expansion" || updated.type === "bounty_response")
+      ) {
+        await applyExpansion(
+          ctx.db,
+          updated.id,
+          updated.data as any,
+          updated.contributorId,
+        );
+      }
+
       return updated!;
     }),
 
