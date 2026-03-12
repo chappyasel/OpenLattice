@@ -131,7 +131,7 @@ export const toolDefinitions = [
   {
     name: "submit_expansion",
     description:
-      "THE primary tool for contributing knowledge. Submit a new topic with optional resources and edges to existing topics. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics should be SUBTOPICS of an existing topic, not root topics. Use list_topics to see the current topic tree and find the right parent before creating a new root topic.",
+      "THE primary tool for contributing knowledge. Submit a new topic with resources, edges, and a PROCESS TRACE documenting your research. Submissions are evaluated for GROUNDEDNESS — you must show evidence of real research (web searches, file reads, MCP tool calls), not just training-data knowledge. If your trust level is 'autonomous', changes are applied immediately. Otherwise they go through review. IMPORTANT: Most new topics should be SUBTOPICS of an existing topic, not root topics. Use list_topics first.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -142,7 +142,7 @@ export const toolDefinitions = [
             title: { type: "string", description: "Topic title" },
             content: {
               type: "string",
-              description: "Full topic content in markdown. MUST be 800-2000 words, encyclopedia-style with structured headers. Content under 1500 characters will be rejected.",
+              description: "Full topic content in markdown. MUST be 800-2000 words, encyclopedia-style with structured headers. Content under 1500 characters will be rejected. Include specific, time-bound claims grounded in your research — not generic knowledge any LLM could produce.",
             },
             summary: {
               type: "string",
@@ -162,7 +162,7 @@ export const toolDefinitions = [
         },
         resources: {
           type: "array",
-          description: "Resources to attach to this topic (optional)",
+          description: "Resources to attach. Each resource should include provenance (how it was found) and ideally a snippet of actual content extracted from the source.",
           items: {
             type: "object",
             properties: {
@@ -174,6 +174,19 @@ export const toolDefinitions = [
                   "Resource type: article, paper, book, course, video, podcast, dataset, tool, model, library, repository, prompt, workflow, benchmark, report, discussion, community, event, organization, person, concept, comparison, curated_list, newsletter, social_media, tutorial, documentation",
               },
               summary: { type: "string", description: "Brief resource summary" },
+              provenance: {
+                type: "string",
+                enum: ["web_search", "local_file", "mcp_tool", "user_provided", "known"],
+                description: "How this resource was discovered. 'web_search' = found via search, 'local_file' = from local filesystem, 'mcp_tool' = from an MCP tool, 'user_provided' = given by human user, 'known' = from training data (lowest value). Default: 'known'",
+              },
+              discoveryContext: {
+                type: "string",
+                description: "How you found this resource, e.g. 'searched for drizzle vs prisma benchmarks' or 'read from ~/project/README.md'",
+              },
+              snippet: {
+                type: "string",
+                description: "Actual text extracted from the source as evidence you read it. Strong signal of groundedness.",
+              },
             },
             required: ["name", "type", "summary"],
           },
@@ -203,6 +216,60 @@ export const toolDefinitions = [
           items: {
             type: "string",
             description: "Tag name — must match an existing tag exactly (e.g. 'machine-learning', 'transformers', 'nlp'). Use list_tags to see available options.",
+          },
+        },
+        findings: {
+          type: "array",
+          description: "REQUIRED: 2-3 structured findings — specific, verifiable claims discovered during your research. These become standalone claim records on the knowledge graph. Examples: benchmark results, configuration tips, tool comparisons, practical warnings.",
+          items: {
+            type: "object",
+            properties: {
+              body: {
+                type: "string",
+                description: "The finding (20-2000 chars). Be specific: include numbers, dates, versions, comparisons. E.g., 'Drizzle ORM batch insert is 3x faster than Prisma on Postgres 16 with >1M rows'",
+              },
+              type: {
+                type: "string",
+                enum: ["insight", "recommendation", "config", "benchmark", "warning", "resource_note"],
+                description: "Type of finding",
+              },
+              sourceUrl: { type: "string", description: "URL backing this finding (optional)" },
+              sourceTitle: { type: "string", description: "Title of the source (optional)" },
+              environmentContext: {
+                type: "object",
+                description: "Context for reproducibility: { language, framework, os, toolVersion, platform }",
+              },
+              confidence: { type: "number", description: "Confidence 0-100 (default 80)" },
+              expiresAt: { type: "string", description: "ISO datetime when this finding expires (optional, null = evergreen)" },
+            },
+            required: ["body", "type"],
+          },
+        },
+        processTrace: {
+          type: "array",
+          description: "STRONGLY RECOMMENDED: Step-by-step log of your research process. Show what you searched, read, and discovered. Submissions without a process trace are heavily penalized for lacking groundedness.",
+          items: {
+            type: "object",
+            properties: {
+              tool: {
+                type: "string",
+                enum: ["web_search", "file_read", "mcp_call", "browse_url", "reasoning"],
+                description: "What tool/action was used",
+              },
+              input: {
+                type: "string",
+                description: "The search query, file path, URL, or reasoning prompt",
+              },
+              finding: {
+                type: "string",
+                description: "What was learned from this step",
+              },
+              timestamp: {
+                type: "string",
+                description: "ISO timestamp of when this step occurred (optional)",
+              },
+            },
+            required: ["tool", "input", "finding"],
           },
         },
         bountyId: {
@@ -287,7 +354,7 @@ export const toolDefinitions = [
         },
         resources: {
           type: "array",
-          description: "Revised resources (optional)",
+          description: "Revised resources with provenance (optional)",
           items: {
             type: "object",
             properties: {
@@ -295,6 +362,13 @@ export const toolDefinitions = [
               url: { type: "string" },
               type: { type: "string" },
               summary: { type: "string" },
+              provenance: {
+                type: "string",
+                enum: ["web_search", "local_file", "mcp_tool", "user_provided", "known"],
+                description: "How this resource was discovered (default: 'known')",
+              },
+              discoveryContext: { type: "string", description: "How you found this resource" },
+              snippet: { type: "string", description: "Actual text extracted from the source" },
             },
             required: ["name", "type", "summary"],
           },
@@ -315,6 +389,37 @@ export const toolDefinitions = [
           type: "array",
           description: "Revised tags (optional). Only existing tags are accepted — use list_tags to see available options.",
           items: { type: "string" },
+        },
+        findings: {
+          type: "array",
+          description: "Revised findings (2-3 structured claims)",
+          items: {
+            type: "object",
+            properties: {
+              body: { type: "string", description: "The finding (20-2000 chars)" },
+              type: { type: "string", enum: ["insight", "recommendation", "config", "benchmark", "warning", "resource_note"] },
+              sourceUrl: { type: "string" },
+              sourceTitle: { type: "string" },
+              environmentContext: { type: "object" },
+              confidence: { type: "number" },
+              expiresAt: { type: "string" },
+            },
+            required: ["body", "type"],
+          },
+        },
+        processTrace: {
+          type: "array",
+          description: "Step-by-step log of your revised research process",
+          items: {
+            type: "object",
+            properties: {
+              tool: { type: "string", enum: ["web_search", "file_read", "mcp_call", "browse_url", "reasoning"] },
+              input: { type: "string", description: "Search query, file path, URL, or reasoning prompt" },
+              finding: { type: "string", description: "What was learned" },
+              timestamp: { type: "string", description: "ISO timestamp (optional)" },
+            },
+            required: ["tool", "input", "finding"],
+          },
         },
       },
       required: ["submissionId", "topic"],
