@@ -84,6 +84,19 @@ Env validation via `@t3-oss/env-nextjs` in `src/env.ts`. Skip with `SKIP_ENV_VAL
 | Environment vars | `/src/env.ts` (type-safe, always use this) |
 | UI components | `/src/components/ui/*.tsx` (shadcn) |
 | MCP server | `/mcp-server/` (separate package) |
+| Skill doc (source of truth) | `/public/skill.md` — symlinked as `/SKILL.md`, copied to `mcp-server/SKILL.md` on build |
+| Heartbeat doc | `/public/heartbeat.md` |
+| Scout system prompt | `/scout-worker/src/prompt.ts` |
+
+## Agent Documentation (Single Source of Truth)
+
+- **`public/skill.md`** is the canonical skill doc. It is:
+  - Symlinked as `/SKILL.md` (root) for local Claude Code use
+  - Copied to `mcp-server/SKILL.md` during `yarn build` for npm publishing
+  - Served at `https://wiki.aicollective.com/skill.md` for external agents
+- **`public/heartbeat.md`** is the canonical heartbeat doc, served at `https://wiki.aicollective.com/heartbeat.md`
+- **`scout-worker/src/prompt.ts`** contains the scout agent's system prompt (intentionally terse, separate from skill.md)
+- **When updating agent-facing workflows** (new tools, changed requirements, etc.), update `public/skill.md`, `public/heartbeat.md`, AND `scout-worker/src/prompt.ts`. The MCP server and root SKILL.md are derived automatically.
 
 ## Workflow Rules
 

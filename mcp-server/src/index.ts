@@ -29,6 +29,7 @@ import {
   handleListEvaluatableSubmissions,
   handleEvaluateSubmission,
   handleStartResearchSession,
+  handleLogResearchEvent,
   handleEndResearchSession,
   handleListClaims,
   handleFlagIssue,
@@ -104,6 +105,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     case "start_research_session":
       return handleStartResearchSession(args as { targetTopic?: string; bountyId?: string; description?: string });
+
+    case "log_research_event":
+      return handleLogResearchEvent(args as { tool: string; input: string; finding: string });
 
     case "end_research_session":
       return handleEndResearchSession();

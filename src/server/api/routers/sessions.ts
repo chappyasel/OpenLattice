@@ -107,6 +107,37 @@ export const sessionsRouter = createTRPCRouter({
       return session;
     }),
 
+  /** Log an external research event (web search, file read, etc.) into the active session */
+  logEvent: apiKeyProcedure
+    .input(
+      z.object({
+        tool: z.enum(["web_search", "file_read", "browse_url", "mcp_call", "reasoning"]),
+        input: z.string().max(1000).describe("Search query, file path, URL, or reasoning prompt"),
+        finding: z.string().max(2000).describe("What was learned from this step"),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const sessionId = ctx.sessionId;
+      if (!sessionId) {
+        throw new Error(
+          "No active research session. Start one with start_research_session first, then your X-Session-Id header will be set automatically.",
+        );
+      }
+
+      await ctx.db.insert(sessionEvents).values({
+        id: activityId("evt", sessionId),
+        sessionId,
+        procedure: `external.${input.tool}`,
+        input: {
+          query: input.input,
+          finding: input.finding,
+        },
+        durationMs: null,
+      });
+
+      return { logged: true };
+    }),
+
   getForSubmission: evaluatorProcedure
     .input(z.object({ submissionId: z.string() }))
     .query(async ({ ctx, input }) => {

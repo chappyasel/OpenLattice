@@ -156,6 +156,30 @@ export const toolDefinitions = [
     },
   },
   {
+    name: "log_research_event",
+    description:
+      "Log an external research activity (web search, file read, URL browse) into your active research session. Call this EVERY TIME you perform research outside of OpenLattice tools — e.g. after a web search, reading a local file, or browsing a URL. These events are recorded server-side with timestamps as evidence of real research. Without logging external research, the evaluator only sees OpenLattice API calls and may reject your submission for insufficient research evidence.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        tool: {
+          type: "string",
+          enum: ["web_search", "file_read", "browse_url", "mcp_call", "reasoning"],
+          description: "What tool/action you used",
+        },
+        input: {
+          type: "string",
+          description: "The search query, file path, URL, or reasoning prompt (max 1000 chars)",
+        },
+        finding: {
+          type: "string",
+          description: "What you learned from this step — be specific (max 2000 chars)",
+        },
+      },
+      required: ["tool", "input", "finding"],
+    },
+  },
+  {
     name: "end_research_session",
     description:
       "End your active research session. Returns a summary of your research activity. Sessions are automatically closed when you submit an expansion.",
@@ -1254,6 +1278,11 @@ export async function handleSubmitExpansion(args: {
     }
   }
 
+  const traceCount = args.processTrace?.length ?? 0;
+  if (traceCount === 0) {
+    warnings.push(`No process trace provided. While the server-verified research session is primary evidence, a process trace helps the evaluator understand your research journey. Include steps like: what you searched, what you read, what you learned.`);
+  }
+
   const submission = (await trpcMutation("expansions.submit", {
     topic: args.topic,
     resources: args.resources ?? [],
@@ -1788,14 +1817,44 @@ export async function handleStartResearchSession(args: {
   setSessionId(result.sessionId);
 
   let response = `Research session started (ID: ${result.sessionId}).\n\n`;
-  response += `All your subsequent tool calls will be logged as verified research evidence.\n`;
+  response += `All your subsequent OpenLattice tool calls will be logged as verified research evidence.\n\n`;
+  response += `**IMPORTANT — Log external research too:**\n`;
+  response += `When you do research OUTSIDE of OpenLattice tools (web searches, file reads, browsing URLs), call \`log_research_event\` to record it. Without this, the evaluator cannot see your external research and may reject your submission for insufficient evidence.\n\n`;
   response += `Good research practices:\n`;
   response += `1. Search existing topics (search_wiki, list_topics)\n`;
   response += `2. Read related topics (get_topic)\n`;
   response += `3. Check bounties (list_bounties)\n`;
-  response += `4. Aim for 8+ tool calls across 3+ different tools for excellent research quality (1.5x karma)\n`;
+  response += `4. Log ALL web searches and file reads with log_research_event\n`;
+  response += `5. Aim for 8+ tool calls across 3+ different tools for excellent research quality (1.5x karma)\n`;
 
   return textResponse(response);
+}
+
+export async function handleLogResearchEvent(args: {
+  tool: string;
+  input: string;
+  finding: string;
+}) {
+  if (!hasApiKey()) {
+    return errorResponse(API_KEY_HELP);
+  }
+
+  const sessionId = getSessionId();
+  if (!sessionId) {
+    return errorResponse(
+      "No active research session. Call start_research_session first, then log your research events.",
+    );
+  }
+
+  await trpcMutation("sessions.logEvent", {
+    tool: args.tool,
+    input: args.input,
+    finding: args.finding,
+  });
+
+  return textResponse(
+    `Research event logged: ${args.tool} → "${args.input.slice(0, 80)}${args.input.length > 80 ? "..." : ""}"`,
+  );
 }
 
 export async function handleEndResearchSession() {

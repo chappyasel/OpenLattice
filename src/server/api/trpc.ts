@@ -37,8 +37,61 @@ const t = initTRPC
 export const { createCallerFactory } = t;
 export const createTRPCRouter = t.router;
 
-/** Public (unauthenticated) procedure */
-export const publicProcedure = t.procedure;
+/**
+ * Public (unauthenticated) procedure — with optional session event logging.
+ * If both Authorization and X-Session-Id headers are present (i.e. an MCP agent
+ * calling a read-only endpoint during a research session), the middleware
+ * validates the session and logs the tool call as a session event.
+ * No auth is required — the middleware is purely additive.
+ */
+export const publicProcedure = t.procedure.use(async ({ next, ctx, path, getRawInput }) => {
+  const start = Date.now();
+  const result = await next({ ctx });
+
+  // Fire-and-forget: log session event if agent headers are present
+  const authHeader = ctx.headers.get("authorization");
+  const sessionId = ctx.headers.get("x-session-id");
+
+  if (authHeader && sessionId && !path.startsWith("sessions.")) {
+    const [scheme, token] = authHeader.split(" ");
+    if (scheme === "Bearer" && token) {
+      const keyHash = crypto.createHash("sha256").update(token).digest("hex");
+      // Validate contributor + session in parallel, then insert event
+      Promise.all([
+        ctx.db.query.contributors.findFirst({
+          where: eq(contributors.apiKey, keyHash),
+        }),
+      ])
+        .then(async ([contributor]) => {
+          if (!contributor) return;
+          const session = await ctx.db.query.researchSessions.findFirst({
+            where: and(
+              eq(researchSessions.id, sessionId),
+              eq(researchSessions.contributorId, contributor.id),
+              eq(researchSessions.status, "active"),
+            ),
+          });
+          if (!session) return;
+          const ageMs = Date.now() - new Date(session.createdAt).getTime();
+          if (ageMs >= 24 * 60 * 60 * 1000) return;
+
+          const rawInput = await getRawInput();
+          await ctx.db.insert(sessionEvents).values({
+            id: activityId("evt", sessionId),
+            sessionId,
+            procedure: path,
+            input: sanitizeInput(rawInput),
+            durationMs: Date.now() - start,
+          });
+        })
+        .catch(() => {
+          // Silently ignore — session logging is best-effort
+        });
+    }
+  }
+
+  return result;
+});
 
 /** Protected: requires NextAuth session */
 export const protectedProcedure = t.procedure.use(async ({ next, ctx }) => {

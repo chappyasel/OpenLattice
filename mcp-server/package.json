@@ -16,7 +16,7 @@
     "package.json"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "cp ../public/skill.md SKILL.md && tsup",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
