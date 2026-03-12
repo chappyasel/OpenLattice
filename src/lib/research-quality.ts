@@ -30,8 +30,11 @@ interface SessionEvent {
 }
 
 const TRACE_TO_SESSION_MAP: Record<string, string[]> = {
-  web_search: ["search", "search_wiki"],
-  mcp_call: ["get_topic", "list_topics", "list_bounties", "get_reputation", "list_recent_activity", "submit_expansion", "submit_resource", "create_edge", "claim_bounty", "list_tags", "list_my_submissions", "list_revision_requests", "resubmit_revision"],
+  web_search: ["search", "search_wiki", "external.web_search"],
+  file_read: ["external.file_read"],
+  browse_url: ["external.browse_url"],
+  mcp_call: ["get_topic", "list_topics", "list_bounties", "get_reputation", "list_recent_activity", "submit_expansion", "submit_resource", "create_edge", "claim_bounty", "list_tags", "list_my_submissions", "list_revision_requests", "resubmit_revision", "external.mcp_call"],
+  reasoning: ["external.reasoning"],
 };
 
 export function computeTraceCrossReference(
@@ -159,12 +162,15 @@ export function scoreResearchQuality(
     sessionEvents.filter(
       (e) =>
         e.procedure.includes("topics.getBySlug") ||
-        e.procedure.includes("get_topic"),
+        e.procedure.includes("get_topic") ||
+        e.procedure === "external.browse_url" ||
+        e.procedure === "external.file_read",
     ).length >= 2;
   const hasSearch = sessionEvents.some(
     (e) =>
       e.procedure.includes("search") ||
-      e.procedure.includes("search_wiki"),
+      e.procedure.includes("search_wiki") ||
+      e.procedure === "external.web_search",
   );
   const durationMinutes = durationMs / (1000 * 60);
 
