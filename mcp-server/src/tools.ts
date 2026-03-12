@@ -40,13 +40,18 @@ export const toolDefinitions = [
   {
     name: "list_bounties",
     description:
-      "List open bounties on OpenLattice. Bounties reward contributors with karma for completing specific knowledge tasks.",
+      "List open bounties on OpenLattice, sorted by karma reward (highest first). Bounties reward contributors with karma for completing specific knowledge tasks.",
     inputSchema: {
       type: "object" as const,
       properties: {
         baseSlug: {
           type: "string",
           description: "Filter bounties by base slug (optional)",
+        },
+        limit: {
+          type: "number",
+          description:
+            "Maximum number of bounties to return (default 20, max 100)",
         },
       },
       required: [],
@@ -830,11 +835,17 @@ export async function handleGetKarmaBalance() {
   return textResponse(result.trim());
 }
 
-export async function handleListBounties(args: { baseSlug?: string }) {
+export async function handleListBounties(args: {
+  baseSlug?: string;
+  limit?: number;
+}) {
   if (!hasApiKey()) {
     return errorResponse(API_KEY_HELP);
   }
-  const bounties = (await trpcQuery("bounties.listOpen", args.baseSlug ? { baseSlug: args.baseSlug } : {})) as Array<{
+  const allBounties = (await trpcQuery(
+    "bounties.listOpen",
+    args.baseSlug ? { baseSlug: args.baseSlug } : {},
+  )) as Array<{
     id: string;
     title: string;
     description: string;
@@ -846,24 +857,37 @@ export async function handleListBounties(args: { baseSlug?: string }) {
     topic: { title: string; id: string } | null;
   }>;
 
-  if (bounties.length === 0) {
+  if (allBounties.length === 0) {
     return textResponse("No open bounties at the moment. Check back later!");
   }
 
-  let result = `## Available Bounties (${bounties.length})\n\n`;
+  // Sort by karma reward descending, then limit
+  const sorted = allBounties.sort((a, b) => b.karmaReward - a.karmaReward);
+  const limit = Math.min(Math.max(args.limit ?? 20, 1), 100);
+  const bounties = sorted.slice(0, limit);
+
+  let result = `## Available Bounties (showing ${bounties.length} of ${allBounties.length}, sorted by karma)\n\n`;
   for (const b of bounties) {
     result += `- **${b.title}** (ID: \`${b.id}\`)\n`;
-    result += `  Type: ${b.type} | Karma reward: ${b.karmaReward}`;
+    result += `  Type: ${b.type} | Karma: ${b.karmaReward}`;
     if (b.status === "claimed" && b.claimedBy && b.claimExpiresAt) {
       result += ` | Claimed by ${b.claimedBy.name} until ${b.claimExpiresAt}`;
     }
     result += "\n";
     if (b.topic) {
-      result += `  Related topic: ${b.topic.title} (\`${b.topic.id}\`)\n`;
+      result += `  Topic: ${b.topic.title} (\`${b.topic.id}\`)\n`;
     }
-    result += `  ${b.description}\n\n`;
+    // Truncate long descriptions to save tokens
+    const desc =
+      b.description.length > 150
+        ? b.description.slice(0, 150) + "..."
+        : b.description;
+    result += `  ${desc}\n\n`;
   }
 
+  if (bounties.length < allBounties.length) {
+    result += `> ${allBounties.length - bounties.length} more bounties available. Use \`limit\` parameter to see more.\n`;
+  }
   result += `> Tip: Use claim_bounty before starting work to prevent duplicate effort.`;
 
   return textResponse(result.trim());

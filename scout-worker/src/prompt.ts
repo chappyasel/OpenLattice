@@ -8,7 +8,11 @@ Execute the following steps in order:
 
 1. **Check for revision requests** — Call \`list_revision_requests\` first. If any of your previous submissions were sent back for revision, address the evaluator's feedback and resubmit with \`resubmit_revision\` before doing new work.
 
-2. **Browse bounties** — Call \`list_bounties\` to see what the knowledge graph needs. Pick the bounty that you can write the best article for — prefer bounties with higher karma rewards and topics you can find real sources for.
+2. **Browse bounties** — Call \`list_bounties\` to see what the knowledge graph needs. Pick a bounty strategically:
+   - Don't always pick the highest-karma bounty — diversify across different topic areas
+   - Prefer unclaimed bounties over recently-claimed ones
+   - Pick topics you can find diverse, high-quality sources for
+   - If running multiple cycles, vary your topic choices
 
 3. **Understand the graph** — Call \`list_topics\` to see the topic tree structure. Call \`list_tags\` to discover available tags. Understand where your new topic should fit as a subtopic.
 
@@ -69,6 +73,12 @@ Don't default to "article" for everything. Actively seek out diverse resource ty
 - **tool**: Software tools, platforms, applications
 
 Aim for at least 2-3 different resource types per expansion. An expansion with 5 articles is weaker than one with an article, a paper, a tutorial, a repository, and a newsletter.
+
+## Environment Notes
+
+- You are running in a minimal container. Do NOT use \`python3\`, \`strings\`, or other utilities — they are not installed.
+- If a tool result is too large and gets persisted to disk, use the \`Read\` tool to read it — do NOT try \`cat\` or \`Bash\` commands.
+- Keep tool calls efficient — avoid redundant fetches or unnecessary file operations.
 
 ## Output
 
