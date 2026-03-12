@@ -904,7 +904,8 @@ function ContributorManager() {
 
 function SubmissionQueue() {
   const utils = api.useUtils();
-  const { data: pending, isLoading } = api.admin.listPendingSubmissions.useQuery();
+  const { data: allSubmissions, isLoading } = api.admin.listPendingSubmissions.useQuery();
+  const [tab, setTab] = useState<"pending" | "revision_requested">("pending");
   const reviewMutation = api.admin.reviewSubmission.useMutation({
     onSuccess: () => {
       void utils.admin.listPendingSubmissions.invalidate();
@@ -912,10 +913,14 @@ function SubmissionQueue() {
     },
   });
 
+  const pending = allSubmissions?.filter((s) => s.status === "pending") ?? [];
+  const revisionRequested = allSubmissions?.filter((s) => s.status === "revision_requested") ?? [];
+  const filtered = tab === "pending" ? pending : revisionRequested;
+
   if (isLoading) {
     return (
       <div className="mb-8 rounded-2xl border border-border/50 bg-card p-6">
-        <h2 className="mb-4 text-base font-semibold">Pending Submissions</h2>
+        <h2 className="mb-4 text-base font-semibold">Submissions</h2>
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="h-20 animate-pulse rounded-xl bg-muted/30" />
@@ -930,23 +935,54 @@ function SubmissionQueue() {
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <ClipboardIcon weight="bold" className="size-4 text-brand-blue" />
-          <h2 className="text-base font-semibold">Pending Submissions</h2>
-          {pending && pending.length > 0 && (
-            <span className="rounded-full bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 text-xs font-medium text-yellow-400">
-              {pending.length}
-            </span>
-          )}
+          <h2 className="text-base font-semibold">Submissions</h2>
+        </div>
+        <div className="flex items-center gap-1 rounded-lg border border-border/50 bg-muted/20 p-0.5">
+          <button
+            onClick={() => setTab("pending")}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              tab === "pending"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Pending
+            {pending.length > 0 && (
+              <span className="rounded-full bg-yellow-500/10 border border-yellow-500/20 px-1.5 py-0.5 text-[10px] font-medium text-yellow-400">
+                {pending.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setTab("revision_requested")}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              tab === "revision_requested"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Revision Requested
+            {revisionRequested.length > 0 && (
+              <span className="rounded-full bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 text-[10px] font-medium text-orange-400">
+                {revisionRequested.length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
-      {!pending?.length ? (
+      {!filtered.length ? (
         <div className="flex flex-col items-center justify-center rounded-xl border border-border/30 py-12 text-center">
           <CheckCircleIcon weight="thin" className="mb-2 size-10 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">No pending submissions</p>
+          <p className="text-sm text-muted-foreground">
+            {tab === "pending" ? "No pending submissions" : "No revision requests"}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {pending.map((sub) => {
+          {filtered.map((sub) => {
             const data = sub.data as Record<string, unknown> | null;
             const topicTitle = (data?.topic as any)?.title;
             return (
@@ -975,6 +1011,11 @@ function SubmissionQueue() {
                   </div>
                   {topicTitle && (
                     <p className="text-sm font-medium truncate">{topicTitle}</p>
+                  )}
+                  {sub.status === "revision_requested" && sub.reviewReasoning && (
+                    <p className="mt-1 text-xs text-orange-400/80 line-clamp-2">
+                      Feedback: {sub.reviewReasoning}
+                    </p>
                   )}
                   <p className="text-xs text-muted-foreground font-mono mt-0.5">
                     by {(sub.contributor as any)?.name ?? sub.agentName ?? "unknown"}
