@@ -29,6 +29,13 @@
       "when": 1773340800000,
       "tag": "0003_rename-collections-to-bases",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1773281763980,
+      "tag": "0004_certain_zeigeist",
+      "breakpoints": true
     }
   ]
 }
