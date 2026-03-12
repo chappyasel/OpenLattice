@@ -15,7 +15,7 @@ import {
   suggestRestructuring,
 } from "./ai";
 import { verifyUrls, type UrlVerificationResult } from "./url-verify";
-import { scoreResearchQuality } from "../research-quality";
+import { scoreResearchQuality, computeTraceCrossReference } from "../research-quality";
 
 // ─── Config & Types ──────────────────────────────────────────────────────
 
@@ -39,6 +39,7 @@ interface Submission {
   type: string;
   data: Record<string, unknown>;
   contributorId: string | null;
+  sessionId?: string | null;
   contributor?: {
     id: string;
     name: string;
@@ -264,7 +265,7 @@ async function reviewPendingSubmissions(
 
       // Fetch session data if submission has a sessionId
       let sessionData: Parameters<typeof reviewExpansion>[2] = null;
-      const submissionSessionId = (submission as any).sessionId;
+      const submissionSessionId = submission.sessionId;
       if (submissionSessionId) {
         try {
           const sessionResult = await trpc.query<{
@@ -286,6 +287,10 @@ async function reviewPendingSubmissions(
               sessionResult.createdAt,
               sessionResult.closedAt,
             );
+            const traceCrossRef = computeTraceCrossReference(
+              expansion.processTrace,
+              sessionResult.events,
+            );
             sessionData = {
               events: sessionResult.events,
               eventCount: sessionResult.events.length,
@@ -297,8 +302,10 @@ async function reviewPendingSubmissions(
                 multiplier: researchQuality.multiplier,
                 details: researchQuality.details,
               },
+              traceCrossReference: traceCrossRef,
             };
             log(`  [review] Session attached: ${sessionResult.events.length} events, quality: ${researchQuality.tier} (${researchQuality.multiplier}x)`);
+            log(`  [review] Trace cross-ref: ${traceCrossRef.summary}`);
           }
         } catch (err: any) {
           log(`  [review] Session fetch failed: ${err.message}`);
@@ -495,6 +502,22 @@ async function reviewPendingSubmissions(
         log(`  [review] Override: approve→revise (depth ${targetDepth} > 5 hard limit)`);
       }
 
+      // 1j. Session verification hard gate — session contradicts trace
+      if (
+        result.verdict === "approve" &&
+        sessionData &&
+        result.groundedness.sessionVerification !== null &&
+        result.groundedness.sessionVerification < 3
+      ) {
+        result.verdict = "revise";
+        result.reasoning = `Server-verified research session contradicts the self-reported process trace (sessionVerification: ${result.groundedness.sessionVerification}/10). ${result.reasoning}`;
+        result.improvementSuggestions = [
+          "Your self-reported process trace does not match the server-recorded research session. Ensure your process trace accurately reflects the research you actually performed.",
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (sessionVerification ${result.groundedness.sessionVerification} < 3 threshold)`);
+      }
+
       // 2. Edge suggestion + diff
       let edgeDiff: {
         submittedEdges: Array<{
@@ -668,7 +691,9 @@ async function reviewPendingSubmissions(
       const researchMultiplier = sessionData?.researchQuality?.multiplier ?? 0.5;
       const adjustedKarma = result.verdict === "approve"
         ? Math.round(baseKarma * researchMultiplier)
-        : baseKarma;
+        : result.verdict === "reject"
+          ? Math.round(baseKarma * (2 - researchMultiplier))  // 0.5x session → 1.5x penalty, 1.5x session → 0.5x penalty
+          : baseKarma;  // revise: unchanged
       const totalReputationDelta =
         adjustedKarma +
         (result.verdict !== "revise" ? (edgeDiff?.karmaDelta ?? 0) : 0);
