@@ -7,4 +7,6 @@ export default defineConfig({
   clean: true,
   dts: false,
   sourcemap: true,
+  // Keep SDK as external so its cli.js resolution works via node_modules
+  external: ["@anthropic-ai/claude-agent-sdk"],
 });

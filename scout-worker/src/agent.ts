@@ -1,6 +1,13 @@
+import { createRequire } from "node:module";
+import path from "node:path";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { createScoutMcpConfig } from "./tools.js";
 import { SCOUT_PROMPT } from "./prompt.js";
+
+// Resolve cli.js from the SDK package at runtime
+const require = createRequire(import.meta.url);
+const sdkEntry = require.resolve("@anthropic-ai/claude-agent-sdk");
+const CLI_PATH = path.join(path.dirname(sdkEntry), "cli.js");
 
 type Logger = (line: string) => void;
 
@@ -96,6 +103,7 @@ export async function runScoutCycle(
         "and submit a high-quality expansion with real, verified resources. " +
         "If time permits, work on additional bounties.",
       options: {
+        pathToClaudeCodeExecutable: CLI_PATH,
         systemPrompt: SCOUT_PROMPT,
         mcpServers,
         env,
