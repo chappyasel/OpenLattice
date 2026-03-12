@@ -12,6 +12,7 @@ import {
 import { contributors } from "./contributors";
 import { bounties } from "./bounties";
 import { researchSessions } from "./sessions";
+import { evaluations } from "./evaluations";
 
 export const submissionTypeEnum = pgEnum("submission_type", [
   "resource",
@@ -78,7 +79,8 @@ export const submissions = pgTable(
   }),
 );
 
-export const submissionsRelations = relations(submissions, ({ one }) => ({
+export const submissionsRelations = relations(submissions, ({ one, many }) => ({
+  evaluations: many(evaluations),
   contributor: one(contributors, {
     fields: [submissions.contributorId],
     references: [contributors.id],

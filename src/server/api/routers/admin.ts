@@ -19,6 +19,9 @@ import {
   topicResources,
   topicTags,
   activity,
+  evaluations,
+  researchSessions,
+  sessionEvents,
 } from "@/server/db/schema";
 
 export const adminRouter = createTRPCRouter({
@@ -59,6 +62,82 @@ export const adminRouter = createTRPCRouter({
       orderBy: (s, { asc }) => [asc(s.createdAt)],
       limit: 50,
     });
+  }),
+
+  listSubmissions: adminProcedure
+    .input(
+      z.object({
+        status: z.enum(["pending", "approved", "rejected", "revision_requested"]),
+        limit: z.number().min(1).max(100).default(50),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const [countResult] = await ctx.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(submissions)
+        .where(eq(submissions.status, input.status));
+
+      const items = await ctx.db.query.submissions.findMany({
+        where: eq(submissions.status, input.status),
+        with: { contributor: true, bounty: true },
+        orderBy: (s, { desc: d }) => [d(s.createdAt)],
+        limit: input.limit,
+      });
+
+      return { items, totalCount: countResult?.count ?? 0 };
+    }),
+
+  getSubmissionDetail: adminProcedure
+    .input(z.object({ id: z.string() }))
+    .query(async ({ ctx, input }) => {
+      const sub = await ctx.db.query.submissions.findFirst({
+        where: eq(submissions.id, input.id),
+        with: {
+          contributor: true,
+          bounty: true,
+          reviewedBy: true,
+          session: true,
+          evaluations: {
+            with: { evaluator: true },
+            orderBy: (e, { asc }) => [asc(e.createdAt)],
+          },
+        },
+      });
+
+      if (!sub) throw new Error("Submission not found");
+
+      // Fetch session events if session exists
+      let events: Array<{
+        id: string;
+        procedure: string;
+        input: Record<string, unknown> | null;
+        durationMs: number | null;
+        createdAt: Date;
+      }> = [];
+      if (sub.sessionId) {
+        events = await ctx.db.query.sessionEvents.findMany({
+          where: eq(sessionEvents.sessionId, sub.sessionId),
+          orderBy: (e, { asc }) => [asc(e.createdAt)],
+        });
+      }
+
+      return { ...sub, sessionEvents: events };
+    }),
+
+  getSubmissionCounts: adminProcedure.query(async ({ ctx }) => {
+    const results = await ctx.db
+      .select({
+        status: submissions.status,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(submissions)
+      .groupBy(submissions.status);
+
+    const counts: Record<string, number> = {};
+    for (const r of results) {
+      counts[r.status] = r.count;
+    }
+    return counts;
   }),
 
   reviewSubmission: adminProcedure

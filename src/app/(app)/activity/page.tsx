@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import { useQueryState } from "nuqs";
 import {
   ActivityIcon,
   RobotIcon,
@@ -57,7 +57,11 @@ const typeOptions: { value: ActivityType | "all"; label: string }[] = [
 ];
 
 export default function ActivityPage() {
-  const [typeFilter, setTypeFilter] = useState<ActivityType | "all">("all");
+  const [typeFilter, setTypeFilter] = useQueryState("type", {
+    defaultValue: "all" as ActivityType | "all",
+    parse: (v) => (typeOptions.some((o) => o.value === v) ? v as ActivityType | "all" : "all"),
+    serialize: (v) => v,
+  });
 
   const { data, isLoading } = api.activity.list.useQuery({
     type: typeFilter !== "all" ? typeFilter : undefined,
