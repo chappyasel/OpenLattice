@@ -210,38 +210,30 @@ export const adminRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      // Get all submissions with the given status
-      const toApprove = await ctx.db.query.submissions.findMany({
-        where: eq(submissions.status, input.status),
-      });
+      // Bulk-update all matching submissions to approved in one query
+      const updated = await ctx.db
+        .update(submissions)
+        .set({
+          status: "approved",
+          reviewNotes: `Bulk approved from ${input.status}`,
+          reviewedAt: new Date(),
+        })
+        .where(eq(submissions.status, input.status))
+        .returning();
 
-      let approved = 0;
-      for (const sub of toApprove) {
-        const [updated] = await ctx.db
-          .update(submissions)
-          .set({
-            status: "approved",
-            reviewNotes: `Bulk approved from ${input.status}`,
-            reviewedAt: new Date(),
-          })
-          .where(eq(submissions.id, sub.id))
-          .returning();
+      // Materialize expansions concurrently
+      const expansions = updated.filter(
+        (s) => s.type === "expansion" || s.type === "bounty_response",
+      );
+      await Promise.all(
+        expansions.map((s) =>
+          applyExpansion(ctx.db, s.id, s.data as any, s.contributorId).catch(
+            (err) => console.error(`Failed to materialize ${s.id}:`, err),
+          ),
+        ),
+      );
 
-        if (
-          updated &&
-          (updated.type === "expansion" || updated.type === "bounty_response")
-        ) {
-          await applyExpansion(
-            ctx.db,
-            updated.id,
-            updated.data as any,
-            updated.contributorId,
-          );
-        }
-        approved++;
-      }
-
-      return { approved };
+      return { approved: updated.length };
     }),
 
   listAllContributors: adminProcedure.query(async ({ ctx }) => {
