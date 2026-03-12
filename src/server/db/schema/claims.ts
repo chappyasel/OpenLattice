@@ -31,6 +31,13 @@ export const claimStatusEnum = pgEnum("claim_status", [
   "superseded",
 ]);
 
+export interface GroundednessEvidence {
+  snippet?: string;
+  discoveryContext?: string;
+  provenance?: string;
+  sessionId?: string;
+}
+
 export interface EnvironmentContext {
   language?: string;
   framework?: string;
@@ -73,6 +80,15 @@ export const claims = pgTable(
     bountyId: text("bounty_id").references(() => bounties.id, {
       onDelete: "set null",
     }),
+    origin: text("origin").notNull().default("standalone"),
+    groundednessEvidence:
+      jsonb("groundedness_evidence").$type<GroundednessEvidence>(),
+    evaluationScore: integer("evaluation_score"),
+    evaluationReasoning: text("evaluation_reasoning"),
+    supersedesClaimId: text("supersedes_claim_id").references(
+      (): any => claims.id,
+      { onDelete: "set null" },
+    ),
     karmaAwarded: integer("karma_awarded").notNull().default(0),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
@@ -120,6 +136,11 @@ export const claimsRelations = relations(claims, ({ one, many }) => ({
     fields: [claims.supersededById],
     references: [claims.id],
     relationName: "claimSupersedes",
+  }),
+  supersedes: one(claims, {
+    fields: [claims.supersedesClaimId],
+    references: [claims.id],
+    relationName: "claimSupersededBy",
   }),
   verifications: many(claimVerifications),
 }));

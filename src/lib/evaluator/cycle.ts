@@ -15,6 +15,7 @@ import {
   suggestRestructuring,
 } from "./ai";
 import { verifyUrls, type UrlVerificationResult } from "./url-verify";
+import { scoreResearchQuality } from "../research-quality";
 
 // ─── Config & Types ──────────────────────────────────────────────────────
 
@@ -261,6 +262,49 @@ async function reviewPendingSubmissions(
         }
       }
 
+      // Fetch session data if submission has a sessionId
+      let sessionData: Parameters<typeof reviewExpansion>[2] = null;
+      const submissionSessionId = (submission as any).sessionId;
+      if (submissionSessionId) {
+        try {
+          const sessionResult = await trpc.query<{
+            id: string;
+            status: string;
+            createdAt: string;
+            closedAt: string | null;
+            events: Array<{
+              procedure: string;
+              input: Record<string, unknown> | null;
+              durationMs: number | null;
+              createdAt: string;
+            }>;
+          }>("sessions.getForSubmission", { submissionId: submission.id });
+
+          if (sessionResult) {
+            const researchQuality = scoreResearchQuality(
+              sessionResult.events,
+              sessionResult.createdAt,
+              sessionResult.closedAt,
+            );
+            sessionData = {
+              events: sessionResult.events,
+              eventCount: sessionResult.events.length,
+              durationMs: sessionResult.closedAt
+                ? new Date(sessionResult.closedAt).getTime() - new Date(sessionResult.createdAt).getTime()
+                : Date.now() - new Date(sessionResult.createdAt).getTime(),
+              researchQuality: {
+                tier: researchQuality.tier,
+                multiplier: researchQuality.multiplier,
+                details: researchQuality.details,
+              },
+            };
+            log(`  [review] Session attached: ${sessionResult.events.length} events, quality: ${researchQuality.tier} (${researchQuality.multiplier}x)`);
+          }
+        } catch (err: any) {
+          log(`  [review] Session fetch failed: ${err.message}`);
+        }
+      }
+
       // 0b. Fetch hierarchy context for topic placement assessment
       let parentTopic: { id: string; title: string; summary: string | null; depth: number } | null = null;
       let siblings: Array<{ id: string; title: string; summary: string | null }> = [];
@@ -297,7 +341,7 @@ async function reviewPendingSubmissions(
         siblings,
         grandparent,
         targetDepth,
-      });
+      }, sessionData);
 
       // 1b. Hard guardrails — override AI verdict when minimum standards aren't met
       const wordCount = expansion.topic.content.trim().split(/\s+/).length;
@@ -621,8 +665,12 @@ async function reviewPendingSubmissions(
         result.verdict === "revise"
           ? Math.min(result.suggestedReputationDelta, -1)
           : result.suggestedReputationDelta;
+      const researchMultiplier = sessionData?.researchQuality?.multiplier ?? 0.5;
+      const adjustedKarma = result.verdict === "approve"
+        ? Math.round(baseKarma * researchMultiplier)
+        : baseKarma;
       const totalReputationDelta =
-        baseKarma +
+        adjustedKarma +
         (result.verdict !== "revise" ? (edgeDiff?.karmaDelta ?? 0) : 0);
 
       if (consensusMode === "multi") {

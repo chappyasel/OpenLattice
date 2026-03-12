@@ -20,9 +20,11 @@ import {
   resourceTypeEnum,
   bases,
   claims,
+  researchSessions,
 } from "@/server/db/schema";
 import { activityId, generateUniqueId, slugify } from "@/lib/utils";
 import { suggestIcon, mergeTopicContent } from "@/lib/evaluator/ai";
+import { recordKarma } from "@/lib/karma";
 import { publicContributorColumns } from "./contributors";
 
 const VALID_RESOURCE_TYPES = new Set(resourceTypeEnum.enumValues);
@@ -96,6 +98,7 @@ const expansionSchema = z.object({
     .describe("Required: step-by-step log of research performed. Agents must show their work — what they searched, read, and discovered."),
   bountyId: z.string().optional(),
   baseSlug: z.string().optional(),
+  sessionId: z.string().optional(),
 });
 
 export const expansionsRouter = createTRPCRouter({
@@ -128,6 +131,19 @@ export const expansionsRouter = createTRPCRouter({
         throw new Error(
           `baseSlug is required when creating a root topic (no parentTopicSlug). Available bases: ${slugs}. Use list_bases to see options.`,
         );
+      }
+
+      // Validate sessionId if provided
+      if (input.sessionId) {
+        const session = await ctx.db.query.researchSessions.findFirst({
+          where: and(
+            eq(researchSessions.id, input.sessionId),
+            eq(researchSessions.contributorId, ctx.contributor.id),
+          ),
+        });
+        if (!session) {
+          throw new Error("Invalid session ID or session does not belong to you");
+        }
       }
 
       // Validate: parentTopicSlug must reference an existing topic
@@ -178,8 +194,20 @@ export const expansionsRouter = createTRPCRouter({
           processTrace: input.processTrace.length > 0 ? JSON.stringify(input.processTrace) : null,
           source: "mcp",
           bountyId: input.bountyId,
+          sessionId: input.sessionId ?? null,
         })
         .returning();
+
+      // Auto-close research session on submission
+      if (input.sessionId) {
+        await ctx.db
+          .update(researchSessions)
+          .set({ status: "closed", closedAt: new Date() })
+          .where(and(
+            eq(researchSessions.id, input.sessionId),
+            eq(researchSessions.status, "active"),
+          ));
+      }
 
       if (autoApply) {
         await applyExpansion(ctx.db, submission!.id, input, ctx.contributor.id);
@@ -528,19 +556,28 @@ export async function applyExpansion(
     }
   }
 
-  // 3b. Materialize findings as claims
+  // 3b. Materialize findings as claims (auto-approved — parent expansion passed evaluation)
   const findingsToApply = data.findings ?? [];
   if (findingsToApply.length > 0 && contributorId) {
-    // Auto-approve for trusted/autonomous contributors (same logic as claims router)
     for (const finding of findingsToApply) {
       try {
         const claimId = await generateUniqueId(db, claims, claims.id, `claim-${contributorId}`);
+        // Build groundedness evidence from the expansion's resources
+        const matchingResource = data.resources.find((r) => r.url === finding.sourceUrl);
+        const groundednessEvidence = matchingResource
+          ? {
+              snippet: matchingResource.snippet,
+              discoveryContext: matchingResource.discoveryContext,
+              provenance: matchingResource.provenance,
+            }
+          : null;
+
         await db.insert(claims).values({
           id: claimId,
           topicId: topic.id,
           contributorId,
           type: finding.type,
-          status: "pending", // Always pending — evaluator approved the expansion, not individual claims
+          status: "approved",
           body: finding.body,
           sourceUrl: finding.sourceUrl ?? null,
           sourceTitle: finding.sourceTitle ?? null,
@@ -548,6 +585,17 @@ export async function applyExpansion(
           confidence: finding.confidence ?? 80,
           expiresAt: finding.expiresAt ? new Date(finding.expiresAt) : null,
           submissionId,
+          origin: "expansion",
+          groundednessEvidence: groundednessEvidence as any,
+        });
+
+        // Award karma for each materialized claim
+        await recordKarma(db, {
+          contributorId,
+          delta: 5,
+          eventType: "submission_approved",
+          description: `Claim from expansion: "${finding.body.slice(0, 60)}..."`,
+          topicId: topic.id,
         });
       } catch {
         // Skip duplicate claims silently

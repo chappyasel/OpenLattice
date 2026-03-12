@@ -1,13 +1,13 @@
 import { initTRPC, TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import superjson from "superjson";
 import { ZodError } from "zod";
 import crypto from "crypto";
 
 import { auth, isAdmin } from "@/lib/auth";
-import { generateUniqueId, slugify } from "@/lib/utils";
+import { activityId, generateUniqueId, slugify } from "@/lib/utils";
 import { db } from "@/server/db";
-import { contributors } from "@/server/db/schema";
+import { contributors, researchSessions, sessionEvents } from "@/server/db/schema";
 
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   const session = await auth();
@@ -84,8 +84,23 @@ export const adminProcedure = protectedProcedure.use(async ({ next, ctx }) => {
   return next({ ctx });
 });
 
-/** API key procedure for MCP/agent access */
-export const apiKeyProcedure = t.procedure.use(async ({ next, ctx }) => {
+/** Sanitize raw input for session event logging — truncate long strings, strip content */
+function sanitizeInput(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "object") return null;
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (key === "content") continue; // too large
+    if (typeof value === "string" && value.length > 1000) {
+      result[key] = value.slice(0, 1000) + "...(truncated)";
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+/** API key procedure for MCP/agent access — also logs session events if X-Session-Id is present */
+export const apiKeyProcedure = t.procedure.use(async ({ next, ctx, path, rawInput }) => {
   const authHeader = ctx.headers.get("authorization");
   if (!authHeader) {
     throw new TRPCError({
@@ -114,11 +129,55 @@ export const apiKeyProcedure = t.procedure.use(async ({ next, ctx }) => {
     });
   }
 
-  return next({
+  // Read session ID from header
+  const sessionId = ctx.headers.get("x-session-id");
+  let validSessionId: string | null = null;
+
+  if (sessionId) {
+    // Validate session: exists, belongs to contributor, is active, <24h old
+    const session = await ctx.db.query.researchSessions.findFirst({
+      where: and(
+        eq(researchSessions.id, sessionId),
+        eq(researchSessions.contributorId, contributor.id),
+        eq(researchSessions.status, "active"),
+      ),
+    });
+
+    if (session) {
+      const ageMs = Date.now() - new Date(session.createdAt).getTime();
+      if (ageMs < 24 * 60 * 60 * 1000) {
+        validSessionId = sessionId;
+      }
+    }
+  }
+
+  const start = Date.now();
+  const result = await next({
     ctx: {
       contributor,
+      sessionId: validSessionId,
     },
   });
+
+  // Fire-and-forget: log session event if session is active
+  // Skip logging session router calls to avoid recursive logging
+  if (validSessionId && !path.startsWith("sessions.")) {
+    const durationMs = Date.now() - start;
+    ctx.db
+      .insert(sessionEvents)
+      .values({
+        id: activityId("evt", validSessionId),
+        sessionId: validSessionId,
+        procedure: path,
+        input: sanitizeInput(rawInput),
+        durationMs,
+      })
+      .catch(() => {
+        // Silently ignore event logging failures
+      });
+  }
+
+  return result;
 });
 
 /** Karma-gated procedure: requires API key + positive karma balance */

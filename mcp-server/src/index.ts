@@ -28,6 +28,9 @@ import {
   handleVerifyClaim,
   handleListEvaluatableSubmissions,
   handleEvaluateSubmission,
+  handleStartResearchSession,
+  handleEndResearchSession,
+  handleListClaims,
 } from "./tools.js";
 
 // Log mode
@@ -51,6 +54,7 @@ const READ_ONLY_TOOLS = new Set([
   "list_tags",
   "list_topics",
   "list_bases",
+  "list_claims",
 ]);
 
 // Create MCP server
@@ -96,6 +100,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
     case "get_karma_balance":
       return handleGetKarmaBalance();
+
+    case "start_research_session":
+      return handleStartResearchSession(args as { targetTopic?: string; bountyId?: string; description?: string });
+
+    case "end_research_session":
+      return handleEndResearchSession();
+
+    case "list_claims":
+      return handleListClaims(args as { topicSlug: string; type?: string });
 
     case "submit_expansion":
       return handleSubmitExpansion(
@@ -179,6 +192,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           sourceUrl?: string;
           sourceTitle?: string;
           expiresAt?: string;
+          snippet?: string;
+          discoveryContext?: string;
+          provenance?: string;
+          supersedesClaimId?: string;
         },
       );
 
