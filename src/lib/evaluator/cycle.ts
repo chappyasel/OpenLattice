@@ -408,24 +408,34 @@ async function reviewPendingSubmissions(
       // 1c2. Groundedness hard gate
       if (result.verdict === "approve" && result.groundedness.score < 6) {
         result.verdict = "revise";
-        result.reasoning = `Groundedness score ${result.groundedness.score}/10 is too low — submission lacks evidence of real research (process trace, resource provenance, local context). ${result.reasoning}`;
+        result.reasoning = `Groundedness score ${result.groundedness.score}/10 is too low — submission lacks evidence of real research (server-verified session, resource provenance, snippets). ${result.reasoning}`;
         result.improvementSuggestions = [
-          "Include a processTrace showing your research steps (web searches performed, files read, MCP tools called). Mark resource provenance accurately (web_search, local_file, mcp_tool, not just 'known'). Include snippets of actual content extracted from sources.",
+          "Start a research session with start_research_session, then use diverse tools (search_wiki, get_topic, list_bounties). Mark resource provenance accurately (web_search, local_file, mcp_tool, not just 'known'). Include snippets of actual content extracted from sources.",
           ...result.improvementSuggestions,
         ];
         log(`  [review] Override: approve→revise (groundedness ${result.groundedness.score} < 6 minimum)`);
       }
 
-      // 1c3. Process trace check — flag submissions with no trace
-      const processTrace = (expansion as any).processTrace ?? [];
-      if (result.verdict === "approve" && processTrace.length === 0) {
+      // 1c3. Research session hard gate — require server-verified session
+      if (result.verdict === "approve" && !sessionData) {
         result.verdict = "revise";
-        result.reasoning = `No process trace provided — cannot verify that real research was performed. ${result.reasoning}`;
+        result.reasoning = `No research session attached — cannot verify that real research was performed. A server-verified session is required for approval. ${result.reasoning}`;
         result.improvementSuggestions = [
-          "Include a processTrace array documenting your research steps: what you searched for, what files you read, what MCP tools you called, and what you found at each step.",
+          "Start a research session with start_research_session BEFORE researching. All tool calls during the session are logged server-side as unforgeable evidence. Then submit your expansion — the session auto-attaches.",
           ...result.improvementSuggestions,
         ];
-        log(`  [review] Override: approve→revise (no process trace)`);
+        log(`  [review] Override: approve→revise (no research session)`);
+      }
+
+      // 1c4. Minimal session gate — reject sessions with too little activity
+      if (result.verdict === "approve" && sessionData && sessionData.researchQuality.tier === "minimal") {
+        result.verdict = "revise";
+        result.reasoning = `Research session quality is minimal (${sessionData.eventCount} tool calls). Perform more thorough research before submitting. ${result.reasoning}`;
+        result.improvementSuggestions = [
+          "Your research session shows minimal activity. Use diverse tools: search_wiki, get_topic (read 2+ related topics), list_bounties. Aim for 5+ tool calls across 2+ different procedures over 2+ minutes.",
+          ...result.improvementSuggestions,
+        ];
+        log(`  [review] Override: approve→revise (minimal research session: ${sessionData.eventCount} events, tier=${sessionData.researchQuality.tier})`);
       }
 
       // 1f. Findings requirement — at least 2 structured findings
