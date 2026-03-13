@@ -1,615 +1,336 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { useQueryState, parseAsBoolean } from "nuqs";
+import { useState, useCallback, useRef, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-    TrophyIcon,
-    ArrowRightIcon,
-    ArrowLeftIcon,
-    PlugIcon,
-    MagnifyingGlassIcon,
-    TreasureChestIcon,
-    ArrowsOutIcon,
-    XIcon,
-    GraphIcon,
-    BookOpenIcon,
-    CheckCircleIcon,
-    StarIcon,
-    ExamIcon,
-    ScalesIcon,
-    ShieldCheckIcon,
+  MagnifyingGlassIcon,
+  ArrowRightIcon,
+  BookOpenIcon,
+  CheckCircleIcon,
+  StarIcon,
+  ExamIcon,
+  ScalesIcon,
+  ShieldCheckIcon,
+  GraphIcon,
+  TreasureChestIcon,
 } from "@phosphor-icons/react";
 import { TopicIcon } from "@/components/topic-icon";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { McpSetupDialog } from "@/components/mcp-setup-dialog";
-import { GrainientBackground } from "@/components/ui/grainient-background";
 import { api } from "@/trpc/react";
-import { TopicWikiView } from "@/components/topic-wiki-view";
-import { useTopicContext } from "@/components/topic-context";
-
-const GraphViewer = dynamic(() => import("@/components/graph-viewer").then((m) => m.GraphViewer), {
-    ssr: false,
-});
+import { GrainientBackground } from "@/components/ui/grainient-background";
+import { PlaybookJourneyMap } from "@/components/playbook-journey-map";
+import { PlaybookStatsBar } from "@/components/playbook-stats-bar";
+import { AgentCtaBanner } from "@/components/agent-cta-banner";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatTimeAgo(date: Date): string {
-    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-    if (seconds < 60) return "just now";
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    if (days < 7) return `${days}d ago`;
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-// ─── Debounce Hook ───────────────────────────────────────────────────────────
-
 function useDebounce<T>(value: T, delay: number): T {
-    const [debounced, setDebounced] = useState(value);
-    useEffect(() => {
-        const timer = setTimeout(() => setDebounced(value), delay);
-        return () => clearTimeout(timer);
-    }, [value, delay]);
-    return debounced;
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
 }
 
 // ─── Homepage ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-    const [mcpDialogOpen, setMcpDialogOpen] = useState(false);
-    const [graphExpanded, setGraphExpanded] = useQueryState(
-        "graph",
-        parseAsBoolean.withDefault(false),
-    );
-    const [searchQuery, setSearchQuery] = useState("");
-    const [searchOpen, setSearchOpen] = useState(false);
-    const searchRef = useRef<HTMLDivElement>(null);
-    const debouncedQuery = useDebounce(searchQuery, 300);
-    const { selectedSlug, setSelectedSlug } = useTopicContext();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debouncedQuery = useDebounce(searchQuery, 300);
 
-    const { data: suggestedTopics, isLoading: topicsLoading } = api.topics.suggested.useQuery(
-        undefined,
-        {
-            staleTime: 60 * 1000,
-        },
-    );
-    const { data: graphData } = api.graph.getFullGraph.useQuery();
-    const { data: recentActivity } = api.activity.getRecent.useQuery({ limit: 20 });
-    const [topicPage, setTopicPage] = useState(0);
-    const slideDirection = useRef(1); // 1 = forward, -1 = backward
-    const { data: searchResults } = api.search.query.useQuery(
-        { q: debouncedQuery },
-        { enabled: debouncedQuery.length >= 2 },
-    );
+  const { data: suggestedTopics, isLoading: topicsLoading } =
+    api.topics.suggested.useQuery(undefined, { staleTime: 60 * 1000 });
+  const { data: recentActivity } = api.activity.getRecent.useQuery({ limit: 20 });
+  const { data: searchResults } = api.search.query.useQuery(
+    { q: debouncedQuery },
+    { enabled: debouncedQuery.length >= 2 },
+  );
 
-    const navigateToSlug = useCallback(
-        (slug: string) => {
-            setSearchQuery("");
-            setSearchOpen(false);
-            setSelectedSlug(slug);
-        },
-        [setSelectedSlug],
-    );
+  // Close search dropdown on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
 
-    const closeWikiView = useCallback(() => {
-        setSelectedSlug(null);
-    }, [setSelectedSlug]);
-
-    // Close search dropdown on outside click
-    useEffect(() => {
-        function handleClick(e: MouseEvent) {
-            if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-                setSearchOpen(false);
-            }
-        }
-        document.addEventListener("mousedown", handleClick);
-        return () => document.removeEventListener("mousedown", handleClick);
-    }, []);
-
-    // Auto-advance suggested topics carousel
-    const totalPages = suggestedTopics ? Math.ceil(suggestedTopics.length / 3) : 1;
-    useEffect(() => {
-        if (totalPages <= 1) return;
-        const timer = setInterval(() => {
-            slideDirection.current = 1;
-            setTopicPage((p) => (p + 1) % totalPages);
-        }, 5000);
-        return () => clearInterval(timer);
-    }, [totalPages]);
-
-    const { data: allBreadcrumbs } = api.topics.listBreadcrumbs.useQuery(undefined, {
-        staleTime: 5 * 60 * 1000,
-        gcTime: Infinity,
-        enabled: !!selectedSlug,
-    });
-
-    const graphNodes = useMemo(() => {
-        if (!graphData) return [];
-        return graphData.nodes.map((node) => ({
-            id: node.id,
-            title: node.title,
-            type: "topic" as const,
-            icon: node.icon,
-            iconHue: node.iconHue,
-            connectionCount:
-                graphData.edges.filter(
-                    (e) => e.sourceTopicId === node.id || e.targetTopicId === node.id,
-                ).length + 1,
-        }));
-    }, [graphData]);
-
-    const graphEdges = useMemo(
-        () =>
-            graphData?.edges.map((edge) => ({
-                id: edge.id,
-                sourceTopicId: edge.sourceTopicId,
-                targetTopicId: edge.targetTopicId,
-                relationType: edge.relationType,
-            })) ?? [],
-        [graphData],
-    );
-
-    return (
-        <div className="min-h-screen">
-            {selectedSlug ? (
-                <TopicWikiView
-                    slug={selectedSlug}
-                    onNavigate={navigateToSlug}
-                    onClose={closeWikiView}
-                    allTopics={allBreadcrumbs ?? []}
-                />
-            ) : (
-                <div className="flex min-h-screen flex-col">
-                    {/* Main content — vertically centered */}
-                    <div className="flex flex-1 flex-col items-center justify-center">
-                    {/* Hero Section */}
-                    <div className="relative flex flex-col items-center justify-center px-6 py-8">
-                        <GrainientBackground />
-
-                        <div className="relative text-center">
-                            {/* Mascot */}
-                            <div className="group mx-auto mb-4 flex justify-center">
-                                <motion.div
-                                    className="relative size-36 drop-shadow-md"
-                                    animate={{
-                                        y: [0, -6, 0],
-                                    }}
-                                    whileHover={{
-                                        scale: 1.1,
-                                        rotate: 3,
-                                        filter: "drop-shadow(0 12px 20px rgba(0,0,0,0.2))",
-                                    }}
-                                    transition={{
-                                        y: { duration: 3, repeat: Infinity, ease: "easeInOut" },
-                                        default: { type: "spring", stiffness: 300, damping: 15 },
-                                    }}
-                                >
-                                    <Image
-                                        src="/images/members/caik-1.png"
-                                        alt=""
-                                        width={144}
-                                        height={144}
-                                        className="absolute inset-0 transition-opacity duration-300 group-hover:opacity-0 dark:invert"
-                                    />
-                                    <Image
-                                        src="/images/members/caik-2.png"
-                                        alt=""
-                                        width={144}
-                                        height={144}
-                                        className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 dark:invert"
-                                    />
-                                </motion.div>
-                            </div>
-
-                            <h1 className="mb-3 text-5xl font-bold tracking-tight md:text-7xl">
-                                CAIK
-                            </h1>
-                            <p className="mx-auto mb-8 max-w-md text-base font-semibold text-muted-foreground">
-                                Collective AI Knowledge — a living AI wiki powered by community.
-                                200k+ members and AI agents contributing, curating, and learning
-                                together.
-                            </p>
-
-                            {/* Search Bar */}
-                            <div ref={searchRef} className="relative mx-auto mt-6 w-full max-w-md">
-                                <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm shadow-md transition-all">
-                                    <MagnifyingGlassIcon
-                                        weight="bold"
-                                        className="size-4 text-muted-foreground"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={searchQuery}
-                                        onChange={(e) => {
-                                            setSearchQuery(e.target.value);
-                                            setSearchOpen(true);
-                                        }}
-                                        onFocus={() => {
-                                            if (searchQuery.length >= 2) setSearchOpen(true);
-                                        }}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Escape") setSearchOpen(false);
-                                        }}
-                                        placeholder="Search topics..."
-                                        className="flex-1 bg-transparent text-foreground placeholder:text-muted-foreground outline-none"
-                                    />
-                                </div>
-                                <AnimatePresence>
-                                    {searchOpen &&
-                                        debouncedQuery.length >= 2 &&
-                                        searchResults?.topics &&
-                                        searchResults.topics.length > 0 && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: -4 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: -4 }}
-                                                transition={{ duration: 0.15 }}
-                                                className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg"
-                                            >
-                                                {searchResults.topics.map((topic) => (
-                                                    <button
-                                                        key={topic.id}
-                                                        onClick={() => navigateToSlug(topic.id)}
-                                                        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent"
-                                                    >
-                                                        <span className="font-medium">
-                                                            {topic.title}
-                                                        </span>
-                                                    </button>
-                                                ))}
-                                            </motion.div>
-                                        )}
-                                </AnimatePresence>
-                            </div>
-
-                            {/* Action Buttons */}
-                            <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
-                                <motion.button
-                                    onClick={() => setMcpDialogOpen(true)}
-                                    whileHover={{
-                                        scale: 1.02,
-                                        boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                                    }}
-                                    className="inline-flex items-center gap-2 rounded-xl bg-primary/80 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-all hover:bg-primary/90"
-                                >
-                                    <PlugIcon weight="bold" className="size-4" />
-                                    Connect Your Agent
-                                </motion.button>
-                                <motion.div
-                                    whileHover={{
-                                        scale: 1.02,
-                                        boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                                    }}
-                                    className="rounded-xl"
-                                >
-                                    <Link
-                                        href="/leaderboard"
-                                        className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold transition-all hover:bg-card/80"
-                                    >
-                                        <TrophyIcon weight="bold" className="size-4" />
-                                        View Leaderboard
-                                    </Link>
-                                </motion.div>
-                                <motion.div
-                                    whileHover={{
-                                        scale: 1.02,
-                                        boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                                    }}
-                                    className="rounded-xl"
-                                >
-                                    <Link
-                                        href="/bounties"
-                                        className="inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm px-5 py-2.5 text-sm font-semibold transition-all hover:bg-card/80"
-                                    >
-                                        <TreasureChestIcon weight="bold" className="size-4" />
-                                        View Bounties
-                                    </Link>
-                                </motion.div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Suggested Topics — paginated carousel */}
-                    <div className="mx-auto w-full max-w-3xl px-6 pb-8">
-                        <div className="mb-4">
-                            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                                Suggested Topics
-                            </h2>
-                        </div>
-                        <div className="relative p-1 -m-1">
-                            <AnimatePresence mode="wait" initial={false} custom={slideDirection.current}>
-                                <motion.div
-                                    key={topicPage}
-                                    custom={slideDirection.current}
-                                    variants={{
-                                        enter: (dir: number) => ({ opacity: 0, x: dir * 30 }),
-                                        center: { opacity: 1, x: 0 },
-                                        exit: (dir: number) => ({ opacity: 0, x: dir * -30 }),
-                                    }}
-                                    initial="enter"
-                                    animate="center"
-                                    exit="exit"
-                                    transition={{ duration: 0.25, ease: "easeInOut" }}
-                                    className="grid gap-4 sm:grid-cols-3"
-                                >
-                                    {topicsLoading
-                                        ? Array.from({ length: 3 }).map((_, i) => (
-                                              <div
-                                                  key={i}
-                                                  className="flex h-[160px] flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 animate-pulse"
-                                              >
-                                                  <div className="h-4 w-2/3 rounded bg-muted" />
-                                                  <div className="h-3 w-full rounded bg-muted" />
-                                                  <div className="h-3 w-4/5 rounded bg-muted" />
-                                                  <div className="mt-auto h-3 w-20 rounded bg-muted" />
-                                              </div>
-                                          ))
-                                        : suggestedTopics
-                                              ?.slice(topicPage * 3, topicPage * 3 + 3)
-                                              .map((topic, i) => (
-                                                  <motion.button
-                                                      key={topic.id}
-                                                      initial={{ opacity: 0, scale: 0.95 }}
-                                                      animate={{ opacity: 1, scale: 1 }}
-                                                      transition={{ duration: 0.25, delay: i * 0.06, ease: "easeOut" }}
-                                                      onClick={() => navigateToSlug(topic.id)}
-                                                      whileHover={{
-                                                          scale: 1.02,
-                                                          boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                                                      }}
-                                                      className="flex h-[160px] flex-col gap-2 rounded-xl border border-border bg-card/80 backdrop-blur-sm p-4 text-left transition-all hover:bg-card"
-                                                  >
-                                                      <div className="flex items-center gap-2">
-                                                          <TopicIcon
-                                                              icon={topic.icon}
-                                                              hue={topic.iconHue}
-                                                              size="sm"
-                                                          />
-                                                          <h3 className="text-sm font-semibold truncate">
-                                                              {topic.title}
-                                                          </h3>
-                                                      </div>
-                                                      <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-                                                          {topic.summary}
-                                                      </p>
-                                                      {topic.tags.length > 0 && (
-                                                          <div className="flex items-center gap-1">
-                                                              {topic.tags.slice(0, 5).map((tag) => (
-                                                                  <Tooltip key={tag.name}>
-                                                                      <TooltipTrigger asChild>
-                                                                          <span>
-                                                                              <TopicIcon
-                                                                                  icon={tag.icon}
-                                                                                  hue={tag.iconHue}
-                                                                                  size="sm"
-                                                                              />
-                                                                          </span>
-                                                                      </TooltipTrigger>
-                                                                      <TooltipContent>{tag.name}</TooltipContent>
-                                                                  </Tooltip>
-                                                              ))}
-                                                          </div>
-                                                      )}
-                                                      <div className="mt-auto flex items-center justify-between">
-                                                          <span className="flex items-center gap-1 text-xs text-brand-blue">
-                                                              Read article
-                                                              <ArrowRightIcon
-                                                                  weight="bold"
-                                                                  className="size-3"
-                                                              />
-                                                          </span>
-                                                          {topic.resourceCount > 0 && (
-                                                              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                                                                  <BookOpenIcon weight="bold" className="size-3" />
-                                                                  {topic.resourceCount}
-                                                              </span>
-                                                          )}
-                                                      </div>
-                                                  </motion.button>
-                                              ))}
-                                </motion.div>
-                            </AnimatePresence>
-                        </div>
-                        {totalPages > 1 && (
-                            <div className="mt-4 flex justify-center gap-1.5">
-                                {Array.from({ length: totalPages }).map((_, i) => (
-                                    <button
-                                        key={i}
-                                        onClick={() => {
-                                            slideDirection.current = i > topicPage ? 1 : -1;
-                                            setTopicPage(i);
-                                        }}
-                                        className={`size-1.5 rounded-full transition-all ${
-                                            i === topicPage
-                                                ? "bg-foreground scale-125"
-                                                : "bg-muted-foreground/30 hover:bg-muted-foreground/50"
-                                        }`}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Graph Preview */}
-                    <div className="mx-auto w-full max-w-4xl px-6 pb-10">
-                        <div
-                            className="relative h-[350px] cursor-pointer"
-                            onClick={() => {
-                                if (graphNodes.length > 0) setGraphExpanded(true);
-                            }}
-                        >
-                            {graphNodes.length > 0 && (
-                                <GraphViewer
-                                    nodes={graphNodes}
-                                    edges={graphEdges}
-                                    height="100%"
-                                    onNodeClick={(node) => {
-                                        if (node.id) navigateToSlug(node.id);
-                                    }}
-                                    disableZoom
-                                />
-                            )}
-                            {graphNodes.length > 0 && (
-                                <button
-                                    className="absolute right-3 top-3 z-10 rounded-lg border border-border bg-card/80 backdrop-blur-sm p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        setGraphExpanded(true);
-                                    }}
-                                >
-                                    <ArrowsOutIcon weight="bold" className="size-4" />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-
-                    </div>{/* end main content centering wrapper */}
-
-                    {/* Latest Updates — scrolling marquee, pinned to bottom */}
-                    {recentActivity && recentActivity.length > 0 && (
-                        <div className="w-full shrink-0 overflow-hidden py-3">
-                            <div className="mx-auto mb-2 w-full max-w-3xl px-6">
-                                <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                    Latest Updates
-                                </h2>
-                            </div>
-                            <div
-                                className="relative overflow-hidden"
-                                style={{
-                                    maskImage: "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
-                                    WebkitMaskImage: "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
-                                }}
-                            >
-                                <motion.div
-                                    className="flex gap-6 whitespace-nowrap"
-                                    animate={{ x: ["0%", "-50%"] }}
-                                    transition={{
-                                        x: {
-                                            duration: recentActivity.length * 0.8,
-                                            repeat: Infinity,
-                                            ease: "linear",
-                                        },
-                                    }}
-                                >
-                                    {[...recentActivity, ...recentActivity].map((item, idx) => {
-                                        const iconMap: Record<string, React.ComponentType<any>> = {
-                                            topic_created: GraphIcon,
-                                            resource_submitted: BookOpenIcon,
-                                            edge_created: GraphIcon,
-                                            bounty_completed: TreasureChestIcon,
-                                            submission_reviewed: CheckCircleIcon,
-                                            reputation_changed: StarIcon,
-                                            evaluation_submitted: ExamIcon,
-                                            consensus_reached: ScalesIcon,
-                                            trust_level_changed: ShieldCheckIcon,
-                                        };
-                                        const colorMap: Record<string, string> = {
-                                            topic_created: "text-blue-400",
-                                            resource_submitted: "text-emerald-400",
-                                            edge_created: "text-cyan-400",
-                                            bounty_completed: "text-yellow-400",
-                                            submission_reviewed: "text-brand-blue",
-                                            reputation_changed: "text-yellow-400",
-                                            evaluation_submitted: "text-violet-400",
-                                            consensus_reached: "text-teal-400",
-                                            trust_level_changed: "text-orange-400",
-                                        };
-                                        const Icon = iconMap[item.type] ?? GraphIcon;
-                                        const color = colorMap[item.type] ?? "text-muted-foreground";
-                                        const timeAgo = formatTimeAgo(new Date(item.createdAt));
-                                        return (
-                                            <span
-                                                key={`${item.id}-${idx}`}
-                                                className="inline-flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
-                                            >
-                                                <Icon weight="bold" className={`size-3.5 ${color}`} />
-                                                {item.contributor && (
-                                                    <span className="inline-flex items-center gap-1.5">
-                                                        <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
-                                                            {(item.contributor.name ?? "?")[0]?.toUpperCase()}
-                                                        </span>
-                                                        <span className="font-medium text-foreground">
-                                                            {item.contributor.name ?? "Agent"}
-                                                        </span>
-                                                    </span>
-                                                )}
-                                                <span className="max-w-[280px] truncate">
-                                                    {item.description}
-                                                </span>
-                                                {item.topic && (
-                                                    <button
-                                                        onClick={() => navigateToSlug(item.topic!.id)}
-                                                        className="inline-flex items-center gap-1 text-foreground hover:underline"
-                                                    >
-                                                        <TopicIcon icon={item.topic.icon} hue={item.topic.iconHue} size="sm" />
-                                                        {item.topic.title}
-                                                    </button>
-                                                )}
-                                                <span className="text-muted-foreground/60">
-                                                    {timeAgo}
-                                                </span>
-                                            </span>
-                                        );
-                                    })}
-                                </motion.div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Footer */}
-                    <div className="w-full shrink-0 px-6 py-4">
-                        <p className="text-center text-sm text-muted-foreground">
-                            Powered by{" "}
-                            <a
-                                href="https://aicollective.com"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="hover:underline"
-                            >
-                                The AI Collective
-                            </a>{" "}
-                            &ndash; 200k+ members, 150+ chapters, 40+ countries
-                        </p>
-                    </div>
-                </div>
-            )}
-
-            {/* Fullscreen Graph Overlay */}
-            <AnimatePresence>
-                {graphExpanded && graphNodes.length > 0 && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="fixed inset-0 z-50 bg-background"
-                    >
-                        <GraphViewer
-                            nodes={graphNodes}
-                            edges={graphEdges}
-                            height="100%"
-                            onNodeClick={(node) => {
-                                if (node.id) navigateToSlug(node.id);
-                            }}
-                        />
-                        <button
-                            className="absolute right-4 top-4 z-10 rounded-lg border border-border bg-card/80 backdrop-blur-sm p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
-                            onClick={() => setGraphExpanded(false)}
-                        >
-                            <XIcon weight="bold" className="size-5" />
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            <McpSetupDialog open={mcpDialogOpen} onOpenChange={setMcpDialogOpen} />
+  return (
+    <div className="flex min-h-screen flex-col">
+      {/* ── Hero ─────────────────────────────────────────── */}
+      <div className="relative flex flex-col items-center px-6 pt-12 pb-4">
+        <GrainientBackground />
+        <div className="flex items-center gap-3 mb-3">
+          <motion.div
+            className="group relative size-16 shrink-0 drop-shadow-md"
+            animate={{ y: [0, -4, 0] }}
+            whileHover={{ scale: 1.1, rotate: 3 }}
+            transition={{
+              y: { duration: 3, repeat: Infinity, ease: "easeInOut" },
+              default: { type: "spring", stiffness: 300, damping: 15 },
+            }}
+          >
+            <Image
+              src="/images/members/caik-1.png"
+              alt=""
+              width={64}
+              height={64}
+              className="absolute inset-0 transition-opacity duration-300 group-hover:opacity-0 dark:invert"
+            />
+            <Image
+              src="/images/members/caik-2.png"
+              alt=""
+              width={64}
+              height={64}
+              className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100 dark:invert"
+            />
+          </motion.div>
+          <h1 className="text-4xl font-bold tracking-tight md:text-5xl">CAIK</h1>
         </div>
-    );
+        <p className="mx-auto max-w-lg text-center text-sm text-muted-foreground">
+          A structured guide to learning and building with AI — from fundamentals
+          to scale. Curated by 200K+ builders and AI agents.
+        </p>
+
+        {/* Search Bar */}
+        <div ref={searchRef} className="relative mx-auto mt-5 w-full max-w-sm">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm shadow-sm">
+            <MagnifyingGlassIcon weight="bold" className="size-4 text-muted-foreground" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchOpen(true);
+              }}
+              onFocus={() => {
+                if (searchQuery.length >= 2) setSearchOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setSearchOpen(false);
+              }}
+              placeholder="Search topics..."
+              className="flex-1 bg-transparent text-foreground placeholder:text-muted-foreground outline-none"
+            />
+          </div>
+          <AnimatePresence>
+            {searchOpen &&
+              debouncedQuery.length >= 2 &&
+              searchResults?.topics &&
+              searchResults.topics.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-border bg-card shadow-lg"
+                >
+                  {searchResults.topics.map((topic) => (
+                    <Link
+                      key={topic.id}
+                      href={`/topic/${topic.id}`}
+                      onClick={() => {
+                        setSearchQuery("");
+                        setSearchOpen(false);
+                      }}
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-accent"
+                    >
+                      <span className="font-medium">{topic.title}</span>
+                    </Link>
+                  ))}
+                </motion.div>
+              )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* ── Journey Map ──────────────────────────────────── */}
+      <PlaybookJourneyMap />
+
+      {/* ── Featured Content ─────────────────────────────── */}
+      <div className="mx-auto w-full max-w-3xl px-6 pb-6">
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Recently Updated
+          </h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {topicsLoading
+            ? Array.from({ length: 3 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="flex h-[140px] flex-col gap-2 rounded-xl border border-border bg-card/80 p-4 animate-pulse"
+                >
+                  <div className="h-4 w-2/3 rounded bg-muted" />
+                  <div className="h-3 w-full rounded bg-muted" />
+                  <div className="h-3 w-4/5 rounded bg-muted" />
+                  <div className="mt-auto h-3 w-20 rounded bg-muted" />
+                </div>
+              ))
+            : suggestedTopics?.slice(0, 3).map((topic) => (
+                <Link
+                  key={topic.id}
+                  href={`/topic/${topic.id}`}
+                  className="flex h-[140px] flex-col gap-2 rounded-xl border border-border bg-card/80 p-4 transition-colors hover:bg-card"
+                >
+                  <div className="flex items-center gap-2">
+                    <TopicIcon icon={topic.icon} hue={topic.iconHue} size="sm" />
+                    <h3 className="text-sm font-semibold truncate">{topic.title}</h3>
+                  </div>
+                  <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                    {topic.summary}
+                  </p>
+                  <div className="mt-auto flex items-center justify-between">
+                    <span className="flex items-center gap-1 text-xs text-brand-blue">
+                      Read article
+                      <ArrowRightIcon weight="bold" className="size-3" />
+                    </span>
+                    {topic.resourceCount > 0 && (
+                      <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <BookOpenIcon weight="bold" className="size-3" />
+                        {topic.resourceCount}
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              ))}
+        </div>
+      </div>
+
+      {/* ── Stats Bar ────────────────────────────────────── */}
+      <PlaybookStatsBar />
+
+      {/* ── Agent CTA ────────────────────────────────────── */}
+      <div className="pb-6">
+        <AgentCtaBanner />
+      </div>
+
+      {/* ── Activity Marquee ─────────────────────────────── */}
+      {recentActivity && recentActivity.length > 0 && (
+        <div className="mt-auto w-full shrink-0 overflow-hidden py-3">
+          <div className="mx-auto mb-2 w-full max-w-3xl px-6">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Latest Updates
+            </h2>
+          </div>
+          <div
+            className="relative overflow-hidden"
+            style={{
+              maskImage:
+                "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
+              WebkitMaskImage:
+                "linear-gradient(to right, transparent, black 5%, black 95%, transparent)",
+            }}
+          >
+            <motion.div
+              className="flex gap-6 whitespace-nowrap"
+              animate={{ x: ["0%", "-50%"] }}
+              transition={{
+                x: {
+                  duration: recentActivity.length * 0.8,
+                  repeat: Infinity,
+                  ease: "linear",
+                },
+              }}
+            >
+              {[...recentActivity, ...recentActivity].map((item, idx) => {
+                const iconMap: Record<string, React.ComponentType<any>> = {
+                  topic_created: GraphIcon,
+                  resource_submitted: BookOpenIcon,
+                  edge_created: GraphIcon,
+                  bounty_completed: TreasureChestIcon,
+                  submission_reviewed: CheckCircleIcon,
+                  reputation_changed: StarIcon,
+                  evaluation_submitted: ExamIcon,
+                  consensus_reached: ScalesIcon,
+                  trust_level_changed: ShieldCheckIcon,
+                };
+                const colorMap: Record<string, string> = {
+                  topic_created: "text-blue-400",
+                  resource_submitted: "text-emerald-400",
+                  edge_created: "text-cyan-400",
+                  bounty_completed: "text-yellow-400",
+                  submission_reviewed: "text-brand-blue",
+                  reputation_changed: "text-yellow-400",
+                  evaluation_submitted: "text-violet-400",
+                  consensus_reached: "text-teal-400",
+                  trust_level_changed: "text-orange-400",
+                };
+                const Icon = iconMap[item.type] ?? GraphIcon;
+                const color = colorMap[item.type] ?? "text-muted-foreground";
+                const timeAgo = formatTimeAgo(new Date(item.createdAt));
+                return (
+                  <span
+                    key={`${item.id}-${idx}`}
+                    className="inline-flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
+                  >
+                    <Icon weight="bold" className={`size-3.5 ${color}`} />
+                    {item.contributor && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="flex size-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
+                          {(item.contributor.name ?? "?")[0]?.toUpperCase()}
+                        </span>
+                        <span className="font-medium text-foreground">
+                          {item.contributor.name ?? "Agent"}
+                        </span>
+                      </span>
+                    )}
+                    <span className="max-w-[280px] truncate">{item.description}</span>
+                    {item.topic && (
+                      <Link
+                        href={`/topic/${item.topic.id}`}
+                        className="inline-flex items-center gap-1 text-foreground hover:underline"
+                      >
+                        <TopicIcon
+                          icon={item.topic.icon}
+                          hue={item.topic.iconHue}
+                          size="sm"
+                        />
+                        {item.topic.title}
+                      </Link>
+                    )}
+                    <span className="text-muted-foreground/60">{timeAgo}</span>
+                  </span>
+                );
+              })}
+            </motion.div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Footer ───────────────────────────────────────── */}
+      <div className="w-full shrink-0 px-6 py-4">
+        <p className="text-center text-sm text-muted-foreground">
+          Powered by{" "}
+          <a
+            href="https://aicollective.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline"
+          >
+            The AI Collective
+          </a>{" "}
+          &ndash; 200k+ members, 150+ chapters, 40+ countries
+        </p>
+      </div>
+    </div>
+  );
 }
