@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
 import {
   MagnifyingGlassIcon,
-  LightbulbIcon,
+  GraphIcon,
   XIcon,
   ListIcon,
 } from "@phosphor-icons/react";
@@ -22,7 +22,6 @@ export function MobileBottomNav() {
     setMounted(true);
   }, []);
 
-  // Show on mobile always, or on desktop when sidebar is closed
   const showPill = isMobile || !open;
   const sidebarOpen = isMobile ? openMobile : open;
 
@@ -62,11 +61,11 @@ export function MobileBottomNav() {
             <div className="h-5 w-px bg-background/20" />
 
             <Link
-              href="/claims"
+              href="/explore"
               className="flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-background/10"
             >
-              <LightbulbIcon className="size-4" weight="bold" />
-              <span className="text-sm">Claims</span>
+              <GraphIcon className="size-4" weight="bold" />
+              <span className="text-sm">Explore</span>
             </Link>
 
             <div className="h-5 w-px bg-background/20" />

@@ -6,7 +6,7 @@ import {
   createTRPCRouter,
   publicProcedure,
 } from "@/server/api/trpc";
-import { edges, tags, topicTags, topicResources, topics } from "@/server/db/schema";
+import { claims, contributors, edges, resources, submissions, tags, topicTags, topicResources, topics } from "@/server/db/schema";
 import { generateUniqueId, slugify } from "@/lib/utils";
 import { resolveBaseId } from "@/lib/resolve-base";
 import { publicContributorColumns } from "./contributors";
@@ -356,4 +356,16 @@ export const topicsRouter = createTRPCRouter({
         .returning();
       return deleted!;
     }),
+
+  stats: publicProcedure.query(async ({ ctx }) => {
+    const [result] = await ctx.db
+      .select({
+        topics: sql<number>`(SELECT count(*)::int FROM topics WHERE status = 'published')`,
+        resources: sql<number>`(SELECT count(*)::int FROM resources)`,
+        claims: sql<number>`(SELECT count(*)::int FROM claims)`,
+        contributors: sql<number>`(SELECT count(DISTINCT contributor_id)::int FROM submissions)`,
+      })
+      .from(sql`(SELECT 1) AS _dummy`);
+    return result!;
+  }),
 });

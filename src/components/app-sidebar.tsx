@@ -1,26 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { motion, AnimatePresence, Reorder, useDragControls } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   CaretRightIcon,
   CircleIcon,
-  DotsSixVerticalIcon,
   MagnifyingGlassIcon,
   HouseIcon,
-  LightbulbIcon,
   TreasureChestIcon,
   TrophyIcon,
   ShieldCheckIcon,
-  NewspaperIcon,
+  GraphIcon,
 } from "@phosphor-icons/react";
 import { api } from "@/trpc/react";
 import { useTopicContext } from "@/components/topic-context";
 import { TopicIcon } from "@/components/topic-icon";
-import { TagBadge, ResourceTypeBadge } from "@/components/badges";
 import { cn } from "@/lib/utils";
 import {
   Sidebar,
@@ -37,6 +34,15 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { AppSidebarFooter } from "@/components/app-sidebar-footer";
+
+// Fixed base order: ai-fundamentals → building-with-ai → saas-playbook
+const FIXED_BASE_ORDER = ["ai-fundamentals", "building-with-ai", "saas-playbook"];
+
+const PHASE_NUMBERS: Record<string, number> = {
+  "ai-fundamentals": 1,
+  "building-with-ai": 2,
+  "saas-playbook": 3,
+};
 
 interface TreeTopic {
   id: string;
@@ -74,15 +80,10 @@ function TopicTreeNode({
     { enabled: expanded && hasChildren, staleTime: 5 * 60 * 1000, gcTime: Infinity },
   );
 
-  // Leaf nodes nested inside a parent use SubItem styling
   if (!hasChildren && depth > 0) {
     return (
       <SidebarMenuSubItem>
-        <SidebarMenuSubButton
-          asChild
-          size="sm"
-          isActive={isActive}
-        >
+        <SidebarMenuSubButton asChild size="sm" isActive={isActive}>
           <Link href={`/topic/${topic.id}`}>
             {topic.icon ? (
               <TopicIcon icon={topic.icon} hue={topic.iconHue} size="sm" />
@@ -96,7 +97,6 @@ function TopicTreeNode({
     );
   }
 
-  // Caret placeholder keeps icons aligned whether or not a caret is shown
   const caretSlot = hasChildren ? (
     <button
       onClick={(e) => {
@@ -120,12 +120,7 @@ function TopicTreeNode({
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton
-        size="sm"
-        isActive={isActive}
-        className="gap-1"
-        asChild
-      >
+      <SidebarMenuButton size="sm" isActive={isActive} className="gap-1" asChild>
         <Link href={`/topic/${topic.id}`}>
           {caretSlot}
           <TopicIcon icon={topic.icon} hue={topic.iconHue} size="sm" />
@@ -162,36 +157,14 @@ function TopicTreeNode({
   );
 }
 
-// --- Reorderable base wrapper (needs its own component for useDragControls hook) ---
-
-function ReorderableBaseItem({
-  baseId,
-  children,
-}: {
-  baseId: string;
-  children: (controls: ReturnType<typeof useDragControls>) => React.ReactNode;
-}) {
-  const controls = useDragControls();
-  return (
-    <Reorder.Item
-      value={baseId}
-      as="div"
-      dragListener={false}
-      dragControls={controls}
-    >
-      {children(controls)}
-    </Reorder.Item>
-  );
-}
-
-// --- Collapsible base section with icon ---
+// --- Collapsible base section with phase number ---
 
 function BaseSection({
   base,
   topics,
   collapsed,
   onToggleCollapse,
-  dragControls,
+  phaseNumber,
   pathname,
   onSelect,
   selectedSlug,
@@ -202,7 +175,7 @@ function BaseSection({
   topics: TreeTopic[];
   collapsed: boolean;
   onToggleCollapse: () => void;
-  dragControls?: ReturnType<typeof useDragControls>;
+  phaseNumber?: number;
   pathname: string;
   onSelect: (slug: string) => void;
   selectedSlug: string | null;
@@ -237,17 +210,14 @@ function BaseSection({
             isBaseActive && "text-sidebar-foreground font-semibold",
           )}
         >
+          {phaseNumber && (
+            <span className="flex size-4 shrink-0 items-center justify-center rounded text-[10px] font-bold text-primary bg-primary/10">
+              {phaseNumber}
+            </span>
+          )}
           <TopicIcon icon={base.icon} hue={base.iconHue} size="sm" />
           {base.name}
         </Link>
-        {dragControls && (
-          <div
-            onPointerDown={(e) => dragControls.start(e)}
-            className="ml-auto cursor-grab touch-none text-sidebar-foreground/30 hover:text-sidebar-foreground/60 active:cursor-grabbing"
-          >
-            <DotsSixVerticalIcon weight="bold" className="!size-3.5" />
-          </div>
-        )}
       </SidebarGroupLabel>
 
       <AnimatePresence initial={false}>
@@ -284,7 +254,6 @@ export function AppSidebar() {
   const { selectedSlug, setSelectedSlug } = useTopicContext();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [collapsedBases, setCollapsedBases] = useState<Set<string>>(new Set());
-  const [baseOrder, setBaseOrder] = useState<string[]>([]);
 
   const onToggleExpand = useCallback((id: string) => {
     setExpandedIds((prev) => {
@@ -312,36 +281,7 @@ export function AppSidebar() {
     staleTime: 5 * 60 * 1000,
     gcTime: Infinity,
   });
-  const { data: allTags } = api.tags.list.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000,
-    gcTime: Infinity,
-  });
-  const { data: resourceTypes } = api.resources.listByType.useQuery(undefined, {
-    staleTime: 5 * 60 * 1000,
-    gcTime: Infinity,
-  });
   const { data: isAdmin } = api.admin.isAdmin.useQuery();
-
-  // Sync base order from query data, respecting localStorage preference
-  useEffect(() => {
-    if (!bases) return;
-    const serverIds = bases.map((b) => b.id);
-    try {
-      const saved = localStorage.getItem("sidebar:base-order");
-      if (saved) {
-        const savedIds = JSON.parse(saved) as string[];
-        // Keep saved order for IDs that still exist, append any new ones
-        const serverSet = new Set(serverIds);
-        const ordered = savedIds.filter((id) => serverSet.has(id));
-        const remaining = serverIds.filter((id) => !ordered.includes(id));
-        setBaseOrder([...ordered, ...remaining]);
-        return;
-      }
-    } catch {
-      // ignore malformed localStorage
-    }
-    setBaseOrder(serverIds);
-  }, [bases]);
 
   // Group root topics by base
   const groupedTopics = useMemo(() => {
@@ -361,30 +301,29 @@ export function AppSidebar() {
     return new Map(bases.map((b) => [b.id, b]));
   }, [bases]);
 
-  const visibleBaseIds = useMemo(() => {
-    if (!groupedTopics) return [];
-    return baseOrder.filter((id) => {
-      const base = baseMap.get(id);
-      const topics = groupedTopics.get(id);
-      return base && topics && topics.length > 0;
-    });
-  }, [baseOrder, baseMap, groupedTopics]);
-
-  const handleReorder = useCallback((newOrder: string[]) => {
-    setBaseOrder(newOrder);
-    try {
-      localStorage.setItem("sidebar:base-order", JSON.stringify(newOrder));
-    } catch {
-      // ignore storage errors
+  // Fixed order: sort bases by FIXED_BASE_ORDER using slug, then any remaining
+  const orderedBaseIds = useMemo(() => {
+    if (!bases || !groupedTopics) return [];
+    const slugToId = new Map(bases.map((b) => [b.slug, b.id]));
+    const ordered: string[] = [];
+    for (const slug of FIXED_BASE_ORDER) {
+      const id = slugToId.get(slug);
+      if (id && groupedTopics.has(id)) ordered.push(id);
     }
-  }, []);
+    // Add any bases not in the fixed order
+    for (const base of bases) {
+      if (!ordered.includes(base.id) && groupedTopics.has(base.id)) {
+        ordered.push(base.id);
+      }
+    }
+    return ordered;
+  }, [bases, groupedTopics]);
 
   const navItems = [
     { href: "/", label: "Home", icon: HouseIcon },
+    { href: "/explore", label: "Explore", icon: GraphIcon },
     { href: "/bounties", label: "Bounties", icon: TreasureChestIcon },
-    { href: "/claims", label: "Claims", icon: LightbulbIcon },
     { href: "/leaderboard", label: "Leaderboard", icon: TrophyIcon },
-    { href: "/digest", label: "Digest", icon: NewspaperIcon },
   ];
 
   return (
@@ -396,7 +335,11 @@ export function AppSidebar() {
               <Link href="/">
                 <motion.div
                   className="group/icon relative size-8 shrink-0 drop-shadow-sm"
-                  whileHover={{ scale: 1.1, rotate: 3, filter: "drop-shadow(0 6px 10px rgba(0,0,0,0.15))" }}
+                  whileHover={{
+                    scale: 1.1,
+                    rotate: 3,
+                    filter: "drop-shadow(0 6px 10px rgba(0,0,0,0.15))",
+                  }}
                   transition={{ type: "spring", stiffness: 300, damping: 15 }}
                 >
                   <Image
@@ -414,9 +357,7 @@ export function AppSidebar() {
                     className="absolute inset-0 size-8 object-contain opacity-0 transition-opacity duration-300 group-hover/icon:opacity-100 dark:invert"
                   />
                 </motion.div>
-                <span className="font-serif text-2xl font-bold tracking-tight">
-                  CAIK
-                </span>
+                <span className="font-serif text-2xl font-bold tracking-tight">CAIK</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -435,10 +376,7 @@ export function AppSidebar() {
                 );
               }}
             >
-              <MagnifyingGlassIcon
-                className="size-4 text-muted-foreground"
-                weight="bold"
-              />
+              <MagnifyingGlassIcon className="size-4 text-muted-foreground" weight="bold" />
               <span className="flex-1 text-muted-foreground">Find...</span>
               <kbd className="pointer-events-none -mr-0.5 flex h-5 select-none items-center rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">
                 F
@@ -482,37 +420,27 @@ export function AppSidebar() {
           </SidebarMenu>
         </SidebarGroup>
 
-        {groupedTopics && visibleBaseIds.length > 0 ? (
+        {groupedTopics && orderedBaseIds.length > 0 ? (
           <>
-            <Reorder.Group
-              axis="y"
-              values={visibleBaseIds}
-              onReorder={handleReorder}
-              as="div"
-            >
-              {visibleBaseIds.map((baseId) => {
-                const base = baseMap.get(baseId)!;
-                const topics = groupedTopics.get(baseId)!;
-                return (
-                  <ReorderableBaseItem key={baseId} baseId={baseId}>
-                    {(dragControls) => (
-                      <BaseSection
-                        base={base}
-                        topics={topics}
-                        collapsed={collapsedBases.has(baseId)}
-                        onToggleCollapse={() => toggleBaseCollapse(baseId)}
-                        dragControls={dragControls}
-                        pathname={pathname}
-                        onSelect={setSelectedSlug}
-                        selectedSlug={selectedSlug}
-                        expandedIds={expandedIds}
-                        onToggleExpand={onToggleExpand}
-                      />
-                    )}
-                  </ReorderableBaseItem>
-                );
-              })}
-            </Reorder.Group>
+            {orderedBaseIds.map((baseId) => {
+              const base = baseMap.get(baseId)!;
+              const topics = groupedTopics.get(baseId)!;
+              return (
+                <BaseSection
+                  key={baseId}
+                  base={base}
+                  topics={topics}
+                  collapsed={collapsedBases.has(baseId)}
+                  onToggleCollapse={() => toggleBaseCollapse(baseId)}
+                  phaseNumber={PHASE_NUMBERS[base.slug]}
+                  pathname={pathname}
+                  onSelect={setSelectedSlug}
+                  selectedSlug={selectedSlug}
+                  expandedIds={expandedIds}
+                  onToggleExpand={onToggleExpand}
+                />
+              );
+            })}
             {/* Uncategorized topics (no base) */}
             {groupedTopics.get(null) && groupedTopics.get(null)!.length > 0 && (
               <SidebarGroup className="group-data-[collapsible=icon]:hidden">
@@ -551,36 +479,6 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroup>
         )}
-
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          {allTags && allTags.length > 0 && (
-            <>
-              <SidebarGroupLabel>Tags</SidebarGroupLabel>
-              <div className="flex flex-col gap-1 px-2">
-                {allTags.map((tag) => (
-                  <Link key={tag.id} href={`/tags/${tag.id}`}>
-                    <TagBadge tag={tag} size="sm" />
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-        </SidebarGroup>
-
-        <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-          {resourceTypes && resourceTypes.length > 0 && (
-            <>
-              <SidebarGroupLabel>Types</SidebarGroupLabel>
-              <div className="flex flex-col gap-1 px-2">
-                {resourceTypes.map(({ type }) => (
-                  <Link key={type} href={`/types/${type}`}>
-                    <ResourceTypeBadge type={type} size="sm" />
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-        </SidebarGroup>
       </SidebarContent>
 
       <AppSidebarFooter />

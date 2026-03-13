@@ -25,6 +25,7 @@ import {
 } from "@/components/badges";
 import { Breadcrumb } from "@/components/breadcrumb";
 import { MarkdownRenderer } from "@/components/markdown-renderer";
+import { TopicNavigation } from "@/components/topic-navigation";
 import {
   Dialog,
   DialogContent,
@@ -219,7 +220,7 @@ export default function TopicPage({
       <div className="mx-auto max-w-7xl px-4 py-8 md:px-6">
         <Breadcrumb
           segments={[
-            { label: "Home", href: "/" },
+            { label: "Playbook", href: "/" },
             ...("base" in topic && topic.base
               ? [{ label: (topic.base as { name: string; slug: string }).name, href: `/base/${(topic.base as { name: string; slug: string }).slug}` }]
               : []),
@@ -603,6 +604,12 @@ export default function TopicPage({
           topicResources={topic.topicResources}
           selectedResourceId={selectedResourceId}
           onClose={() => void setSelectedResourceId(null)}
+        />
+
+        {/* Previous / Next navigation */}
+        <TopicNavigation
+          topicId={slug}
+          parentTopicId={topic.parentTopicId}
         />
       </div>
     </div>
